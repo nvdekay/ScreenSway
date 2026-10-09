@@ -1,7 +1,16 @@
 import AVFoundation
+import AppKit
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
+
+struct CaptureSource: Codable {
+    let id: String
+    let kind: String
+    let name: String
+    let width: Int
+    let height: Int
+}
 
 struct PointerSample: Codable, Sendable {
     let timeMs: Int
@@ -46,8 +55,8 @@ final class PointerRecorder: @unchecked Sendable {
     private let displayBounds: CGRect
     private let startedAt = DispatchTime.now().uptimeNanoseconds
 
-    init(displayID: CGDirectDisplayID) {
-        displayBounds = CGDisplayBounds(displayID)
+    init(captureBounds: CGRect) {
+        displayBounds = captureBounds
     }
 
     func start() -> Task<Void, Never> {
@@ -167,6 +176,7 @@ enum CaptureError: LocalizedError {
 struct ScreenSwayCapture {
     static func main() async {
         do {
+            _ = await MainActor.run { NSApplication.shared }
             let summary = try await run()
             let data = try JSONEncoder.screenSway.encode(summary)
             FileHandle.standardOutput.write(data)
@@ -181,6 +191,14 @@ struct ScreenSwayCapture {
         guard #available(macOS 15.0, *) else { throw CaptureError.unsupportedOS }
 
         let arguments = CommandLine.arguments
+        if arguments.contains("--list-sources") {
+            let sources = try await listSources()
+            let data = try JSONEncoder.screenSway.encode(sources)
+            FileHandle.standardOutput.write(data)
+            FileHandle.standardOutput.write(Data("\n".utf8))
+            Foundation.exit(0)
+        }
+
         guard let outputIndex = arguments.firstIndex(of: "--output"), outputIndex + 1 < arguments.count else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "Missing --output directory."])
         }
@@ -198,21 +216,45 @@ struct ScreenSwayCapture {
         try FileManager.default.createDirectory(at: mediaURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metadataURL, withIntermediateDirectories: true)
 
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let mainDisplayID = CGMainDisplayID()
-        guard let display = content.displays.first(where: { $0.displayID == mainDisplayID }) ?? content.displays.first else {
-            throw CaptureError.noDisplay
+        let content = try await shareableContent()
+        let sourceKind = argument(named: "--source-kind", in: arguments) ?? "display"
+        let sourceID = argument(named: "--source-id", in: arguments)
+
+        let filter: SCContentFilter
+        let captureWidth: Int
+        let captureHeight: Int
+        let captureBounds: CGRect
+
+        if sourceKind == "window",
+           let sourceID,
+           let windowID = UInt32(sourceID),
+           let window = content.windows.first(where: { $0.windowID == windowID }) {
+            filter = SCContentFilter(desktopIndependentWindow: window)
+            captureWidth = max(2, Int(window.frame.width) / 2 * 2)
+            captureHeight = max(2, Int(window.frame.height) / 2 * 2)
+            captureBounds = window.frame
+        } else {
+            let requestedDisplayID = sourceID.flatMap(UInt32.init)
+            let mainDisplayID = CGMainDisplayID()
+            guard let display = content.displays.first(where: { $0.displayID == requestedDisplayID })
+                ?? content.displays.first(where: { $0.displayID == mainDisplayID })
+                ?? content.displays.first else {
+                throw CaptureError.noDisplay
+            }
+            filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+            captureWidth = display.width
+            captureHeight = display.height
+            captureBounds = CGDisplayBounds(display.displayID)
         }
 
         let streamConfiguration = SCStreamConfiguration()
-        streamConfiguration.width = display.width
-        streamConfiguration.height = display.height
+        streamConfiguration.width = captureWidth
+        streamConfiguration.height = captureHeight
         streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         streamConfiguration.queueDepth = 5
         streamConfiguration.showsCursor = false
         streamConfiguration.capturesAudio = false
 
-        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
 
         let outputConfiguration = SCRecordingOutputConfiguration()
@@ -226,7 +268,7 @@ struct ScreenSwayCapture {
         let recordingOutput = SCRecordingOutput(configuration: outputConfiguration, delegate: delegate)
         try stream.addRecordingOutput(recordingOutput)
 
-        let pointerRecorder = PointerRecorder(displayID: display.displayID)
+        let pointerRecorder = PointerRecorder(captureBounds: captureBounds)
         let pointerTask = pointerRecorder.start()
         let startedAt = Date()
 
@@ -250,7 +292,7 @@ struct ScreenSwayCapture {
             title: projectURL.deletingPathExtension().lastPathComponent,
             createdAt: ISO8601DateFormatter().string(from: startedAt),
             durationMs: elapsedMs,
-            canvas: .init(width: display.width, height: display.height),
+            canvas: .init(width: captureWidth, height: captureHeight),
             media: .init(screen: "media/screen.mp4"),
             pointerEvents: "metadata/pointer-events.json"
         )
@@ -264,10 +306,51 @@ struct ScreenSwayCapture {
             videoPath: videoURL.path,
             pointerEventsPath: pointerEventsURL.path,
             durationMs: elapsedMs,
-            width: display.width,
-            height: display.height,
+            width: captureWidth,
+            height: captureHeight,
             pointerEvents: pointerEvents
         )
+    }
+
+    static func listSources() async throws -> [CaptureSource] {
+        let content = try await shareableContent()
+        let displays = content.displays.enumerated().map { index, display in
+            CaptureSource(
+                id: String(display.displayID),
+                kind: "display",
+                name: "Display \(index + 1)",
+                width: display.width,
+                height: display.height
+            )
+        }
+        let windows = content.windows
+            .filter {
+                $0.isOnScreen
+                    && !($0.title ?? "").isEmpty
+                    && !($0.owningApplication?.applicationName ?? "").isEmpty
+                    && $0.frame.width >= 240
+                    && $0.frame.height >= 160
+            }
+            .map { window in
+                let appName = window.owningApplication?.applicationName ?? "Application"
+                return CaptureSource(
+                    id: String(window.windowID),
+                    kind: "window",
+                    name: "\(appName) — \(window.title ?? "Untitled")",
+                    width: Int(window.frame.width),
+                    height: Int(window.frame.height)
+                )
+            }
+        return displays + windows
+    }
+
+    static func shareableContent() async throws -> SCShareableContent {
+        try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    }
+
+    static func argument(named name: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
     }
 }
 

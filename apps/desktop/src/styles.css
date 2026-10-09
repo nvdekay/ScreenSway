@@ -23,9 +23,10 @@ h1 { margin: 12px 0 12px; max-width: 480px; font-size: clamp(38px, 5vw, 58px); l
 .record-card { padding: 16px; border: 1px solid #ffffff14; border-radius: 20px; background: #15151be6; box-shadow: 0 28px 80px #0008; }
 .source-row { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid #ffffff0d; background: #ffffff05; border-radius: 12px; color: #77727f; }
 .source-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: #222129; color: #b0aab9; }
-.source-row div { display: flex; flex-direction: column; gap: 3px; }
+.source-row label { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .source-label { font-size: 11px; color: #77727f; }
-.source-row strong { color: #eeecf2; font-size: 13px; font-weight: 550; }
+.source-row select { width: 100%; appearance: none; overflow: hidden; border: 0; outline: 0; color: #eeecf2; background: transparent; font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.source-row select:disabled { cursor: default; }
 .record-options { display: flex; justify-content: space-between; padding: 16px 4px 14px; color: #7f7a87; font-size: 11px; }
 .status-dot { width: 6px; height: 6px; display: inline-block; margin-right: 5px; background: #70d899; border-radius: 50%; box-shadow: 0 0 0 3px #70d89919; }
 .record-button { width: 100%; border: 0; border-radius: 12px; padding: 13px 18px; background: #f2f0f5; color: #19171e; font-size: 13px; font-weight: 650; cursor: pointer; box-shadow: 0 7px 24px #fff1 inset; }

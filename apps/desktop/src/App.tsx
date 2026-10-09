@@ -1,8 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { generateZoomSegments, type PointerEvent } from "@screensway/core";
 import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Settings2, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+interface CaptureSource {
+  id: string;
+  kind: "display" | "window";
+  name: string;
+  width: number;
+  height: number;
+}
 
 interface RecordingResult {
   projectPath: string;
@@ -21,6 +28,9 @@ const recentRecordings = [
 
 export default function App() {
   const [recording, setRecording] = useState(false);
+  const [sources, setSources] = useState<CaptureSource[]>([]);
+  const [selectedSourceKey, setSelectedSourceKey] = useState("");
+  const [loadingSources, setLoadingSources] = useState(true);
   const [result, setResult] = useState<RecordingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbackTimeMs, setPlaybackTimeMs] = useState(0);
@@ -34,14 +44,40 @@ export default function App() {
   const activePointer = result?.pointerEvents
     .filter((event) => event.timeMs <= playbackTimeMs)
     .at(-1);
+  const selectedSource = sources.find(
+    (source) => `${source.kind}:${source.id}` === selectedSourceKey,
+  );
+
+  useEffect(() => {
+    async function loadSources() {
+      try {
+        const availableSources = await invoke<CaptureSource[]>("list_capture_sources");
+        setSources(availableSources);
+        if (availableSources[0]) {
+          setSelectedSourceKey(`${availableSources[0].kind}:${availableSources[0].id}`);
+        }
+      } catch (sourceError) {
+        setError(String(sourceError));
+      } finally {
+        setLoadingSources(false);
+      }
+    }
+
+    void loadSources();
+  }, []);
 
   async function startRecording() {
+    if (!selectedSource) return;
     setRecording(true);
     setResult(null);
     setError(null);
 
     try {
-      const capture = await invoke<RecordingResult>("record_main_display", { durationSeconds: 10 });
+      const capture = await invoke<RecordingResult>("record_capture_source", {
+        durationSeconds: 10,
+        sourceKind: selectedSource.kind,
+        sourceId: selectedSource.id,
+      });
       setResult(capture);
     } catch (captureError) {
       setError(String(captureError));
@@ -70,17 +106,29 @@ export default function App() {
         <div className="record-card">
           <div className="source-row">
             <span className="source-icon"><Monitor size={20} /></span>
-            <div>
+            <label>
               <span className="source-label">Capture source</span>
-              <strong>Entire screen</strong>
-            </div>
+              <select
+                value={selectedSourceKey}
+                onChange={(event) => setSelectedSourceKey(event.target.value)}
+                disabled={recording || loadingSources}
+                aria-label="Capture source"
+              >
+                {loadingSources && <option>Loading sources…</option>}
+                {sources.map((source) => (
+                  <option key={`${source.kind}:${source.id}`} value={`${source.kind}:${source.id}`}>
+                    {source.kind === "display" ? "Screen" : "Window"} · {source.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <ChevronDown size={17} />
           </div>
           <div className="record-options">
-            <span><i className="status-dot" /> Microphone ready</span>
-            <span>1440 × 900</span>
+            <span><i className="status-dot" /> Pointer metadata ready</span>
+            <span>{selectedSource ? `${selectedSource.width} × ${selectedSource.height}` : "—"}</span>
           </div>
-          <button className="record-button" onClick={startRecording} disabled={recording}>
+          <button className="record-button" onClick={startRecording} disabled={recording || !selectedSource}>
             <span className="record-dot" /> {recording ? "Recording 10 seconds…" : "Start 10-second test"}
           </button>
           {result && (
