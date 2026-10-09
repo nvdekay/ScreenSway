@@ -32,7 +32,14 @@ pnpm dev:web
 pnpm dev:desktop
 ```
 
-The current macOS prototype records the main display for ten seconds, saves a local `.screensway` project under `~/Movies/ScreenSway`, and opens an automatic zoom preview. It requires macOS 15 or newer. On first use, macOS asks for Screen Recording permission.
+The current macOS prototype can select a display or application window, record until stopped, pause and resume without keeping the paused interval, and open a cursor-aware automatic zoom preview. Every recording is saved as a local `.screensway` project under `~/Movies/ScreenSway`.
+
+The capture helper currently requires macOS 15 or newer. On first use, macOS asks for Screen Recording permission. Build the helper before starting the desktop application:
+
+```bash
+pnpm build:capture:macos
+pnpm dev:desktop
+```
 
 Run all checks:
 
@@ -40,7 +47,10 @@ Run all checks:
 pnpm typecheck
 pnpm build:web
 pnpm test
+pnpm build:desktop
 ```
+
+Windows capture is part of the product plan but is not implemented yet. The landing page download links become active after the first tagged macOS and Windows release is published.
 
 ## Releases
 

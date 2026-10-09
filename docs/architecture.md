@@ -18,9 +18,10 @@ Platform capture -> project bundle -> zoom engine -> editor preview -> renderer
 My Recording.screensway/
   project.json
   media/screen.mp4
-  media/microphone.m4a
   metadata/pointer-events.json
 ```
+
+Future audio capture may add `media/microphone.m4a`; it is not produced by the current prototype.
 
 The pointer is stored as metadata instead of being permanently burned into the screen recording. This permits cursor smoothing, resizing, replacement, and click effects during editing.
 
@@ -30,7 +31,9 @@ The desktop application must not make network requests during recording, editing
 
 ## Current prototype boundary
 
-The macOS helper uses `SCRecordingOutput`, records the main display without burning the pointer into the video, and samples cursor position and mouse-button transitions independently. The Tauri UI receives those events, regenerates zoom segments through `@screensway/core`, draws the cursor, and previews camera transforms without modifying the original video.
+The macOS helper uses `SCRecordingOutput`, records a selected display or application window without burning the pointer into the video, and samples cursor position and mouse-button transitions independently. The Tauri shell controls the helper through a project-local control file, while the UI receives the finished events, regenerates zoom segments through `@screensway/core`, draws the cursor, and previews camera transforms without modifying the original video.
 
-The helper is currently a development-time binary. Production sidecar bundling, signing, notarization, source selection, audio capture, and graceful early-stop controls are later milestones.
+Pause closes the active MP4 segment and resume starts a new one. On stop, AVFoundation assembles the segments into `media/screen.mp4`; segment files are then deleted. Paused time is subtracted from pointer timestamps and project duration.
+
+The helper is currently a development-time binary. Production sidecar bundling, signing, notarization, Windows capture, and audio capture are later milestones.
 
