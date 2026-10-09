@@ -502,9 +502,9 @@ enum HudLayout {
 fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
 
-    let (width, height) = match layout {
-        HudLayout::Countdown => (220.0, 220.0),
-        HudLayout::Controls => (292.0, 60.0),
+    let (width, height, radius) = match layout {
+        HudLayout::Countdown => (220.0, 220.0, 44.0),
+        HudLayout::Controls => (292.0, 60.0, 30.0),
     };
 
     let hud = match app.get_webview_window(HUD_LABEL) {
@@ -523,6 +523,7 @@ fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
             .accept_first_mouse(true)
             // Keeps the controls out of this and any other screen recording.
             .content_protected(true)
+            .effects(liquid_glass(radius))
             .build()
             .map_err(|error| format!("Could not show the recording controls: {error}"))?,
     };
@@ -532,6 +533,7 @@ fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
         .and_then(|main| main.current_monitor().ok().flatten())
         .or_else(|| hud.primary_monitor().ok().flatten());
     let _ = hud.set_size(LogicalSize::new(width, height));
+    let _ = hud.set_effects(liquid_glass(radius));
     if let Some(monitor) = monitor {
         let scale = monitor.scale_factor();
         let origin = monitor.position().to_logical::<f64>(scale);
@@ -544,6 +546,20 @@ fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
     }
     let _ = hud.show();
     Ok(())
+}
+
+/// Native Liquid Glass (`NSGlassEffectView`) on macOS 26+, falling back to the HUD
+/// vibrancy material on macOS 15. A dark tint keeps white text legible over any wallpaper.
+#[cfg(target_os = "macos")]
+fn liquid_glass(radius: f64) -> tauri::utils::config::WindowEffectsConfig {
+    use tauri::window::{Color, Effect, EffectState, EffectsBuilder};
+
+    EffectsBuilder::new()
+        .effects([Effect::LiquidGlassRegular, Effect::HudWindow])
+        .state(EffectState::Active)
+        .radius(radius)
+        .color(Color(18, 16, 26, 150))
+        .build()
 }
 
 #[cfg(target_os = "macos")]

@@ -19,7 +19,16 @@
         "minHeight": 600,
         "center": true,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "theme": "Dark",
+        "windowEffects": {
+          "effects": ["liquidGlassRegular", "underWindowBackground"],
+          "state": "followsWindowActiveState",
+          "color": "#0e0d14b8"
+        }
       }
     ],
     "security": {

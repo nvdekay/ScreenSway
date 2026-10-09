@@ -122,7 +122,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="titlebar">
+      <header className="titlebar" data-tauri-drag-region>
         <a className="brand" href="#" aria-label="ScreenSway home">
           <span className="brand-mark"><MousePointer2 size={15} strokeWidth={2.5} /></span>
           <span>ScreenSway</span>
