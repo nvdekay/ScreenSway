@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_os = "macos")]
+use std::sync::{Arc, Mutex};
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CaptureSummary {
@@ -31,6 +34,25 @@ struct CaptureSource {
     height: u32,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordingStarted {
+    project_path: String,
+}
+
+#[cfg(target_os = "macos")]
+struct ActiveRecording {
+    child: std::process::Child,
+    control_path: std::path::PathBuf,
+    project_path: std::path::PathBuf,
+}
+
+#[derive(Default)]
+struct CaptureManager {
+    #[cfg(target_os = "macos")]
+    active: Arc<Mutex<Option<ActiveRecording>>>,
+}
+
 #[tauri::command]
 async fn list_capture_sources() -> Result<Vec<CaptureSource>, String> {
     #[cfg(target_os = "macos")]
@@ -47,38 +69,54 @@ async fn list_capture_sources() -> Result<Vec<CaptureSource>, String> {
 }
 
 #[tauri::command]
-async fn record_capture_source(
-    duration_seconds: u64,
+async fn start_recording(
+    state: tauri::State<'_, CaptureManager>,
     source_kind: String,
     source_id: String,
-) -> Result<CaptureSummary, String> {
-    if !(1..=300).contains(&duration_seconds) {
-        return Err("Recording duration must be between 1 and 300 seconds.".into());
-    }
+) -> Result<RecordingStarted, String> {
     if source_kind != "display" && source_kind != "window" {
         return Err("Capture source must be a display or window.".into());
     }
 
     #[cfg(target_os = "macos")]
     {
+        let active = state.active.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            record_capture_source_macos(duration_seconds, &source_kind, &source_id)
+            start_recording_macos(active, &source_kind, &source_id)
         })
         .await
-        .map_err(|error| format!("Capture task failed: {error}"))?
+        .map_err(|error| format!("Capture start task failed: {error}"))?
     }
 
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = state;
+        Err("The first ScreenSway capture prototype currently supports macOS only.".into())
+    }
+}
+
+#[tauri::command]
+async fn stop_recording(
+    state: tauri::State<'_, CaptureManager>,
+) -> Result<CaptureSummary, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let active = state.active.clone();
+        tauri::async_runtime::spawn_blocking(move || stop_recording_macos(active))
+            .await
+            .map_err(|error| format!("Capture stop task failed: {error}"))?
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
         Err("The first ScreenSway capture prototype currently supports macOS only.".into())
     }
 }
 
 #[cfg(target_os = "macos")]
 fn capture_binary() -> Result<std::path::PathBuf, String> {
-    use std::path::PathBuf;
-
-    let binary = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../native/macos-capture/.build/debug/screensway-capture");
     if !binary.exists() {
         return Err("The native capture helper is missing. Run `pnpm build:capture:macos` first.".into());
@@ -96,39 +134,106 @@ fn list_capture_sources_macos() -> Result<Vec<CaptureSource>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn record_capture_source_macos(
-    duration_seconds: u64,
+fn start_recording_macos(
+    active: Arc<Mutex<Option<ActiveRecording>>>,
     source_kind: &str,
     source_id: &str,
-) -> Result<CaptureSummary, String> {
-    use std::path::PathBuf;
-    use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
+) -> Result<RecordingStarted, String> {
+    use std::process::{Command, Stdio};
 
-    let home = std::env::var_os("HOME").ok_or("Could not locate the user home directory.")?;
-    let recordings_directory = PathBuf::from(home).join("Movies").join("ScreenSway");
-    std::fs::create_dir_all(&recordings_directory)
-        .map_err(|error| format!("Could not create the ScreenSway recordings directory: {error}"))?;
+    let mut guard = active
+        .lock()
+        .map_err(|_| "The capture state lock is unavailable.".to_string())?;
+    if guard.is_some() {
+        return Err("A recording is already in progress.".into());
+    }
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("System clock error: {error}"))?
-        .as_secs();
-    let project_path = recordings_directory.join(format!("Recording-{timestamp}.screensway"));
+    let project_path = create_project_path()?;
+    std::fs::create_dir_all(&project_path)
+        .map_err(|error| format!("Could not create the ScreenSway project directory: {error}"))?;
+    let control_path = project_path.join(".capture-control");
+    std::fs::write(&control_path, "recording")
+        .map_err(|error| format!("Could not initialize recording controls: {error}"))?;
 
-    let output = Command::new(capture_binary()?)
+    let mut child = Command::new(capture_binary()?)
         .arg("--output")
         .arg(&project_path)
-        .arg("--duration")
-        .arg(duration_seconds.to_string())
+        .arg("--control")
+        .arg(&control_path)
         .arg("--source-kind")
         .arg(source_kind)
         .arg("--source-id")
         .arg(source_id)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("Could not start the native capture helper: {error}"))?;
 
-    parse_helper_output(output, "Screen recording")
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    if child
+        .try_wait()
+        .map_err(|error| format!("Could not inspect the capture helper: {error}"))?
+        .is_some()
+    {
+        let output = child
+            .wait_with_output()
+            .map_err(|error| format!("Could not read the capture helper result: {error}"))?;
+        return parse_helper_output::<CaptureSummary>(output, "Screen recording").map(|summary| {
+            RecordingStarted {
+                project_path: summary.project_path,
+            }
+        });
+    }
+
+    let response = RecordingStarted {
+        project_path: project_path.to_string_lossy().into_owned(),
+    };
+    *guard = Some(ActiveRecording {
+        child,
+        control_path,
+        project_path,
+    });
+    Ok(response)
+}
+
+#[cfg(target_os = "macos")]
+fn stop_recording_macos(
+    active: Arc<Mutex<Option<ActiveRecording>>>,
+) -> Result<CaptureSummary, String> {
+    let recording = active
+        .lock()
+        .map_err(|_| "The capture state lock is unavailable.".to_string())?
+        .take()
+        .ok_or("There is no active recording to stop.")?;
+
+    std::fs::write(&recording.control_path, "stop")
+        .map_err(|error| format!("Could not send the stop command: {error}"))?;
+    let output = recording
+        .child
+        .wait_with_output()
+        .map_err(|error| format!("Could not finalize the recording: {error}"))?;
+
+    let _ = std::fs::remove_file(recording.control_path);
+    let summary: CaptureSummary = parse_helper_output(output, "Screen recording")?;
+    debug_assert_eq!(summary.project_path, recording.project_path.to_string_lossy());
+    Ok(summary)
+}
+
+#[cfg(target_os = "macos")]
+fn create_project_path() -> Result<std::path::PathBuf, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let home = std::env::var_os("HOME").ok_or("Could not locate the user home directory.")?;
+    let recordings_directory = std::path::PathBuf::from(home)
+        .join("Movies")
+        .join("ScreenSway");
+    std::fs::create_dir_all(&recordings_directory)
+        .map_err(|error| format!("Could not create the ScreenSway recordings directory: {error}"))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("System clock error: {error}"))?
+        .as_secs();
+    Ok(recordings_directory.join(format!("Recording-{timestamp}.screensway")))
 }
 
 #[cfg(target_os = "macos")]
@@ -152,11 +257,12 @@ fn parse_helper_output<T: serde::de::DeserializeOwned>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(CaptureManager::default())
         .invoke_handler(tauri::generate_handler![
             list_capture_sources,
-            record_capture_source
+            start_recording,
+            stop_recording
         ])
         .run(tauri::generate_context!())
         .expect("error while running ScreenSway");
 }
-

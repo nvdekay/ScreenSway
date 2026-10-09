@@ -29,13 +29,18 @@ h1 { margin: 12px 0 12px; max-width: 480px; font-size: clamp(38px, 5vw, 58px); l
 .source-row select:disabled { cursor: default; }
 .record-options { display: flex; justify-content: space-between; padding: 16px 4px 14px; color: #7f7a87; font-size: 11px; }
 .status-dot { width: 6px; height: 6px; display: inline-block; margin-right: 5px; background: #70d899; border-radius: 50%; box-shadow: 0 0 0 3px #70d89919; }
+.status-dot.recording { background: #ee6073; box-shadow: 0 0 0 3px #ee60731f; animation: recording-pulse 1s ease-in-out infinite; }
 .record-button { width: 100%; border: 0; border-radius: 12px; padding: 13px 18px; background: #f2f0f5; color: #19171e; font-size: 13px; font-weight: 650; cursor: pointer; box-shadow: 0 7px 24px #fff1 inset; }
+.record-button { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.record-button.stop { color: #fff1f3; background: #bd3d52; box-shadow: 0 7px 24px #ff90a11c inset; }
 .record-button:disabled { cursor: wait; opacity: .72; }
 .record-dot { width: 8px; height: 8px; display: inline-block; margin-right: 8px; border-radius: 50%; background: #df4b62; }
 .record-button:disabled .record-dot { animation: recording-pulse 1s ease-in-out infinite; }
 .capture-message { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 7px; align-items: start; margin-top: 12px; padding: 10px; border-radius: 10px; font-size: 10px; }
 .capture-message.success { color: #8ee2ad; background: #70d8990d; border: 1px solid #70d8991f; }
 .capture-message.error { color: #ff8fa1; background: #df4b620d; border: 1px solid #df4b6226; }
+.capture-message.active { color: #ff9dad; background: #df4b620d; border: 1px solid #df4b6226; }
+.live-indicator { width: 8px; height: 8px; margin: 3px 0 0 3px; border-radius: 50%; background: #ec5c72; animation: recording-pulse 1s ease-in-out infinite; }
 .capture-message span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .capture-message strong { font-size: 10px; }
 .capture-message small { overflow: hidden; color: #77727f; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }

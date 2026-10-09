@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { generateZoomSegments, type PointerEvent } from "@screensway/core";
-import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Settings2, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Settings2, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface CaptureSource {
@@ -21,6 +21,10 @@ interface RecordingResult {
   pointerEvents: PointerEvent[];
 }
 
+interface RecordingStarted {
+  projectPath: string;
+}
+
 const recentRecordings = [
   { title: "Product walkthrough", detail: "Draft · 2m 14s", color: "violet" },
   { title: "Welcome to ScreenSway", detail: "Draft · 38s", color: "blue" },
@@ -28,6 +32,9 @@ const recentRecordings = [
 
 export default function App() {
   const [recording, setRecording] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [sources, setSources] = useState<CaptureSource[]>([]);
   const [selectedSourceKey, setSelectedSourceKey] = useState("");
   const [loadingSources, setLoadingSources] = useState(true);
@@ -66,23 +73,46 @@ export default function App() {
     void loadSources();
   }, []);
 
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1_000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
   async function startRecording() {
     if (!selectedSource) return;
-    setRecording(true);
+    setBusy(true);
     setResult(null);
     setError(null);
+    setElapsedSeconds(0);
 
     try {
-      const capture = await invoke<RecordingResult>("record_capture_source", {
-        durationSeconds: 10,
+      const started = await invoke<RecordingStarted>("start_recording", {
         sourceKind: selectedSource.kind,
         sourceId: selectedSource.id,
       });
-      setResult(capture);
+      setActiveProjectPath(started.projectPath);
+      setRecording(true);
     } catch (captureError) {
       setError(String(captureError));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopRecording() {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const capture = await invoke<RecordingResult>("stop_recording");
+      setResult(capture);
       setRecording(false);
+      setActiveProjectPath(null);
+    } catch (captureError) {
+      setError(String(captureError));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -111,7 +141,7 @@ export default function App() {
               <select
                 value={selectedSourceKey}
                 onChange={(event) => setSelectedSourceKey(event.target.value)}
-                disabled={recording || loadingSources}
+                disabled={recording || busy || loadingSources}
                 aria-label="Capture source"
               >
                 {loadingSources && <option>Loading sources…</option>}
@@ -125,12 +155,23 @@ export default function App() {
             <ChevronDown size={17} />
           </div>
           <div className="record-options">
-            <span><i className="status-dot" /> Pointer metadata ready</span>
+            <span><i className={`status-dot${recording ? " recording" : ""}`} /> {recording ? `Recording · ${elapsedSeconds}s` : "Pointer metadata ready"}</span>
             <span>{selectedSource ? `${selectedSource.width} × ${selectedSource.height}` : "—"}</span>
           </div>
-          <button className="record-button" onClick={startRecording} disabled={recording || !selectedSource}>
-            <span className="record-dot" /> {recording ? "Recording 10 seconds…" : "Start 10-second test"}
+          <button
+            className={`record-button${recording ? " stop" : ""}`}
+            onClick={recording ? stopRecording : startRecording}
+            disabled={busy || (!recording && !selectedSource)}
+          >
+            {recording ? <Square size={9} fill="currentColor" /> : <span className="record-dot" />}
+            {busy ? (recording ? "Finalizing…" : "Starting…") : recording ? "Stop recording" : "Start recording"}
           </button>
+          {recording && activeProjectPath && (
+            <div className="capture-message active">
+              <span className="live-indicator" />
+              <span><strong>Recording in progress</strong><small>{activeProjectPath}</small></span>
+            </div>
+          )}
           {result && (
             <div className="capture-message success">
               <CheckCircle2 size={15} />

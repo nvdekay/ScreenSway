@@ -205,7 +205,9 @@ struct ScreenSwayCapture {
 
         let duration = arguments.firstIndex(of: "--duration")
             .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
-            .flatMap { $0 } ?? 10
+            .flatMap { $0 } ?? 14_400
+        let controlURL = argument(named: "--control", in: arguments)
+            .map { URL(fileURLWithPath: $0) }
 
         let projectURL = URL(fileURLWithPath: arguments[outputIndex + 1], isDirectory: true)
         let mediaURL = projectURL.appending(path: "media", directoryHint: .isDirectory)
@@ -273,7 +275,15 @@ struct ScreenSwayCapture {
         let startedAt = Date()
 
         try await stream.startCapture()
-        try await Task.sleep(for: .seconds(duration))
+        while Date().timeIntervalSince(startedAt) < duration {
+            if let controlURL,
+               let command = try? String(contentsOf: controlURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               command == "stop" {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         try await stream.stopCapture()
         pointerRecorder.stop()
         await pointerTask.value
