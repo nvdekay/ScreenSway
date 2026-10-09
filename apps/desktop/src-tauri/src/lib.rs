@@ -214,6 +214,11 @@ async fn set_recording_paused(app: tauri::AppHandle, paused: bool) -> Result<(),
     }
 }
 
+/// ScreenCaptureKit can hang when two processes query shareable content at once,
+/// so helper launches that do so are serialized.
+#[cfg(target_os = "macos")]
+static HELPER_QUERY_LOCK: Mutex<()> = Mutex::new(());
+
 #[cfg(target_os = "macos")]
 fn capture_binary() -> Result<std::path::PathBuf, String> {
     let bundled_binary = std::env::current_exe()
@@ -234,6 +239,7 @@ fn capture_binary() -> Result<std::path::PathBuf, String> {
 
 #[cfg(target_os = "macos")]
 fn list_capture_sources_macos() -> Result<Vec<CaptureSource>, String> {
+    let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let output = std::process::Command::new(capture_binary()?)
         .arg("--list-sources")
         .output()
@@ -293,6 +299,7 @@ fn start_recording_macos(
     std::fs::write(&control_path, "recording")
         .map_err(|error| format!("Could not initialize recording controls: {error}"))?;
 
+    let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut child = Command::new(capture_binary()?)
         .arg("--output")
         .arg(&project_path)
