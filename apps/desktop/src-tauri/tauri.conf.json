@@ -23,7 +23,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/Movies/ScreenSway/**"]
+      }
     }
   },
   "bundle": {
@@ -33,7 +37,8 @@
     "shortDescription": "Beautiful screen recordings that follow the action.",
     "longDescription": "ScreenSway is a private, local-first screen recorder with automatic cursor-aware zooms and pans.",
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "15.0",
+      "infoPlist": "Info.plist"
     },
     "windows": {
       "nsis": {

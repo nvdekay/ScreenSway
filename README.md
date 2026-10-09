@@ -2,6 +2,8 @@
 
 ScreenSway is a local-first screen recorder that automatically follows the action with smooth cursor-aware zooms and pans.
 
+Landing page: https://nvdekay.github.io/ScreenSway/
+
 The application is free to use, has no watermark, and keeps recordings on the user's device. ScreenSway is proprietary software and is not open source.
 
 ## Repository
@@ -10,6 +12,7 @@ The application is free to use, has no watermark, and keeps recordings on the us
 apps/desktop       Tauri 2 + React desktop application
 apps/web           Public marketing and download website
 packages/core      Shared project model and zoom engine
+native/macos-capture  ScreenCaptureKit recording helper
 docs               Product and architecture documentation
 ```
 
@@ -28,6 +31,8 @@ pnpm install
 pnpm dev:web
 pnpm dev:desktop
 ```
+
+The current macOS prototype records the main display for ten seconds, saves a local `.screensway` project under `~/Movies/ScreenSway`, and opens an automatic zoom preview. It requires macOS 15 or newer. On first use, macOS asks for Screen Recording permission.
 
 Run all checks:
 

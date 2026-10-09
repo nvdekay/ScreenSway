@@ -5,7 +5,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node ../../scripts/build-native.mjs && vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"

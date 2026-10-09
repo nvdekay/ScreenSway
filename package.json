@@ -9,6 +9,7 @@
     "dev:desktop": "pnpm --filter @screensway/desktop tauri dev",
     "dev:web": "pnpm --filter @screensway/web dev",
     "build": "pnpm -r build",
+    "build:capture:macos": "swift build --package-path native/macos-capture",
     "build:desktop": "pnpm --filter @screensway/desktop tauri build",
     "build:web": "pnpm --filter @screensway/web build",
     "typecheck": "pnpm -r typecheck",

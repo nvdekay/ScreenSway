@@ -20,5 +20,5 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 4. Open the recording in a preview.
 5. Generate editable zoom segments from click activity.
 
-Webcam, captions, cloud sharing, and advanced audio processing are outside the first vertical slice.
+The first macOS vertical slice now records the main display, writes local project metadata, and previews generated zooms. Source selection, early stopping, audio, webcam, captions, cloud sharing, and advanced audio processing remain outside this slice.
 
