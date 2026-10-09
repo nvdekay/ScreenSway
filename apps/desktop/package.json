@@ -11,6 +11,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@screensway/core": "workspace:*",
     "@tauri-apps/api": "^2.8.0",
     "lucide-react": "^0.468.0",
@@ -26,4 +27,3 @@
     "vite": "^7.1.5"
   }
 }
-

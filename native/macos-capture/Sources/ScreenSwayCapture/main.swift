@@ -2,7 +2,9 @@ import AVFoundation
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 struct CaptureSource: Codable {
     let id: String
@@ -404,6 +406,8 @@ struct ScreenSwayCapture {
         guard FileManager.default.fileExists(atPath: videoURL.path) else {
             throw CaptureError.outputMissing
         }
+        // The library shows this instead of decoding the full video for every card.
+        await writeThumbnail(of: videoURL, to: mediaURL.appending(path: "thumbnail.jpg"))
 
         let elapsedMs = pointerRecorder.durationMilliseconds()
         let pointerEvents = pointerRecorder.snapshot()
@@ -488,6 +492,21 @@ struct ScreenSwayCapture {
             throw CaptureError.exportFailed("Could not initialize the video exporter.")
         }
         try await exporter.export(to: destinationURL, as: .mp4)
+    }
+
+    static func writeThumbnail(of videoURL: URL, to thumbnailURL: URL) async {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: videoURL))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 960, height: 600)
+        generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 2)
+        guard let image = try? await generator.image(at: CMTime(value: 1, timescale: 2)).image,
+              let destination = CGImageDestinationCreateWithURL(
+                  thumbnailURL as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+              ) else { return }
+        CGImageDestinationAddImage(
+            destination, image, [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary
+        )
+        CGImageDestinationFinalize(destination)
     }
 
     static func listSources() async throws -> [CaptureSource] {
