@@ -26,6 +26,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test && pnpm typecheck
       - run: pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles dmg
+      - name: Verify bundled macOS capture sidecar
+        run: |
+          APP_PATH="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ScreenSway.app"
+          test -x "$APP_PATH/Contents/MacOS/screensway-capture"
+          lipo -archs "$APP_PATH/Contents/MacOS/screensway-capture" | grep -q arm64
+          lipo -archs "$APP_PATH/Contents/MacOS/screensway-capture" | grep -q x86_64
       - name: Prepare macOS download
         run: cp apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg ScreenSway-macos-universal.dmg
       - uses: actions/upload-artifact@v4

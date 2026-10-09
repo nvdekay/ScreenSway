@@ -35,5 +35,5 @@ The macOS helper uses `SCRecordingOutput`, records a selected display or applica
 
 Pause closes the active MP4 segment and resume starts a new one. On stop, AVFoundation assembles the segments into `media/screen.mp4`; segment files are then deleted. Paused time is subtracted from pointer timestamps and project duration.
 
-The helper is currently a development-time binary. Production sidecar bundling, signing, notarization, Windows capture, and audio capture are later milestones.
+The macOS helper is bundled beside the Tauri executable as a universal sidecar. The build script produces architecture-specific binaries for Cargo and a universal `arm64`/`x86_64` binary for the final application bundle. Apple Developer signing, notarization, Windows capture, and audio capture remain later milestones.
 

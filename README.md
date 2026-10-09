@@ -47,8 +47,11 @@ Run all checks:
 pnpm typecheck
 pnpm build:web
 pnpm test
+pnpm test:capture:macos
 pnpm build:desktop
 ```
+
+`test:capture:macos` performs real display and window recordings, exercises pause/resume and stop, and validates the MP4, manifest, and pointer metadata. It requires Screen Recording permission and `ffprobe` from FFmpeg.
 
 Windows capture is part of the product plan but is not implemented yet. The landing page download links become active after the first tagged macOS and Windows release is published.
 
