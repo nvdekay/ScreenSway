@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Pause, Play, Settings2, Sparkles, Square } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Check, CheckCircle2, ChevronDown, Languages, Monitor, MousePointer2, Pause, Play, Settings2, Sparkles, Square } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
+import { LANGUAGES, useI18n, type MessageKey } from "./i18n";
 import { useRecordingState } from "./recordingState";
 import { ZoomPreview, type RecordingResult } from "./ZoomPreview";
 
@@ -17,12 +18,66 @@ interface CaptureSource {
 
 const CANCELLED_MESSAGE = "Recording cancelled.";
 
-const recentRecordings = [
-  { title: "Product walkthrough", detail: "Draft · 2m 14s", color: "violet" },
-  { title: "Welcome to ScreenSway", detail: "Draft · 38s", color: "blue" },
+const recentRecordings: { titleKey: MessageKey; durationMs: number; color: string }[] = [
+  { titleKey: "recent.sampleWalkthrough", durationMs: 134_000, color: "violet" },
+  { titleKey: "recent.sampleWelcome", durationMs: 38_000, color: "blue" },
 ];
 
+function SettingsMenu() {
+  const { language, setLanguage, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  return (
+    <div className="settings" ref={menuRef}>
+      <button
+        className={`icon-button${open ? " active" : ""}`}
+        aria-label={t("settings.open")}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Settings2 size={18} />
+      </button>
+      {open && (
+        <div className="settings-popover" role="dialog" aria-label={t("settings.title")}>
+          <span className="settings-label"><Languages size={13} /> {t("settings.language")}</span>
+          <div className="language-options" role="radiogroup" aria-label={t("settings.language")}>
+            {LANGUAGES.map((option) => (
+              <button
+                key={option.code}
+                role="radio"
+                aria-checked={language === option.code}
+                className={`language-option${language === option.code ? " selected" : ""}`}
+                onClick={() => setLanguage(option.code)}
+              >
+                <span>{option.label}</span>
+                {language === option.code && <Check size={14} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
+  const { t } = useI18n();
   const recorder = useRecordingState();
   const [busy, setBusy] = useState(false);
   const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -112,46 +167,52 @@ export default function App() {
     }
   }
 
+  const elapsed = formatDuration(recorder.elapsedMs);
   const statusLabel = {
-    idle: "Ready to record",
-    countdown: `Starting in ${recorder.countdown ?? ""}…`,
-    recording: `Recording · ${formatDuration(recorder.elapsedMs)}`,
-    paused: `Paused · ${formatDuration(recorder.elapsedMs)}`,
-    finishing: "Saving recording…",
+    idle: t("status.idle"),
+    countdown: t("status.countdown", { n: recorder.countdown ?? "" }),
+    recording: t("status.recording", { time: elapsed }),
+    paused: t("status.paused", { time: elapsed }),
+    finishing: t("status.finishing"),
   }[recorder.status];
+  const displayIds = sources.filter((source) => source.kind === "display").map((source) => source.id);
+  const sourceLabel = (source: CaptureSource) =>
+    source.kind === "display"
+      ? t("source.display", { n: displayIds.indexOf(source.id) + 1 })
+      : `${t("source.window")} · ${source.name}`;
 
   return (
     <main className="app-shell">
       <header className="titlebar" data-tauri-drag-region>
-        <a className="brand" href="#" aria-label="ScreenSway home">
+        <a className="brand" href="#" aria-label={t("app.home")}>
           <span className="brand-mark"><MousePointer2 size={15} strokeWidth={2.5} /></span>
           <span>ScreenSway</span>
         </a>
-        <button className="icon-button" aria-label="Open settings"><Settings2 size={18} /></button>
+        <SettingsMenu />
       </header>
 
       <section className="welcome">
         <div>
-          <span className="eyebrow">Local workspace</span>
-          <h1>What will you show today?</h1>
-          <p>Record your screen. ScreenSway handles the camera work.</p>
+          <span className="eyebrow">{t("welcome.eyebrow")}</span>
+          <h1>{t("welcome.title")}</h1>
+          <p>{t("welcome.subtitle")}</p>
         </div>
 
         <div className="record-card">
           <div className="source-row">
             <span className="source-icon"><Monitor size={20} /></span>
             <label>
-              <span className="source-label">Capture source</span>
+              <span className="source-label">{t("source.label")}</span>
               <select
                 value={selectedSourceKey}
                 onChange={(event) => setSelectedSourceKey(event.target.value)}
                 disabled={recording || busy || loadingSources}
-                aria-label="Capture source"
+                aria-label={t("source.label")}
               >
-                {loadingSources && <option>Loading sources…</option>}
+                {loadingSources && <option>{t("source.loading")}</option>}
                 {sources.map((source) => (
                   <option key={`${source.kind}:${source.id}`} value={`${source.kind}:${source.id}`}>
-                    {source.kind === "display" ? "Screen" : "Window"} · {source.name}
+                    {sourceLabel(source)}
                   </option>
                 ))}
               </select>
@@ -166,7 +227,7 @@ export default function App() {
             {(recorder.status === "recording" || recorder.status === "paused") && (
               <button className="pause-button" onClick={togglePause}>
                 {paused ? <Play size={13} fill="currentColor" /> : <Pause size={13} fill="currentColor" />}
-                {paused ? "Resume" : "Pause"}
+                {paused ? t("action.resume") : t("action.pause")}
               </button>
             )}
             <button
@@ -179,22 +240,22 @@ export default function App() {
               }
             >
               {recording ? <Square size={9} fill="currentColor" /> : <span className="record-dot" />}
-              {recording ? (recorder.status === "finishing" ? "Saving…" : "Stop recording") : "Start recording"}
+              {recording ? (recorder.status === "finishing" ? t("action.saving") : t("action.stop")) : t("action.start")}
             </button>
           </div>
           {!recording && !result && !error && (
-            <p className="record-hint">A 3-second countdown runs first. ScreenSway hides itself and stays out of the video.</p>
+            <p className="record-hint">{t("record.hint")}</p>
           )}
           {result && (
             <div className="capture-message success">
               <CheckCircle2 size={15} />
-              <span><strong>Recording saved</strong><small>{result.projectPath}</small></span>
+              <span><strong>{t("record.saved")}</strong><small>{result.projectPath}</small></span>
             </div>
           )}
           {error && (
             <div className="capture-message error">
               <AlertCircle size={15} />
-              <span><strong>Recording failed</strong><small>{error}</small></span>
+              <span><strong>{t("record.failed")}</strong><small>{error}</small></span>
             </div>
           )}
         </div>
@@ -204,19 +265,24 @@ export default function App() {
         {result && (
           <div className="preview-card">
             <div className="section-heading">
-              <h2>Auto-zoom preview</h2>
-              <span>{zoomCount} zoom{zoomCount === 1 ? "" : "s"} generated from clicks · {formatDuration(result.durationMs)}</span>
+              <h2>{t("preview.title")}</h2>
+              <span>
+                {t(zoomCount === 1 ? "preview.zoomsOne" : "preview.zooms", {
+                  count: zoomCount,
+                  time: formatDuration(result.durationMs),
+                })}
+              </span>
             </div>
             <ZoomPreview recording={result} key={result.videoPath} />
           </div>
         )}
         <div className="section-heading">
-          <h2>Recent recordings</h2>
-          <span>Stored on this Mac</span>
+          <h2>{t("recent.title")}</h2>
+          <span>{t("recent.stored")}</span>
         </div>
         <div className="recording-grid">
           {recentRecordings.map((recording) => (
-            <article className="recording" key={recording.title}>
+            <article className="recording" key={recording.titleKey}>
               <div className={`thumbnail ${recording.color}`}>
                 <div className="mock-window">
                   <span /><span /><span />
@@ -225,15 +291,18 @@ export default function App() {
                 <span className="focus-ring"><MousePointer2 size={13} fill="white" /></span>
               </div>
               <div className="recording-meta">
-                <div><strong>{recording.title}</strong><span>{recording.detail}</span></div>
-                <button aria-label={`Options for ${recording.title}`}>•••</button>
+                <div>
+                  <strong>{t(recording.titleKey)}</strong>
+                  <span>{t("recent.draft", { time: formatDuration(recording.durationMs) })}</span>
+                </div>
+                <button aria-label={t("recent.options", { title: t(recording.titleKey) })}>•••</button>
               </div>
             </article>
           ))}
           <article className="recording empty-state">
             <Sparkles size={21} />
-            <strong>Your next idea</strong>
-            <span>Press record when you are ready</span>
+            <strong>{t("recent.emptyTitle")}</strong>
+            <span>{t("recent.emptyHint")}</span>
           </article>
         </div>
       </section>

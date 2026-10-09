@@ -9,6 +9,7 @@ import {
 import { Pause, Play, RotateCcw, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
+import { useI18n } from "./i18n";
 
 export interface RecordingResult {
   projectPath: string;
@@ -24,6 +25,7 @@ const CLICK_RIPPLE_MS = 550;
 const FULL_FRAME = { x: 0.5, y: 0.5, scale: 1 };
 
 export function ZoomPreview({ recording }: { recording: RecordingResult }) {
+  const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
@@ -165,7 +167,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
       </div>
 
       <div className="player-controls">
-        <button className="player-button" onClick={togglePlayback} aria-label={playing ? "Pause" : "Play"}>
+        <button className="player-button" onClick={togglePlayback} aria-label={playing ? t("player.pause") : t("player.play")}>
           {playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
         </button>
         <button
@@ -174,7 +176,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
             seek("0");
             void videoRef.current?.play();
           }}
-          aria-label="Replay from start"
+          aria-label={t("player.replay")}
         >
           <RotateCcw size={14} />
         </button>
@@ -199,7 +201,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
             max={durationMs}
             step={1}
             defaultValue={0}
-            aria-label="Seek"
+            aria-label={t("player.seek")}
             onPointerDown={() => (scrubbingRef.current = true)}
             onPointerUp={() => (scrubbingRef.current = false)}
             onInput={(event) => seek(event.currentTarget.value)}
@@ -211,7 +213,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
           onClick={() => setAutoZoom((value) => !value)}
           aria-pressed={autoZoom}
         >
-          <ZoomIn size={14} /> Auto zoom
+          <ZoomIn size={14} /> {t("player.autoZoom")}
         </button>
       </div>
     </div>

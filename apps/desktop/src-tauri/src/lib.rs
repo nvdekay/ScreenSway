@@ -617,12 +617,49 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         })
         .build(app)?;
     tray.set_visible(false)?;
-    app.manage(TrayPauseItem(pause));
+    app.manage(TrayMenu { pause, stop, show, labels: Mutex::default() });
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-struct TrayPauseItem(tauri::menu::MenuItem<tauri::Wry>);
+struct TrayMenu {
+    pause: tauri::menu::MenuItem<tauri::Wry>,
+    stop: tauri::menu::MenuItem<tauri::Wry>,
+    show: tauri::menu::MenuItem<tauri::Wry>,
+    /// Localized menu labels supplied by the UI, keyed by `stop`, `pause`, `resume`, `show`, `tooltip`.
+    labels: Mutex<std::collections::HashMap<String, String>>,
+}
+
+#[cfg(target_os = "macos")]
+impl TrayMenu {
+    fn label(&self, key: &str, fallback: &str) -> String {
+        self.labels
+            .lock()
+            .ok()
+            .and_then(|labels| labels.get(key).cloned())
+            .unwrap_or_else(|| fallback.to_owned())
+    }
+}
+
+/// Native menu bar items cannot read the web UI's language, so the UI pushes its labels here.
+#[tauri::command]
+fn set_native_labels(app: tauri::AppHandle, labels: std::collections::HashMap<String, String>) {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(menu) = app.try_state::<TrayMenu>() else { return };
+        if let Ok(mut current) = menu.labels.lock() {
+            *current = labels;
+        }
+        let _ = menu.stop.set_text(menu.label("stop", "Stop Recording"));
+        let _ = menu.show.set_text(menu.label("show", "Show ScreenSway"));
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            let _ = tray.set_tooltip(Some(menu.label("tooltip", "ScreenSway is recording")));
+        }
+        update_tray(&app);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, labels);
+}
 
 /// Shows a live timer in the menu bar while recording, so the state is visible from any app.
 #[cfg(target_os = "macos")]
@@ -643,8 +680,13 @@ fn update_tray(app: &tauri::AppHandle) {
     let marker = if state.status == "paused" { "❚❚" } else { "●" };
     let _ = tray.set_title(Some(format!(" {marker} {}:{:02}", seconds / 60, seconds % 60)));
     let _ = tray.set_visible(true);
-    if let Some(item) = app.try_state::<TrayPauseItem>() {
-        let _ = item.0.set_text(if state.status == "paused" { "Resume" } else { "Pause" });
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let label = if state.status == "paused" {
+            menu.label("resume", "Resume")
+        } else {
+            menu.label("pause", "Pause")
+        };
+        let _ = menu.pause.set_text(label);
     }
 }
 
@@ -703,7 +745,8 @@ pub fn run() {
             start_recording,
             cancel_countdown,
             set_recording_paused,
-            stop_recording
+            stop_recording,
+            set_native_labels
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")
