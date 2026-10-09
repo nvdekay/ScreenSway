@@ -694,10 +694,7 @@ fn update_tray(app: &tauri::AppHandle) {
 fn create_project_path() -> Result<std::path::PathBuf, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let home = std::env::var_os("HOME").ok_or("Could not locate the user home directory.")?;
-    let recordings_directory = std::path::PathBuf::from(home)
-        .join("Movies")
-        .join("ScreenSway");
+    let recordings_directory = recordings_directory()?;
     std::fs::create_dir_all(&recordings_directory)
         .map_err(|error| format!("Could not create the ScreenSway recordings directory: {error}"))?;
     let timestamp = SystemTime::now()
@@ -705,6 +702,138 @@ fn create_project_path() -> Result<std::path::PathBuf, String> {
         .map_err(|error| format!("System clock error: {error}"))?
         .as_secs();
     Ok(recordings_directory.join(format!("Recording-{timestamp}.screensway")))
+}
+
+fn recordings_directory() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var_os("HOME").ok_or("Could not locate the user home directory.")?;
+    Ok(std::path::PathBuf::from(home).join("Movies").join("ScreenSway"))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectManifest {
+    title: String,
+    created_at: String,
+    duration_ms: u64,
+    canvas: ProjectCanvas,
+    media: ProjectMedia,
+    pointer_events: String,
+}
+
+#[derive(Deserialize)]
+struct ProjectCanvas {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Deserialize)]
+struct ProjectMedia {
+    screen: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordingEntry {
+    project_path: String,
+    video_path: String,
+    thumbnail_path: Option<String>,
+    title: String,
+    created_at: String,
+    duration_ms: u64,
+    width: u32,
+    height: u32,
+}
+
+/// Resolves a project path and refuses anything outside the recordings directory.
+fn resolve_project(project_path: &str) -> Result<std::path::PathBuf, String> {
+    let root = recordings_directory()?
+        .canonicalize()
+        .map_err(|_| "The recordings folder does not exist yet.".to_string())?;
+    let project = std::path::Path::new(project_path)
+        .canonicalize()
+        .map_err(|_| "This recording no longer exists.".to_string())?;
+    if project.parent() != Some(root.as_path()) {
+        return Err("This recording is outside the ScreenSway library.".into());
+    }
+    Ok(project)
+}
+
+fn read_manifest(project: &std::path::Path) -> Result<ProjectManifest, String> {
+    let data = std::fs::read(project.join("project.json"))
+        .map_err(|error| format!("Could not read the project file: {error}"))?;
+    serde_json::from_slice(&data).map_err(|error| format!("The project file is damaged: {error}"))
+}
+
+#[tauri::command]
+async fn list_recordings() -> Result<Vec<RecordingEntry>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let root = recordings_directory()?;
+        let Ok(entries) = std::fs::read_dir(&root) else { return Ok(Vec::new()) };
+        let mut recordings: Vec<RecordingEntry> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "screensway"))
+            .filter_map(|project| {
+                let manifest = read_manifest(&project).ok()?;
+                let video = project.join(&manifest.media.screen);
+                let thumbnail = project.join("media").join("thumbnail.jpg");
+                video.is_file().then(|| RecordingEntry {
+                    project_path: project.to_string_lossy().into_owned(),
+                    video_path: video.to_string_lossy().into_owned(),
+                    thumbnail_path: thumbnail
+                        .is_file()
+                        .then(|| thumbnail.to_string_lossy().into_owned()),
+                    title: manifest.title,
+                    created_at: manifest.created_at,
+                    duration_ms: manifest.duration_ms,
+                    width: manifest.canvas.width,
+                    height: manifest.canvas.height,
+                })
+            })
+            .collect();
+        recordings.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(recordings)
+    })
+    .await
+    .map_err(|error| format!("Library task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn load_recording(project_path: String) -> Result<CaptureSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = resolve_project(&project_path)?;
+        let manifest = read_manifest(&project)?;
+        let pointer_events_path = project.join(&manifest.pointer_events);
+        let pointer_events = std::fs::read(&pointer_events_path)
+            .ok()
+            .and_then(|data| serde_json::from_slice(&data).ok())
+            .unwrap_or_default();
+        Ok(CaptureSummary {
+            project_path: project.to_string_lossy().into_owned(),
+            video_path: project.join(&manifest.media.screen).to_string_lossy().into_owned(),
+            pointer_events_path: pointer_events_path.to_string_lossy().into_owned(),
+            duration_ms: manifest.duration_ms,
+            width: manifest.canvas.width,
+            height: manifest.canvas.height,
+            pointer_events,
+        })
+    })
+    .await
+    .map_err(|error| format!("Library task failed: {error}"))?
+}
+
+#[tauri::command]
+fn reveal_recording(project_path: String) -> Result<(), String> {
+    let project = resolve_project(&project_path)?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(project)
+        .spawn()
+        .map_err(|error| format!("Could not open Finder: {error}"))?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = project;
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -746,7 +875,10 @@ pub fn run() {
             cancel_countdown,
             set_recording_paused,
             stop_recording,
-            set_native_labels
+            set_native_labels,
+            list_recordings,
+            load_recording,
+            reveal_recording
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")
