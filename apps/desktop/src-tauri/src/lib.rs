@@ -137,12 +137,20 @@ async fn set_recording_paused(
 
 #[cfg(target_os = "macos")]
 fn capture_binary() -> Result<std::path::PathBuf, String> {
-    let binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../native/macos-capture/.build/debug/screensway-capture");
-    if !binary.exists() {
-        return Err("The native capture helper is missing. Run `pnpm build:capture:macos` first.".into());
+    let bundled_binary = std::env::current_exe()
+        .map_err(|error| format!("Could not locate the ScreenSway executable: {error}"))?
+        .with_file_name("screensway-capture");
+    if bundled_binary.is_file() {
+        return Ok(bundled_binary);
     }
-    Ok(binary)
+
+    let development_binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../native/macos-capture/.build/debug/screensway-capture");
+    if development_binary.is_file() {
+        return Ok(development_binary);
+    }
+
+    Err("The macOS capture sidecar is missing. Rebuild ScreenSway with `pnpm build:capture:macos`.".into())
 }
 
 #[cfg(target_os = "macos")]
