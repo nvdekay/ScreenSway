@@ -1,0 +1,71 @@
+name: Release desktop apps
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test && pnpm typecheck
+      - run: pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles dmg
+      - name: Prepare macOS download
+        run: cp apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg ScreenSway-macos-universal.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screensway-macos
+          path: ScreenSway-macos-universal.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test && pnpm typecheck
+      - run: pnpm --filter @screensway/desktop tauri build --bundles nsis
+      - name: Prepare Windows download
+        shell: pwsh
+        run: Copy-Item (Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1) "ScreenSway-windows-x64.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screensway-windows
+          path: ScreenSway-windows-x64.exe
+
+  publish:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: screensway-*
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" ScreenSway-macos-universal.dmg ScreenSway-windows-x64.exe --repo "$GITHUB_REPOSITORY" --generate-notes --title "ScreenSway $GITHUB_REF_NAME"
+
