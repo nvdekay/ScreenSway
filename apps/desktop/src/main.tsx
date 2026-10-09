@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { I18nProvider } from "./i18n";
 import { RecordingHud } from "./RecordingHud";
 import "./styles.css";
 
@@ -11,6 +12,6 @@ if ("__TAURI_INTERNALS__" in window) document.documentElement.classList.add("gla
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {isHud ? <RecordingHud /> : <App />}
+    <I18nProvider>{isHud ? <RecordingHud /> : <App />}</I18nProvider>
   </StrictMode>,
 );
