@@ -120,7 +120,9 @@ if (windowSource) {
     { afterMs: 1_500, value: "stop" },
   ]);
   assert(windowCapture.result.durationMs >= 1_000 && windowCapture.result.durationMs <= 2_000);
-  assert(Math.abs(windowCapture.videoDurationMs - windowCapture.result.durationMs) <= 400);
+  // ScreenCaptureKit may emit only a single frame for a completely static window.
+  assert(windowCapture.videoDurationMs > 0);
+  assert(windowCapture.videoDurationMs <= windowCapture.result.durationMs + 400);
 } else {
   console.log("Window capture test skipped because no eligible window is open.");
 }

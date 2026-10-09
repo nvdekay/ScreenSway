@@ -1,7 +1,11 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { generateZoomSegments, type PointerEvent } from "@screensway/core";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { generateZoomSegments } from "@screensway/core";
 import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Pause, Play, Settings2, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { formatDuration } from "./format";
+import { useRecordingState } from "./recordingState";
+import { ZoomPreview, type RecordingResult } from "./ZoomPreview";
 
 interface CaptureSource {
   id: string;
@@ -11,19 +15,7 @@ interface CaptureSource {
   height: number;
 }
 
-interface RecordingResult {
-  projectPath: string;
-  videoPath: string;
-  pointerEventsPath: string;
-  durationMs: number;
-  width: number;
-  height: number;
-  pointerEvents: PointerEvent[];
-}
-
-interface RecordingStarted {
-  projectPath: string;
-}
+const CANCELLED_MESSAGE = "Recording cancelled.";
 
 const recentRecordings = [
   { title: "Product walkthrough", detail: "Draft · 2m 14s", color: "violet" },
@@ -31,27 +23,19 @@ const recentRecordings = [
 ];
 
 export default function App() {
-  const [recording, setRecording] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const recorder = useRecordingState();
   const [busy, setBusy] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [sources, setSources] = useState<CaptureSource[]>([]);
   const [selectedSourceKey, setSelectedSourceKey] = useState("");
   const [loadingSources, setLoadingSources] = useState(true);
   const [result, setResult] = useState<RecordingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [playbackTimeMs, setPlaybackTimeMs] = useState(0);
-  const zoomSegments = useMemo(
-    () => generateZoomSegments(result?.pointerEvents ?? []),
+  const recording = recorder.status !== "idle";
+  const paused = recorder.status === "paused";
+  const zoomCount = useMemo(
+    () => generateZoomSegments(result?.pointerEvents ?? []).length,
     [result],
   );
-  const activeZoom = zoomSegments.find(
-    (zoom) => playbackTimeMs >= zoom.startMs && playbackTimeMs <= zoom.endMs,
-  );
-  const activePointer = result?.pointerEvents
-    .filter((event) => event.timeMs <= playbackTimeMs)
-    .at(-1);
   const selectedSource = sources.find(
     (source) => `${source.kind}:${source.id}` === selectedSourceKey,
   );
@@ -75,28 +59,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!recording || paused) return;
-    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1_000);
-    return () => window.clearInterval(timer);
-  }, [recording, paused]);
+    if (result) document.querySelector(".preview-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [result]);
+
+  // Recordings can be stopped from the floating controls or the menu bar, not only from here.
+  useEffect(() => {
+    const finished = listen<RecordingResult>("recording-finished", (event) => {
+      setResult(event.payload);
+      setError(null);
+    });
+    const failed = listen<string>("recording-failed", (event) => setError(event.payload));
+    return () => {
+      void finished.then((dispose) => dispose());
+      void failed.then((dispose) => dispose());
+    };
+  }, []);
 
   async function startRecording() {
     if (!selectedSource) return;
     setBusy(true);
     setResult(null);
     setError(null);
-    setElapsedSeconds(0);
-    setPaused(false);
 
     try {
-      const started = await invoke<RecordingStarted>("start_recording", {
+      await invoke("start_recording", {
         sourceKind: selectedSource.kind,
         sourceId: selectedSource.id,
       });
-      setActiveProjectPath(started.projectPath);
-      setRecording(true);
     } catch (captureError) {
-      setError(String(captureError));
+      if (String(captureError) !== CANCELLED_MESSAGE) setError(String(captureError));
     } finally {
       setBusy(false);
     }
@@ -104,14 +95,8 @@ export default function App() {
 
   async function stopRecording() {
     setBusy(true);
-    setError(null);
-
     try {
-      const capture = await invoke<RecordingResult>("stop_recording");
-      setResult(capture);
-      setRecording(false);
-      setPaused(false);
-      setActiveProjectPath(null);
+      await invoke("stop_recording");
     } catch (captureError) {
       setError(String(captureError));
     } finally {
@@ -120,19 +105,20 @@ export default function App() {
   }
 
   async function togglePause() {
-    const nextPaused = !paused;
-    setBusy(true);
-    setError(null);
-
     try {
-      await invoke("set_recording_paused", { paused: nextPaused });
-      setPaused(nextPaused);
+      await invoke("set_recording_paused", { paused: !paused });
     } catch (captureError) {
       setError(String(captureError));
-    } finally {
-      setBusy(false);
     }
   }
+
+  const statusLabel = {
+    idle: "Ready to record",
+    countdown: `Starting in ${recorder.countdown ?? ""}…`,
+    recording: `Recording · ${formatDuration(recorder.elapsedMs)}`,
+    paused: `Paused · ${formatDuration(recorder.elapsedMs)}`,
+    finishing: "Saving recording…",
+  }[recorder.status];
 
   return (
     <main className="app-shell">
@@ -173,12 +159,12 @@ export default function App() {
             <ChevronDown size={17} />
           </div>
           <div className="record-options">
-            <span><i className={`status-dot${recording && !paused ? " recording" : ""}`} /> {recording ? `${paused ? "Paused" : "Recording"} · ${elapsedSeconds}s` : "Pointer metadata ready"}</span>
+            <span><i className={`status-dot ${recorder.status}`} /> {statusLabel}</span>
             <span>{selectedSource ? `${selectedSource.width} × ${selectedSource.height}` : "—"}</span>
           </div>
           <div className={`record-controls${recording ? " active" : ""}`}>
-            {recording && (
-              <button className="pause-button" onClick={togglePause} disabled={busy}>
+            {(recorder.status === "recording" || recorder.status === "paused") && (
+              <button className="pause-button" onClick={togglePause}>
                 {paused ? <Play size={13} fill="currentColor" /> : <Pause size={13} fill="currentColor" />}
                 {paused ? "Resume" : "Pause"}
               </button>
@@ -186,17 +172,18 @@ export default function App() {
             <button
               className={`record-button${recording ? " stop" : ""}`}
               onClick={recording ? stopRecording : startRecording}
-              disabled={busy || (!recording && !selectedSource)}
+              disabled={
+                recorder.status === "countdown"
+                || recorder.status === "finishing"
+                || (!recording && (busy || !selectedSource))
+              }
             >
               {recording ? <Square size={9} fill="currentColor" /> : <span className="record-dot" />}
-              {busy ? (recording ? "Working…" : "Starting…") : recording ? "Stop recording" : "Start recording"}
+              {recording ? (recorder.status === "finishing" ? "Saving…" : "Stop recording") : "Start recording"}
             </button>
           </div>
-          {recording && activeProjectPath && (
-            <div className="capture-message active">
-              <span className={`live-indicator${paused ? " paused" : ""}`} />
-              <span><strong>{paused ? "Recording paused" : "Recording in progress"}</strong><small>{activeProjectPath}</small></span>
-            </div>
+          {!recording && !result && !error && (
+            <p className="record-hint">A 3-second countdown runs first. ScreenSway hides itself and stays out of the video.</p>
           )}
           {result && (
             <div className="capture-message success">
@@ -218,37 +205,9 @@ export default function App() {
           <div className="preview-card">
             <div className="section-heading">
               <h2>Auto-zoom preview</h2>
-              <span>{zoomSegments.length} zoom{zoomSegments.length === 1 ? "" : "s"} generated from clicks</span>
+              <span>{zoomCount} zoom{zoomCount === 1 ? "" : "s"} generated from clicks · {formatDuration(result.durationMs)}</span>
             </div>
-            <div className="preview-viewport">
-              <div
-                className="preview-content"
-                style={{
-                  transform: `scale(${activeZoom?.scale ?? 1})`,
-                  transformOrigin: activeZoom
-                    ? `${(activeZoom.centerX / result.width) * 100}% ${(activeZoom.centerY / result.height) * 100}%`
-                    : "50% 50%",
-                }}
-              >
-                <video
-                  src={convertFileSrc(result.videoPath)}
-                  controls
-                  autoPlay
-                  onTimeUpdate={(event) => setPlaybackTimeMs(event.currentTarget.currentTime * 1_000)}
-                />
-                {activePointer && (
-                  <MousePointer2
-                    className="preview-cursor"
-                    size={22}
-                    fill="white"
-                    style={{
-                      left: `${(activePointer.x / result.width) * 100}%`,
-                      top: `${(activePointer.y / result.height) * 100}%`,
-                    }}
-                  />
-                )}
-              </div>
-            </div>
+            <ZoomPreview recording={result} key={result.videoPath} />
           </div>
         )}
         <div className="section-heading">

@@ -56,10 +56,13 @@ final class PointerRecorder: @unchecked Sendable {
     private var pausedNanoseconds: UInt64 = 0
     private var stoppedAt: UInt64?
     private let displayBounds: CGRect
+    private let pixelScale: Double
     private var startedAt: UInt64 = 0
 
-    init(captureBounds: CGRect) {
+    /// `captureBounds` is in global display points; samples are stored in video pixels.
+    init(captureBounds: CGRect, pixelScale: Double) {
         displayBounds = captureBounds
+        self.pixelScale = pixelScale
     }
 
     func start() -> Task<Void, Never> {
@@ -82,15 +85,15 @@ final class PointerRecorder: @unchecked Sendable {
                     let right = CGEventSource.buttonState(.combinedSessionState, button: .right)
                     let timestamp = elapsedMilliseconds()
 
-                    let relativeX = point.x - displayBounds.minX
-                    let relativeY = point.y - displayBounds.minY
+                    let relativeX = (point.x - displayBounds.minX) * pixelScale
+                    let relativeY = (point.y - displayBounds.minY) * pixelScale
 
                     if left && !previousLeft {
                         append(type: "leftClick", timeMs: timestamp, x: relativeX, y: relativeY)
                     } else if right && !previousRight {
                         append(type: "rightClick", timeMs: timestamp, x: relativeX, y: relativeY)
-                    } else if timestamp - lastMoveTimestamp >= 33,
-                              hypot(point.x - previousPoint.x, point.y - previousPoint.y) >= 1.5 {
+                    } else if timestamp - lastMoveTimestamp >= 16,
+                              hypot(point.x - previousPoint.x, point.y - previousPoint.y) >= 0.5 {
                         append(type: "move", timeMs: timestamp, x: relativeX, y: relativeY)
                         previousPoint = point
                         lastMoveTimestamp = timestamp
@@ -100,7 +103,7 @@ final class PointerRecorder: @unchecked Sendable {
                     previousRight = right
                 }
 
-                try? await Task.sleep(for: .milliseconds(8))
+                try? await Task.sleep(for: .milliseconds(4))
             }
         }
     }
@@ -225,6 +228,8 @@ enum CaptureError: LocalizedError {
     }
 }
 
+private let maximumEncodedDimension = 3_840.0
+
 @main
 struct ScreenSwayCapture {
     static func main() async {
@@ -278,8 +283,6 @@ struct ScreenSwayCapture {
         let sourceID = argument(named: "--source-id", in: arguments)
 
         let filter: SCContentFilter
-        let captureWidth: Int
-        let captureHeight: Int
         let captureBounds: CGRect
 
         if sourceKind == "window",
@@ -287,8 +290,6 @@ struct ScreenSwayCapture {
            let windowID = UInt32(sourceID),
            let window = content.windows.first(where: { $0.windowID == windowID }) {
             filter = SCContentFilter(desktopIndependentWindow: window)
-            captureWidth = max(2, Int(window.frame.width) / 2 * 2)
-            captureHeight = max(2, Int(window.frame.height) / 2 * 2)
             captureBounds = window.frame
         } else {
             let requestedDisplayID = sourceID.flatMap(UInt32.init)
@@ -298,23 +299,33 @@ struct ScreenSwayCapture {
                 ?? content.displays.first else {
                 throw CaptureError.noDisplay
             }
-            filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
-            captureWidth = display.width
-            captureHeight = display.height
+            // Keep ScreenSway's own windows (main window, recording controls) out of the video.
+            let excludedProcessID = argument(named: "--exclude-pid", in: arguments).flatMap(Int32.init)
+            let excludedApplications = content.applications.filter { $0.processID == excludedProcessID }
+            filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
             captureBounds = CGDisplayBounds(display.displayID)
         }
+
+        // Capture at native pixel density (Retina) instead of points, capped for H.264 encoder limits.
+        let nativeScale = Double(filter.pointPixelScale)
+        let encoderScale = min(1, maximumEncodedDimension / (max(captureBounds.width, captureBounds.height) * nativeScale))
+        let pixelScale = nativeScale * encoderScale
+        let captureWidth = max(2, Int((captureBounds.width * pixelScale).rounded()) / 2 * 2)
+        let captureHeight = max(2, Int((captureBounds.height * pixelScale).rounded()) / 2 * 2)
 
         let streamConfiguration = SCStreamConfiguration()
         streamConfiguration.width = captureWidth
         streamConfiguration.height = captureHeight
         streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        streamConfiguration.queueDepth = 5
+        streamConfiguration.queueDepth = 8
         streamConfiguration.showsCursor = false
         streamConfiguration.capturesAudio = false
+        streamConfiguration.scalesToFit = true
+        streamConfiguration.colorSpaceName = CGColorSpace.sRGB
 
         let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
 
-        let pointerRecorder = PointerRecorder(captureBounds: captureBounds)
+        let pointerRecorder = PointerRecorder(captureBounds: captureBounds, pixelScale: pixelScale)
         let startedAt = Date()
         var segmentURLs: [URL] = []
         var activeSegment = try makeSegment(index: 1, directory: segmentsURL)
@@ -322,6 +333,8 @@ struct ScreenSwayCapture {
 
         try await stream.startCapture()
         let pointerTask = pointerRecorder.start()
+        // Tells the desktop shell that frames are being recorded, so its timer starts in sync.
+        FileHandle.standardError.write(Data("SCREENSWAY_READY\n".utf8))
         var isPaused = false
         while Date().timeIntervalSince(startedAt) < duration {
             if let controlURL,
