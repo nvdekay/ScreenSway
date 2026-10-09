@@ -33,6 +33,8 @@ The desktop application must not make network requests during recording, editing
 
 The macOS helper uses `SCRecordingOutput`, records a selected display or application window without burning the pointer into the video, and samples cursor position and mouse-button transitions independently. The Tauri shell controls the helper through a project-local control file, while the UI receives the finished events, regenerates zoom segments through `@screensway/core`, draws the cursor, and previews camera transforms without modifying the original video.
 
+Starting a recording runs a 3-second countdown, hides the main window, and shows floating recording controls plus a menu bar timer. ScreenSway's own windows are excluded from the capture. The helper captures at native pixel density (capped at 3840 px on the long side for H.264) and samples the pointer at 60 Hz in video pixels. The preview camera comes from `buildCameraTrack` in `@screensway/core`: a fixed 60 fps simulation with critically damped springs for zoom and pan, so preview and a future export produce identical motion.
+
 Pause closes the active MP4 segment and resume starts a new one. On stop, AVFoundation assembles the segments into `media/screen.mp4`; segment files are then deleted. Paused time is subtracted from pointer timestamps and project duration.
 
 The macOS helper is bundled beside the Tauri executable as a universal sidecar. The build script produces architecture-specific binaries for Cargo and a universal `arm64`/`x86_64` binary for the final application bundle. Apple Developer signing, notarization, Windows capture, and audio capture remain later milestones.
