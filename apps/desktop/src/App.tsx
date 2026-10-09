@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { generateZoomSegments, type PointerEvent } from "@screensway/core";
-import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Settings2, Sparkles, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Monitor, MousePointer2, Pause, Play, Settings2, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface CaptureSource {
@@ -32,6 +32,7 @@ const recentRecordings = [
 
 export default function App() {
   const [recording, setRecording] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [busy, setBusy] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
@@ -74,10 +75,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || paused) return;
     const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1_000);
     return () => window.clearInterval(timer);
-  }, [recording]);
+  }, [recording, paused]);
 
   async function startRecording() {
     if (!selectedSource) return;
@@ -85,6 +86,7 @@ export default function App() {
     setResult(null);
     setError(null);
     setElapsedSeconds(0);
+    setPaused(false);
 
     try {
       const started = await invoke<RecordingStarted>("start_recording", {
@@ -108,7 +110,23 @@ export default function App() {
       const capture = await invoke<RecordingResult>("stop_recording");
       setResult(capture);
       setRecording(false);
+      setPaused(false);
       setActiveProjectPath(null);
+    } catch (captureError) {
+      setError(String(captureError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function togglePause() {
+    const nextPaused = !paused;
+    setBusy(true);
+    setError(null);
+
+    try {
+      await invoke("set_recording_paused", { paused: nextPaused });
+      setPaused(nextPaused);
     } catch (captureError) {
       setError(String(captureError));
     } finally {
@@ -155,21 +173,29 @@ export default function App() {
             <ChevronDown size={17} />
           </div>
           <div className="record-options">
-            <span><i className={`status-dot${recording ? " recording" : ""}`} /> {recording ? `Recording · ${elapsedSeconds}s` : "Pointer metadata ready"}</span>
+            <span><i className={`status-dot${recording && !paused ? " recording" : ""}`} /> {recording ? `${paused ? "Paused" : "Recording"} · ${elapsedSeconds}s` : "Pointer metadata ready"}</span>
             <span>{selectedSource ? `${selectedSource.width} × ${selectedSource.height}` : "—"}</span>
           </div>
-          <button
-            className={`record-button${recording ? " stop" : ""}`}
-            onClick={recording ? stopRecording : startRecording}
-            disabled={busy || (!recording && !selectedSource)}
-          >
-            {recording ? <Square size={9} fill="currentColor" /> : <span className="record-dot" />}
-            {busy ? (recording ? "Finalizing…" : "Starting…") : recording ? "Stop recording" : "Start recording"}
-          </button>
+          <div className={`record-controls${recording ? " active" : ""}`}>
+            {recording && (
+              <button className="pause-button" onClick={togglePause} disabled={busy}>
+                {paused ? <Play size={13} fill="currentColor" /> : <Pause size={13} fill="currentColor" />}
+                {paused ? "Resume" : "Pause"}
+              </button>
+            )}
+            <button
+              className={`record-button${recording ? " stop" : ""}`}
+              onClick={recording ? stopRecording : startRecording}
+              disabled={busy || (!recording && !selectedSource)}
+            >
+              {recording ? <Square size={9} fill="currentColor" /> : <span className="record-dot" />}
+              {busy ? (recording ? "Working…" : "Starting…") : recording ? "Stop recording" : "Start recording"}
+            </button>
+          </div>
           {recording && activeProjectPath && (
             <div className="capture-message active">
-              <span className="live-indicator" />
-              <span><strong>Recording in progress</strong><small>{activeProjectPath}</small></span>
+              <span className={`live-indicator${paused ? " paused" : ""}`} />
+              <span><strong>{paused ? "Recording paused" : "Recording in progress"}</strong><small>{activeProjectPath}</small></span>
             </div>
           )}
           {result && (

@@ -45,6 +45,7 @@ struct ActiveRecording {
     child: std::process::Child,
     control_path: std::path::PathBuf,
     project_path: std::path::PathBuf,
+    paused: bool,
 }
 
 #[derive(Default)]
@@ -111,6 +112,26 @@ async fn stop_recording(
     {
         let _ = state;
         Err("The first ScreenSway capture prototype currently supports macOS only.".into())
+    }
+}
+
+#[tauri::command]
+async fn set_recording_paused(
+    state: tauri::State<'_, CaptureManager>,
+    paused: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let active = state.active.clone();
+        tauri::async_runtime::spawn_blocking(move || set_recording_paused_macos(active, paused))
+            .await
+            .map_err(|error| format!("Capture control task failed: {error}"))?
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (state, paused);
+        Err("Pause and resume currently support macOS only.".into())
     }
 }
 
@@ -192,8 +213,33 @@ fn start_recording_macos(
         child,
         control_path,
         project_path,
+        paused: false,
     });
     Ok(response)
+}
+
+#[cfg(target_os = "macos")]
+fn set_recording_paused_macos(
+    active: Arc<Mutex<Option<ActiveRecording>>>,
+    paused: bool,
+) -> Result<(), String> {
+    let mut guard = active
+        .lock()
+        .map_err(|_| "The capture state lock is unavailable.".to_string())?;
+    let recording = guard
+        .as_mut()
+        .ok_or("There is no active recording to pause or resume.")?;
+    if recording.paused == paused {
+        return Ok(());
+    }
+
+    std::fs::write(
+        &recording.control_path,
+        if paused { "pause" } else { "recording" },
+    )
+    .map_err(|error| format!("Could not update the recording state: {error}"))?;
+    recording.paused = paused;
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -261,6 +307,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_capture_sources,
             start_recording,
+            set_recording_paused,
             stop_recording
         ])
         .run(tauri::generate_context!())

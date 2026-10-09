@@ -52,21 +52,29 @@ final class PointerRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [PointerSample] = []
     private var shouldStop = false
+    private var pausedAt: UInt64?
+    private var pausedNanoseconds: UInt64 = 0
+    private var stoppedAt: UInt64?
     private let displayBounds: CGRect
-    private let startedAt = DispatchTime.now().uptimeNanoseconds
+    private var startedAt: UInt64 = 0
 
     init(captureBounds: CGRect) {
         displayBounds = captureBounds
     }
 
     func start() -> Task<Void, Never> {
-        Task.detached(priority: .userInitiated) { [self] in
+        lock.withLock { startedAt = DispatchTime.now().uptimeNanoseconds }
+        return Task.detached(priority: .userInitiated) { [self] in
             var previousPoint = CGPoint(x: -.greatestFiniteMagnitude, y: -.greatestFiniteMagnitude)
             var previousLeft = false
             var previousRight = false
             var lastMoveTimestamp = 0
 
             while !isStopped() {
+                if isPaused() {
+                    try? await Task.sleep(for: .milliseconds(20))
+                    continue
+                }
                 autoreleasepool {
                     guard let event = CGEvent(source: nil) else { return }
                     let point = event.location
@@ -98,19 +106,55 @@ final class PointerRecorder: @unchecked Sendable {
     }
 
     func stop() {
-        lock.withLock { shouldStop = true }
+        lock.withLock {
+            let now = DispatchTime.now().uptimeNanoseconds
+            finishPauseIfNeeded(at: now)
+            stoppedAt = now
+            shouldStop = true
+        }
+    }
+
+    func setPaused(_ paused: Bool) {
+        lock.withLock {
+            let now = stoppedAt ?? DispatchTime.now().uptimeNanoseconds
+            if paused, pausedAt == nil {
+                pausedAt = now
+            } else if !paused {
+                finishPauseIfNeeded(at: now)
+            }
+        }
     }
 
     func snapshot() -> [PointerSample] {
         lock.withLock { samples }
     }
 
+    func durationMilliseconds() -> Int {
+        lock.withLock {
+            let now = DispatchTime.now().uptimeNanoseconds
+            let currentPause = pausedAt.map { now - $0 } ?? 0
+            return Int((now - startedAt - pausedNanoseconds - currentPause) / 1_000_000)
+        }
+    }
+
     private func isStopped() -> Bool {
         lock.withLock { shouldStop }
     }
 
+    private func isPaused() -> Bool {
+        lock.withLock { pausedAt != nil }
+    }
+
     private func elapsedMilliseconds() -> Int {
-        Int((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
+        lock.withLock {
+            Int((DispatchTime.now().uptimeNanoseconds - startedAt - pausedNanoseconds) / 1_000_000)
+        }
+    }
+
+    private func finishPauseIfNeeded(at now: UInt64) {
+        guard let pausedAt else { return }
+        pausedNanoseconds += now - pausedAt
+        self.pausedAt = nil
     }
 
     private func append(type: String, timeMs: Int, x: Double, y: Double) {
@@ -118,6 +162,13 @@ final class PointerRecorder: @unchecked Sendable {
             samples.append(PointerSample(timeMs: timeMs, type: type, x: x, y: y))
         }
     }
+}
+
+@available(macOS 15.0, *)
+struct RecordingSegment {
+    let output: SCRecordingOutput
+    let delegate: RecordingDelegate
+    let url: URL
 }
 
 final class RecordingDelegate: NSObject, SCRecordingOutputDelegate, @unchecked Sendable {
@@ -162,12 +213,14 @@ enum CaptureError: LocalizedError {
     case noDisplay
     case unsupportedOS
     case outputMissing
+    case exportFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .noDisplay: "ScreenSway could not find the main display."
         case .unsupportedOS: "This capture prototype requires macOS 15 or newer."
         case .outputMissing: "Screen recording finished without creating a video file."
+        case .exportFailed(let message): "ScreenSway could not assemble the recording: \(message)"
         }
     }
 }
@@ -213,10 +266,12 @@ struct ScreenSwayCapture {
         let mediaURL = projectURL.appending(path: "media", directoryHint: .isDirectory)
         let metadataURL = projectURL.appending(path: "metadata", directoryHint: .isDirectory)
         let videoURL = mediaURL.appending(path: "screen.mp4")
+        let segmentsURL = mediaURL.appending(path: "segments", directoryHint: .isDirectory)
         let pointerEventsURL = metadataURL.appending(path: "pointer-events.json")
 
         try FileManager.default.createDirectory(at: mediaURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metadataURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: segmentsURL, withIntermediateDirectories: true)
 
         let content = try await shareableContent()
         let sourceKind = argument(named: "--source-kind", in: arguments) ?? "display"
@@ -259,41 +314,53 @@ struct ScreenSwayCapture {
 
         let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
 
-        let outputConfiguration = SCRecordingOutputConfiguration()
-        outputConfiguration.outputURL = videoURL
-        outputConfiguration.outputFileType = .mp4
-        if outputConfiguration.availableVideoCodecTypes.contains(.h264) {
-            outputConfiguration.videoCodecType = .h264
-        }
-
-        let delegate = RecordingDelegate()
-        let recordingOutput = SCRecordingOutput(configuration: outputConfiguration, delegate: delegate)
-        try stream.addRecordingOutput(recordingOutput)
-
         let pointerRecorder = PointerRecorder(captureBounds: captureBounds)
-        let pointerTask = pointerRecorder.start()
         let startedAt = Date()
+        var segmentURLs: [URL] = []
+        var activeSegment = try makeSegment(index: 1, directory: segmentsURL)
+        try stream.addRecordingOutput(activeSegment.output)
 
         try await stream.startCapture()
+        let pointerTask = pointerRecorder.start()
+        var isPaused = false
         while Date().timeIntervalSince(startedAt) < duration {
             if let controlURL,
                let command = try? String(contentsOf: controlURL, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-               command == "stop" {
-                break
+                .trimmingCharacters(in: .whitespacesAndNewlines) {
+                if command == "stop" {
+                    break
+                }
+                if command == "pause", !isPaused {
+                    pointerRecorder.setPaused(true)
+                    try stream.removeRecordingOutput(activeSegment.output)
+                    try await activeSegment.delegate.waitUntilFinished()
+                    segmentURLs.append(activeSegment.url)
+                    isPaused = true
+                } else if command == "recording", isPaused {
+                    activeSegment = try makeSegment(index: segmentURLs.count + 1, directory: segmentsURL)
+                    try stream.addRecordingOutput(activeSegment.output)
+                    pointerRecorder.setPaused(false)
+                    isPaused = false
+                }
             }
             try await Task.sleep(for: .milliseconds(100))
         }
         try await stream.stopCapture()
         pointerRecorder.stop()
         await pointerTask.value
-        try await delegate.waitUntilFinished()
+        if !isPaused {
+            try await activeSegment.delegate.waitUntilFinished()
+            segmentURLs.append(activeSegment.url)
+        }
+
+        try await assembleSegments(segmentURLs, at: videoURL)
+        try? FileManager.default.removeItem(at: segmentsURL)
 
         guard FileManager.default.fileExists(atPath: videoURL.path) else {
             throw CaptureError.outputMissing
         }
 
-        let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+        let elapsedMs = pointerRecorder.durationMilliseconds()
         let pointerEvents = pointerRecorder.snapshot()
         try JSONEncoder.screenSway.encode(pointerEvents).write(to: pointerEventsURL, options: .atomic)
 
@@ -320,6 +387,62 @@ struct ScreenSwayCapture {
             height: captureHeight,
             pointerEvents: pointerEvents
         )
+    }
+
+    @available(macOS 15.0, *)
+    static func makeSegment(index: Int, directory: URL) throws -> RecordingSegment {
+        let url = directory.appending(path: String(format: "part-%03d.mp4", index))
+        let configuration = SCRecordingOutputConfiguration()
+        configuration.outputURL = url
+        configuration.outputFileType = .mp4
+        if configuration.availableVideoCodecTypes.contains(.h264) {
+            configuration.videoCodecType = .h264
+        }
+        let delegate = RecordingDelegate()
+        return RecordingSegment(
+            output: SCRecordingOutput(configuration: configuration, delegate: delegate),
+            delegate: delegate,
+            url: url
+        )
+    }
+
+    static func assembleSegments(_ segmentURLs: [URL], at destinationURL: URL) async throws {
+        guard let firstURL = segmentURLs.first else { throw CaptureError.outputMissing }
+        if segmentURLs.count == 1 {
+            try FileManager.default.moveItem(at: firstURL, to: destinationURL)
+            return
+        }
+
+        let composition = AVMutableComposition()
+        guard let compositionTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw CaptureError.exportFailed("Could not create the video track.")
+        }
+
+        var insertionTime = CMTime.zero
+        for segmentURL in segmentURLs {
+            let asset = AVURLAsset(url: segmentURL)
+            let duration = try await asset.load(.duration)
+            guard let sourceTrack = try await asset.loadTracks(withMediaType: .video).first else {
+                throw CaptureError.exportFailed("A recorded segment has no video track.")
+            }
+            try compositionTrack.insertTimeRange(
+                CMTimeRange(start: .zero, duration: duration),
+                of: sourceTrack,
+                at: insertionTime
+            )
+            insertionTime = CMTimeAdd(insertionTime, duration)
+        }
+
+        guard let exporter = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetPassthrough
+        ) else {
+            throw CaptureError.exportFailed("Could not initialize the video exporter.")
+        }
+        try await exporter.export(to: destinationURL, as: .mp4)
     }
 
     static func listSources() async throws -> [CaptureSource] {

@@ -32,6 +32,10 @@ h1 { margin: 12px 0 12px; max-width: 480px; font-size: clamp(38px, 5vw, 58px); l
 .status-dot.recording { background: #ee6073; box-shadow: 0 0 0 3px #ee60731f; animation: recording-pulse 1s ease-in-out infinite; }
 .record-button { width: 100%; border: 0; border-radius: 12px; padding: 13px 18px; background: #f2f0f5; color: #19171e; font-size: 13px; font-weight: 650; cursor: pointer; box-shadow: 0 7px 24px #fff1 inset; }
 .record-button { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.record-controls { display: flex; gap: 8px; }
+.record-controls.active .record-button { flex: 1; }
+.pause-button { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 108px; border: 1px solid #ffffff14; border-radius: 12px; background: #24232b; color: #dedbe4; font-size: 13px; font-weight: 620; cursor: pointer; }
+.pause-button:disabled { cursor: wait; opacity: .65; }
 .record-button.stop { color: #fff1f3; background: #bd3d52; box-shadow: 0 7px 24px #ff90a11c inset; }
 .record-button:disabled { cursor: wait; opacity: .72; }
 .record-dot { width: 8px; height: 8px; display: inline-block; margin-right: 8px; border-radius: 50%; background: #df4b62; }
@@ -41,6 +45,7 @@ h1 { margin: 12px 0 12px; max-width: 480px; font-size: clamp(38px, 5vw, 58px); l
 .capture-message.error { color: #ff8fa1; background: #df4b620d; border: 1px solid #df4b6226; }
 .capture-message.active { color: #ff9dad; background: #df4b620d; border: 1px solid #df4b6226; }
 .live-indicator { width: 8px; height: 8px; margin: 3px 0 0 3px; border-radius: 50%; background: #ec5c72; animation: recording-pulse 1s ease-in-out infinite; }
+.live-indicator.paused { background: #d9a34f; animation: none; }
 .capture-message span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .capture-message strong { font-size: 10px; }
 .capture-message small { overflow: hidden; color: #77727f; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
