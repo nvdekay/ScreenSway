@@ -48,6 +48,8 @@ struct ProjectManifest: Codable {
     let pointerEvents: String
 }
 
+private let controlClickWindowMs = 600
+
 final class PointerRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [PointerSample] = []
@@ -111,6 +113,7 @@ final class PointerRecorder: @unchecked Sendable {
     func stop() {
         lock.withLock {
             let now = DispatchTime.now().uptimeNanoseconds
+            dropControlClicks(at: now)
             finishPauseIfNeeded(at: now)
             stoppedAt = now
             shouldStop = true
@@ -121,6 +124,7 @@ final class PointerRecorder: @unchecked Sendable {
         lock.withLock {
             let now = stoppedAt ?? DispatchTime.now().uptimeNanoseconds
             if paused, pausedAt == nil {
+                dropControlClicks(at: now)
                 pausedAt = now
             } else if !paused {
                 finishPauseIfNeeded(at: now)
@@ -152,6 +156,14 @@ final class PointerRecorder: @unchecked Sendable {
         lock.withLock {
             Int((DispatchTime.now().uptimeNanoseconds - startedAt - pausedNanoseconds) / 1_000_000)
         }
+    }
+
+    /// The click that pressed Pause or Stop in ScreenSway's own controls is not part of the
+    /// recorded content and must not trigger a zoom toward controls that are not in the video.
+    private func dropControlClicks(at now: UInt64) {
+        guard pausedAt == nil else { return }
+        let elapsedMs = Int((now - startedAt - pausedNanoseconds) / 1_000_000)
+        samples.removeAll { $0.type != "move" && $0.timeMs >= elapsedMs - controlClickWindowMs }
     }
 
     private func finishPauseIfNeeded(at now: UInt64) {
@@ -212,8 +224,27 @@ final class RecordingDelegate: NSObject, SCRecordingOutputDelegate, @unchecked S
     }
 }
 
+/// SCShareableContent is an immutable snapshot, safe to hand across the callback boundary.
+struct SendableContent: @unchecked Sendable {
+    let value: SCShareableContent
+}
+
+final class ResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+
+    func once(_ body: () -> Void) {
+        let first = lock.withLock { () -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if first { body() }
+    }
+}
+
 enum CaptureError: LocalizedError {
     case noDisplay
+    case sourcesUnavailable
     case unsupportedOS
     case outputMissing
     case exportFailed(String)
@@ -221,6 +252,7 @@ enum CaptureError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noDisplay: "ScreenSway could not find the main display."
+        case .sourcesUnavailable: "macOS did not return the list of screens and windows. Please try again."
         case .unsupportedOS: "This capture prototype requires macOS 15 or newer."
         case .outputMissing: "Screen recording finished without creating a video file."
         case .exportFailed(let message): "ScreenSway could not assemble the recording: \(message)"
@@ -490,8 +522,33 @@ struct ScreenSwayCapture {
         return displays + windows
     }
 
+    /// ScreenCaptureKit can drop a request without ever answering (for example when another
+    /// process queries it at the same moment), so each attempt is bounded and retried.
     static func shareableContent() async throws -> SCShareableContent {
-        try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        for _ in 1...3 {
+            if let content = try await shareableContentAttempt(timeout: 4) {
+                return content.value
+            }
+        }
+        throw CaptureError.sourcesUnavailable
+    }
+
+    static func shareableContentAttempt(timeout: TimeInterval) async throws -> SendableContent? {
+        try await withCheckedThrowingContinuation { continuation in
+            let gate = ResumeGate()
+            SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+                gate.once {
+                    if let content {
+                        continuation.resume(returning: SendableContent(value: content))
+                    } else {
+                        continuation.resume(throwing: error ?? CaptureError.sourcesUnavailable)
+                    }
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                gate.once { continuation.resume(returning: nil) }
+            }
+        }
     }
 
     static func argument(named name: String, in arguments: [String]) -> String? {
