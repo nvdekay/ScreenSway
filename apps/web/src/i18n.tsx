@@ -9,6 +9,8 @@ const en = {
   "nav.faq": "FAQ",
   "nav.download": "Download free",
   "nav.language": "Language",
+  "nav.lightMode": "Switch to light mode",
+  "nav.darkMode": "Switch to dark mode",
   "nav.home": "ScreenSway home",
   "nav.skip": "Skip to content",
 
@@ -166,6 +168,8 @@ const vi: Record<MessageKey, string> = {
   "nav.faq": "Hỏi đáp",
   "nav.download": "Tải miễn phí",
   "nav.language": "Ngôn ngữ",
+  "nav.lightMode": "Chuyển sang giao diện sáng",
+  "nav.darkMode": "Chuyển sang giao diện tối",
   "nav.home": "Trang chủ ScreenSway",
   "nav.skip": "Bỏ qua tới nội dung",
 
