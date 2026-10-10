@@ -476,6 +476,12 @@ struct ScreenSwayCapture {
     static func main() async {
         do {
             _ = await MainActor.run { NSApplication.shared }
+            if let jobPath = argument(named: "--export", in: CommandLine.arguments) {
+                let result = try await Exporter.run(jobURL: URL(fileURLWithPath: jobPath))
+                FileHandle.standardOutput.write(try JSONEncoder.screenSway.encode(result))
+                FileHandle.standardOutput.write(Data("\n".utf8))
+                Foundation.exit(0)
+            }
             let summary = try await run()
             let data = try JSONEncoder.screenSway.encode(summary)
             FileHandle.standardOutput.write(data)
