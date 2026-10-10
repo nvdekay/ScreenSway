@@ -193,6 +193,9 @@ final class PointerRecorder: @unchecked Sendable {
 final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
+    /// System audio, when requested. Shares the video's clock, so pauses cut both alike.
+    private let audioInput: AVAssetWriterInput?
+    private var nextAudioTime = CMTime.zero
     private let lock = NSLock()
     private var sessionStart: CMTime?
     private var pausedAt: CMTime?
@@ -204,7 +207,7 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
     private var frameArrivedWhilePaused = false
     private var finished = false
 
-    init(url: URL, width: Int, height: Int) throws {
+    init(url: URL, width: Int, height: Int, captureAudio: Bool) throws {
         writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         // About 0.15 bits per pixel per frame at 60 fps: ~18 Mbps for 1080p, ~53 Mbps for Retina.
         let bitrate = min(80_000_000, max(10_000_000, Double(width * height) * 60 * 0.15))
@@ -229,6 +232,23 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
             throw CaptureError.exportFailed("The video encoder rejected the capture settings.")
         }
         writer.add(input)
+
+        if captureAudio {
+            let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: Self.audioSampleRate,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 192_000,
+            ])
+            audioInput.expectsMediaDataInRealTime = true
+            guard writer.canAdd(audioInput) else {
+                throw CaptureError.exportFailed("The audio encoder rejected the capture settings.")
+            }
+            writer.add(audioInput)
+            self.audioInput = audioInput
+        } else {
+            audioInput = nil
+        }
         super.init()
     }
 
@@ -280,6 +300,7 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
                 append(latestFrame, at: closingFrameTime)
             }
             input.markAsFinished()
+            audioInput?.markAsFinished()
             return lastAppended.isValid ? CMTimeMaximum(end, lastAppended + Self.frameDuration) : end
         }
         guard lastAppended.isValid else {
@@ -294,7 +315,12 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid, Self.isCompleteFrame(sampleBuffer) else { return }
+        guard sampleBuffer.isValid else { return }
+        if type == .audio {
+            appendAudio(sampleBuffer)
+            return
+        }
+        guard type == .screen, Self.isCompleteFrame(sampleBuffer) else { return }
         lock.withLock {
             guard !finished else { return }
             latestFrame = sampleBuffer
@@ -329,6 +355,49 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
         lastAppended = time
     }
 
+    private func appendAudio(_ sampleBuffer: CMSampleBuffer) {
+        lock.withLock {
+            guard !finished, sessionStart != nil, pausedAt == nil, let audioInput,
+                  audioInput.isReadyForMoreMediaData else { return }
+            let start = mediaTime(sampleBuffer.presentationTimeStamp)
+            // Drop audio from before the recording started, and anything that would overlap
+            // audio already written (the writer requires strictly increasing timestamps).
+            guard start >= .zero, start >= nextAudioTime - Self.audioTolerance,
+                  let retimed = Self.shifted(sampleBuffer, by: start - sampleBuffer.presentationTimeStamp),
+                  audioInput.append(retimed) else { return }
+            nextAudioTime = start + sampleBuffer.duration
+        }
+    }
+
+    /// Moves every timing entry of a (possibly multi-sample) buffer by the same offset.
+    private static func shifted(_ sampleBuffer: CMSampleBuffer, by offset: CMTime) -> CMSampleBuffer? {
+        var count: CMItemCount = 0
+        guard CMSampleBufferGetSampleTimingInfoArray(
+            sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count
+        ) == noErr, count > 0 else { return nil }
+        var timing = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
+        guard CMSampleBufferGetSampleTimingInfoArray(
+            sampleBuffer, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count
+        ) == noErr else { return nil }
+        for index in timing.indices {
+            timing[index].presentationTimeStamp = timing[index].presentationTimeStamp + offset
+            if timing[index].decodeTimeStamp.isValid {
+                timing[index].decodeTimeStamp = timing[index].decodeTimeStamp + offset
+            }
+        }
+        var shifted: CMSampleBuffer?
+        guard CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: count,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &shifted
+        ) == noErr else { return nil }
+        return shifted
+    }
+
+    static let audioSampleRate = 48_000
+    private static let audioTolerance = CMTime(value: 1, timescale: 1_000)
     private static let frameDuration = CMTime(value: 1, timescale: 60)
 
     /// Must be called with the lock held. The encoder can be briefly busy; give it a moment
@@ -440,6 +509,7 @@ struct ScreenSwayCapture {
         let duration = arguments.firstIndex(of: "--duration")
             .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
             .flatMap { $0 } ?? 14_400
+        let captureAudio = arguments.contains("--system-audio")
         let controlURL = argument(named: "--control", in: arguments)
             .map { URL(fileURLWithPath: $0) }
 
@@ -493,7 +563,13 @@ struct ScreenSwayCapture {
         streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         streamConfiguration.queueDepth = 8
         streamConfiguration.showsCursor = false
-        streamConfiguration.capturesAudio = false
+        streamConfiguration.capturesAudio = captureAudio
+        if captureAudio {
+            streamConfiguration.sampleRate = VideoWriter.audioSampleRate
+            streamConfiguration.channelCount = 2
+            // ScreenSway's own UI makes no sound worth recording.
+            streamConfiguration.excludesCurrentProcessAudio = true
+        }
         streamConfiguration.scalesToFit = true
         streamConfiguration.colorSpaceName = CGColorSpace.sRGB
         // Deliver frames in the encoder's native format so they are not converted twice.
@@ -503,13 +579,22 @@ struct ScreenSwayCapture {
         let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
 
         let pointerRecorder = PointerRecorder(captureBounds: captureBounds, pixelScale: pixelScale)
-        let videoWriter = try VideoWriter(url: videoURL, width: captureWidth, height: captureHeight)
+        let videoWriter = try VideoWriter(
+            url: videoURL, width: captureWidth, height: captureHeight, captureAudio: captureAudio
+        )
         let startedAt = Date()
         try stream.addStreamOutput(
             videoWriter,
             type: .screen,
             sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.video", qos: .userInteractive)
         )
+        if captureAudio {
+            try stream.addStreamOutput(
+                videoWriter,
+                type: .audio,
+                sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.audio", qos: .userInteractive)
+            )
+        }
 
         try await stream.startCapture()
         let recordingStart = DispatchTime.now().uptimeNanoseconds

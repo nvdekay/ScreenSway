@@ -36,7 +36,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function record(source, name, commands) {
+async function record(source, name, commands, { systemAudio = false } = {}) {
   const projectPath = path.join(testRoot, `${name}.screensway`);
   const controlPath = path.join(projectPath, ".capture-control");
   mkdirSync(projectPath, { recursive: true });
@@ -47,6 +47,7 @@ async function record(source, name, commands) {
     "--control", controlPath,
     "--source-kind", source.kind,
     "--source-id", source.id,
+    ...(systemAudio ? ["--system-audio"] : []),
   ]);
   let stdout = "";
   let stderr = "";
@@ -106,6 +107,22 @@ async function record(source, name, commands) {
   assert.equal(probe.streams[0].width, result.width);
   assert.equal(probe.streams[0].height, result.height);
 
+  const audioStreams = JSON.parse(execFileSync(
+    "ffprobe",
+    ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name,sample_rate,channels,duration", "-of", "json", videoPath],
+    { encoding: "utf8" },
+  )).streams;
+  if (systemAudio) {
+    assert.equal(audioStreams.length, 1, `${name} should contain a system audio track.`);
+    assert.equal(audioStreams[0].codec_name, "aac");
+    assert.equal(Number(audioStreams[0].sample_rate), 48_000);
+    assert.equal(audioStreams[0].channels, 2);
+    // Audio shares the video clock, including the paused interval that was cut.
+    assert(Math.abs(Number(audioStreams[0].duration) * 1_000 - Number(probe.format.duration) * 1_000) <= 250);
+  } else {
+    assert.equal(audioStreams.length, 0, `${name} should not contain audio unless requested.`);
+  }
+
   return { result, videoDurationMs: Number(probe.format.duration) * 1_000 };
 }
 
@@ -113,7 +130,7 @@ const displayCapture = await record(display, "Display", [
   { afterMs: 1_200, value: "pause" },
   { afterMs: 900, value: "recording" },
   { afterMs: 1_200, value: "stop" },
-]);
+], { systemAudio: true });
 assert(displayCapture.result.durationMs >= 1_900 && displayCapture.result.durationMs <= 2_900);
 // The video is extended to the stop time, so it matches the pointer timeline closely.
 assert(Math.abs(displayCapture.videoDurationMs - displayCapture.result.durationMs) <= 60);
