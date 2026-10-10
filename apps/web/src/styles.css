@@ -45,6 +45,10 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 88px; }
 body { margin: 0; overflow-x: hidden; background: var(--bg); font-size: 16px; line-height: 1.6; }
+/* On larger screens the page renders as if the browser were zoomed to 90%. */
+@media (min-width: 1024px) {
+  body { zoom: 0.9; }
+}
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
 h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -.03em; text-wrap: balance; }
