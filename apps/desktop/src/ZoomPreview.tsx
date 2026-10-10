@@ -1,14 +1,17 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   buildCameraTrack,
+  computeLayout,
   generateZoomSegments,
   sampleCameraTrack,
   samplePointer,
+  type FrameSettings,
   type PointerEvent,
 } from "@screensway/core";
 import { Pause, Play, RotateCcw, Volume2, VolumeX, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
+import { CURSOR_PATH, paintFrameBase } from "./frame/paint";
 import { useI18n } from "./i18n";
 
 export interface RecordingResult {
@@ -29,8 +32,25 @@ function hasAudioTrack(video: HTMLVideoElement): boolean {
   return tracks ? tracks.length > 0 : true;
 }
 
-export function ZoomPreview({ recording }: { recording: RecordingResult }) {
+interface ZoomPreviewProps {
+  recording: RecordingResult;
+  settings: FrameSettings;
+  backgroundImage: HTMLImageElement | null;
+  autoZoom: boolean;
+  onAutoZoomChange: (autoZoom: boolean) => void;
+}
+
+export function ZoomPreview({
+  recording,
+  settings,
+  backgroundImage,
+  autoZoom,
+  onAutoZoomChange,
+}: ZoomPreviewProps) {
   const { t } = useI18n();
+  const stageRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const videoRef = useRef<HTMLVideoElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
@@ -42,7 +62,6 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [hasAudio, setHasAudio] = useState(false);
-  const [autoZoom, setAutoZoom] = useState(true);
   const [durationMs, setDurationMs] = useState(recording.durationMs);
 
   const { pointerEvents: events, width, height } = recording;
@@ -52,6 +71,33 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
     () => buildCameraTrack(events, segments, { width, height }, durationMs + 1_000),
     [events, segments, width, height, durationMs],
   );
+  // Proportions only; the canvas is painted at the stage's real pixel size below.
+  const layout = useMemo(() => computeLayout(settings, { width, height }), [settings, width, height]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
+
+  // The same painter draws the exported frame, so the preview shows exactly what you get.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || stageSize.width === 0) return;
+    const shortSide = Math.min(stageSize.width, stageSize.height) * window.devicePixelRatio;
+    const previewLayout = computeLayout(settings, { width, height }, shortSide);
+    canvas.width = previewLayout.width;
+    canvas.height = previewLayout.height;
+    const context = canvas.getContext("2d");
+    if (context) paintFrameBase(context, previewLayout, settings, backgroundImage);
+  }, [backgroundImage, height, settings, stageSize, width]);
+
+  const percent = (value: number, total: number) => `${(value / total) * 100}%`;
+  const cornerRadius = (layout.radius / layout.width) * stageSize.width;
 
   // Camera, cursor and progress are written straight to the DOM on every display frame,
   // so motion stays at the screen's refresh rate instead of React's render cadence.
@@ -135,9 +181,24 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
       >
         <div
           className="player-stage"
-          style={{ aspectRatio: `${width} / ${height}`, width: `min(100%, calc(58vh * ${width / height}))` }}
+          ref={stageRef}
+          style={{
+            aspectRatio: `${layout.width} / ${layout.height}`,
+            width: `min(100%, calc(56vh * ${layout.width / layout.height}))`,
+          }}
           onClick={togglePlayback}
         >
+          <canvas className="frame-canvas" ref={canvasRef} aria-hidden="true" />
+          <div
+            className="frame-video"
+            style={{
+              left: percent(layout.video.x, layout.width),
+              top: percent(layout.video.y, layout.height),
+              width: percent(layout.video.width, layout.width),
+              height: percent(layout.video.height, layout.height),
+              borderRadius: layout.titleBar > 0 ? `0 0 ${cornerRadius}px ${cornerRadius}px` : `${cornerRadius}px`,
+            }}
+          >
           <div className="player-content" ref={contentRef}>
             <video
               ref={videoRef}
@@ -162,7 +223,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
             <div className="player-cursor" ref={cursorRef}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
-                  d="M4.5 2.8v16.6c0 .6.7.9 1.1.4l3.9-4.2 2.6 6.1c.2.4.6.6 1 .4l2.2-.9c.4-.2.6-.6.4-1l-2.6-6h5.7c.6 0 .9-.7.5-1.1L5.6 2.4c-.4-.4-1.1-.1-1.1.4z"
+                  d={CURSOR_PATH}
                   fill="#111"
                   stroke="#fff"
                   strokeWidth="1.5"
@@ -170,6 +231,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
                 />
               </svg>
             </div>
+          </div>
           </div>
           {!playing && (
             <span className="play-overlay" aria-hidden="true">
@@ -238,7 +300,7 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
         <span className="player-time" ref={timeRef}>0:00 / {formatDuration(durationMs)}</span>
         <button
           className={`zoom-toggle${autoZoom ? " active" : ""}`}
-          onClick={() => setAutoZoom((value) => !value)}
+          onClick={() => onAutoZoomChange(!autoZoom)}
           aria-pressed={autoZoom}
         >
           <ZoomIn size={14} /> {t("player.autoZoom")}
