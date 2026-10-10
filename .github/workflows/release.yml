@@ -1,4 +1,4 @@
-name: Release desktop apps
+name: Release macOS app
 
 on:
   push:
@@ -7,10 +7,18 @@ on:
 
 permissions:
   contents: write
+  # Needed to start the landing page deploy after the release is published.
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-macos:
-    runs-on: macos-14
+  release-macos:
+    # The capture helper uses macOS 15 APIs and the app uses Liquid Glass, so build
+    # with the macOS 26 SDK. Windows capture is not implemented yet, so no Windows build.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -23,55 +31,50 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test && pnpm typecheck
-      - run: pnpm build:macos
-      - name: Verify bundled macOS capture sidecar
+
+      - name: Check the tag matches the app version
         run: |
-          APP_PATH="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ScreenSway.app"
-          test -x "$APP_PATH/Contents/MacOS/screensway-capture"
-          lipo -archs "$APP_PATH/Contents/MacOS/screensway-capture" | grep -q arm64
-          lipo -archs "$APP_PATH/Contents/MacOS/screensway-capture" | grep -q x86_64
-      - name: Prepare macOS download
-        run: cp apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg ScreenSway-macos-universal.dmg
-      - uses: actions/upload-artifact@v7
-        with:
-          name: screensway-macos
-          path: ScreenSway-macos-universal.dmg
+          VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the app version $VERSION in tauri.conf.json"
+            exit 1
+          fi
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.9.0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
       - run: pnpm test && pnpm typecheck
-      - run: pnpm --filter @screensway/desktop tauri build --bundles nsis
-      - name: Prepare Windows download
-        shell: pwsh
-        run: Copy-Item (Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1) "ScreenSway-windows-x64.exe"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: screensway-windows
-          path: ScreenSway-windows-x64.exe
+      # Builds the universal app, bundles the DMG, and recompresses it with LZMA.
+      - run: pnpm build:macos
 
-  publish:
-    needs: [build-macos, build-windows]
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: screensway-*
-          merge-multiple: true
-      - name: Create GitHub Release
+      - name: Verify the DMG
+        run: |
+          DMG=$(ls apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          MOUNT=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
+          APP="$MOUNT/ScreenSway.app"
+          codesign --verify --deep --strict "$APP"
+          for binary in screensway screensway-capture; do
+            lipo "$APP/Contents/MacOS/$binary" -verify_arch arm64 x86_64
+          done
+          test -f "$APP/Contents/Resources/icon.icns"
+          hdiutil detach "$MOUNT"
+          cp "$DMG" ScreenSway-macos-universal.dmg
+          shasum -a 256 ScreenSway-macos-universal.dmg | tee checksum.txt
+
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" ScreenSway-macos-universal.dmg ScreenSway-windows-x64.exe --repo "$GITHUB_REPOSITORY" --generate-notes --title "ScreenSway $GITHUB_REF_NAME"
+        run: |
+          CHECKSUM=$(cut -d ' ' -f 1 checksum.txt)
+          sed "s/__CHECKSUM__/$CHECKSUM/" .github/release-notes.md > notes.md
+          gh release create "$GITHUB_REF_NAME" ScreenSway-macos-universal.dmg \
+            --title "ScreenSway $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
 
+      # Releases created with GITHUB_TOKEN do not trigger other workflows, so start
+      # the landing page deploy explicitly; it copies the new DMG into the site.
+      - name: Deploy the new download to the landing page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run web.yml --repo "$GITHUB_REPOSITORY" --ref main

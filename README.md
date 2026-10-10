@@ -53,14 +53,11 @@ pnpm build:desktop
 
 `test:capture:macos` performs real display and window recordings, exercises pause/resume and stop, and validates the MP4, manifest, and pointer metadata. It requires Screen Recording permission and `ffprobe` from FFmpeg.
 
-Windows capture is part of the product plan but is not implemented yet. The landing page download links become active after the first tagged macOS and Windows release is published.
+Windows capture is part of the product plan but is not implemented yet.
 
 ## Releases
 
-Pushing a tag such as `v0.1.0` triggers the desktop release workflow. The workflow builds macOS and Windows installers and publishes fixed download filenames used by the landing page:
+Pushing a tag such as `v0.2.0` (matching the app version) triggers the macOS release workflow. It builds and verifies `ScreenSway-macos-universal.dmg`, publishes the release, and redeploys the landing page, which serves the DMG at `download/ScreenSway-macos-universal.dmg`.
 
-- `ScreenSway-macos-universal.dmg`
-- `ScreenSway-windows-x64.exe`
-
-Code signing and notarization secrets must be configured before public distribution. See [docs/releasing.md](docs/releasing.md).
+The build is ad-hoc signed and not notarized yet. See [docs/releasing.md](docs/releasing.md).
 
