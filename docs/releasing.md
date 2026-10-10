@@ -14,9 +14,11 @@ The "Deploy landing page" workflow downloads `ScreenSway-macos-universal.dmg` fr
 
 1. Update the version in the root package, desktop package, `tauri.conf.json`, and `Cargo.toml`.
 2. Commit and push the changes.
-3. Create and push a tag, for example `v0.1.0`.
-4. Verify both build jobs in GitHub Actions.
-5. Test both downloaded installers before announcing the release.
+3. Create and push a matching tag, for example `v0.2.0`. The "Release macOS app" workflow refuses a tag that differs from the `tauri.conf.json` version.
+4. The workflow builds the universal DMG on a macOS 26 runner, verifies its signature, architectures and icon, publishes the release with install notes and the SHA-256 checksum, then starts the landing page deploy so the site serves the new DMG.
+5. Download the DMG from the landing page and test it before announcing the release.
+
+Only macOS is released for now; Windows capture is not implemented yet.
 
 ## Signing
 
