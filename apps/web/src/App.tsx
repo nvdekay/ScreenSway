@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { Demo } from "./Demo";
+import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
 
@@ -71,7 +72,7 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
   const { t } = useI18n();
   return (
     <div className={`download-actions${centered ? " centered" : ""}`}>
-      <a className="button-primary" href={MAC_DOWNLOAD}>
+      <a className="button-primary" href={MAC_DOWNLOAD} onClick={openInstallGuide}>
         <Apple size={20} fill="currentColor" aria-hidden="true" />
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
@@ -196,7 +197,7 @@ export default function App() {
         </nav>
         <div className="header-actions">
           <LanguageSwitch />
-          <a className="header-download" href={MAC_DOWNLOAD}>{t("nav.download")}</a>
+          <a className="header-download" href={MAC_DOWNLOAD} onClick={openInstallGuide}>{t("nav.download")}</a>
         </div>
       </header>
 
@@ -211,15 +212,8 @@ export default function App() {
           <p className="hero-copy">{t("hero.copy")}</p>
           <DownloadActions centered />
           <p className="hero-note">
-            {t("hero.macNote")} · <a
-              href="#faq-open"
-              onClick={() => {
-                const answer = document.getElementById("faq-open");
-                if (answer instanceof HTMLDetailsElement) answer.open = true;
-              }}
-            >
-              {t("hero.firstOpen")}
-            </a>
+            {t("hero.macNote")} ·{" "}
+            <button className="link-button" onClick={openInstallGuide}>{t("hero.howToInstall")}</button>
           </p>
           <div className="hero-demo" id="demo">
             <Demo />
@@ -346,6 +340,8 @@ export default function App() {
           <DownloadActions centered />
         </section>
       </main>
+
+      <InstallGuide downloadUrl={MAC_DOWNLOAD} />
 
       <footer className="site-footer">
         <Logo />

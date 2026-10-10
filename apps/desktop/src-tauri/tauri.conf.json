@@ -56,6 +56,12 @@
     "macOS": {
       "minimumSystemVersion": "15.0",
       "signingIdentity": "-",
+      "dmg": {
+        "background": "dmg/background.tiff",
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 170, "y": 170 },
+        "applicationFolderPosition": { "x": 490, "y": 170 }
+      },
       "infoPlist": "Info.plist"
     },
     "windows": {
