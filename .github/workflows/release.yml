@@ -25,7 +25,7 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - run: pnpm install --frozen-lockfile
       - run: pnpm test && pnpm typecheck
-      - run: pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles dmg
+      - run: pnpm build:macos
       - name: Verify bundled macOS capture sidecar
         run: |
           APP_PATH="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ScreenSway.app"
