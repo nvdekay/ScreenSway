@@ -25,7 +25,8 @@ import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
 
-const MAC_DOWNLOAD = "https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-macos-universal.dmg";
+// Served by the landing page itself; the deploy workflow copies it from the latest release.
+const MAC_DOWNLOAD = "./download/ScreenSway-macos-universal.dmg";
 
 function WindowsIcon() {
   return (
@@ -99,7 +100,7 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
   const { t } = useI18n();
   return (
     <div className={`download-actions${centered ? " centered" : ""}`}>
-      <a className="button-primary" href={MAC_DOWNLOAD} onClick={openInstallGuide}>
+      <a className="button-primary" href={MAC_DOWNLOAD} download onClick={openInstallGuide}>
         <Apple size={20} fill="currentColor" aria-hidden="true" />
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
@@ -215,7 +216,7 @@ export default function App() {
         </nav>
         <div className="header-actions">
           <LanguageSwitch />
-          <a className="header-download" href={MAC_DOWNLOAD} onClick={openInstallGuide}>{t("nav.download")}</a>
+          <a className="header-download" href={MAC_DOWNLOAD} download onClick={openInstallGuide}>{t("nav.download")}</a>
         </div>
       </header>
 

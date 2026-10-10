@@ -54,7 +54,7 @@ export function InstallGuide({ downloadUrl }: { downloadUrl: string }) {
         <span className="kicker">{t("guide.kicker")}</span>
         <h2 id="install-guide-title">{t("guide.title")}</h2>
         <p className="guide-lead">
-          {t("guide.downloading")} <a href={downloadUrl}>{t("guide.retry")}</a>
+          {t("guide.downloading")} <a href={downloadUrl} download>{t("guide.retry")}</a>
         </p>
 
         <ol className="guide-steps">

@@ -1,15 +1,14 @@
 # Releasing ScreenSway
 
-## Download URLs
+## Download URL
 
-The website uses stable GitHub Release asset URLs:
+The repository is private, so GitHub Release assets are not publicly downloadable. The landing page serves the macOS build itself:
 
 ```text
-https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-macos-universal.dmg
-https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-windows-x64.exe
+https://nvdekay.github.io/ScreenSway/download/ScreenSway-macos-universal.dmg
 ```
 
-The assets do not exist until the first tagged release completes.
+The "Deploy landing page" workflow downloads `ScreenSway-macos-universal.dmg` from the latest release and publishes it with the site. It runs when a release is published. If you replace the asset of an existing release, re-run the workflow (`gh workflow run web.yml`) so the site picks up the new file.
 
 ## Publish a release
 
