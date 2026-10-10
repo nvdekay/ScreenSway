@@ -29,7 +29,8 @@ import { formatDuration } from "./format";
 import { LANGUAGES, useI18n, type Language } from "./i18n";
 import { useRecordingState } from "./recordingState";
 import { LogoMark } from "./LogoMark";
-import { ZoomPreview, type RecordingResult } from "./ZoomPreview";
+import { RecordingStudio } from "./frame/RecordingStudio";
+import { type RecordingResult } from "./ZoomPreview";
 
 interface CaptureSource {
   id: string;
@@ -514,7 +515,7 @@ export default function App() {
               <X size={18} />
             </button>
           </div>
-          <ZoomPreview recording={result} key={result.videoPath} />
+          <RecordingStudio recording={result} key={result.videoPath} />
         </section>
       )}
 
