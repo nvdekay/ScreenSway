@@ -12,15 +12,27 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 4. Native capture quality. Platform-specific capture backends feed one shared project model.
 5. No account required.
 
-## First vertical slice
+## What ships today (macOS)
 
-1. Select a display or window.
-2. Record a clean screen video for at least 30 seconds.
-3. Store timestamped pointer movement and click events separately.
-4. Open the recording in a preview.
-5. Generate editable zoom segments from click activity.
+- Record a display or an application window, with optional system audio. Pause and resume without keeping the paused interval.
+- 3-second countdown, floating Liquid Glass controls and a menu bar timer; ScreenSway stays out of the video.
+- Studio preview with automatic, spring-based zoom and pan that follows clicks, a smooth re-rendered cursor and click ripples.
+- Frame customization: mesh and linear gradients, solid or custom colors, your own image with blur, a Magic background built from the recording's colors, film grain, macOS light/dark, glass and outline frames, aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
+- Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
+- A local library of recordings, Vietnamese and English UI, Retina/standard display hints.
 
-The first macOS vertical slice now supports display and application-window selection, interactive start/stop, pause/resume, local project metadata, and a generated zoom preview. Paused intervals are removed from both the final video and pointer timeline.
+## Roadmap
 
-Audio, webcam, captions, Windows capture, cloud sharing, and advanced audio processing remain outside this slice.
+Ordered by expected impact on activation, sharing and retention.
 
+1. Notarization (Apple Developer Program) to remove the first-launch block.
+2. In-app auto-update, documented as the only network exception.
+3. Global shortcut and quick record from the menu bar; first-run onboarding.
+4. Microphone voice-over and webcam overlay.
+5. Timeline editing: trim, edit or remove zoom points, adjust zoom depth; speed up idle stretches; keystroke overlay.
+6. On-device captions.
+7. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
+8. Windows capture (the landing page marks it "coming soon").
+9. Library management: rename, search, delete, hover scrub.
+
+Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
