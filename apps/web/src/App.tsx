@@ -34,13 +34,39 @@ function WindowsIcon() {
   );
 }
 
+/** Scrolls to an in-page section without adding a #fragment to the URL. */
+function scrollToSection(id: string, focus = false) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  if (focus) target.focus({ preventScroll: true });
+}
+
+function SectionLink({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; "aria-label"?: string }) {
+  return (
+    <a
+      href={`#${to}`}
+      className={className}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        scrollToSection(to, to === "main");
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
 function Logo() {
   const { t } = useI18n();
   return (
-    <a className="logo" href="#top" aria-label={t("nav.home")}>
+    <SectionLink to="top" className="logo" aria-label={t("nav.home")}>
       <LogoMark size={32} />
       <span>ScreenSway</span>
-    </a>
+    </SectionLink>
   );
 }
 
@@ -186,14 +212,14 @@ export default function App() {
 
   return (
     <div id="top">
-      <a className="skip-link" href="#main">{t("nav.skip")}</a>
+      <SectionLink to="main" className="skip-link">{t("nav.skip")}</SectionLink>
       <header className="site-header">
         <Logo />
         <nav aria-label="Main">
-          <a href="#demo">{t("nav.demo")}</a>
-          <a href="#features">{t("nav.features")}</a>
-          <a href="#privacy">{t("nav.privacy")}</a>
-          <a href="#faq">{t("nav.faq")}</a>
+          <SectionLink to="demo">{t("nav.demo")}</SectionLink>
+          <SectionLink to="features">{t("nav.features")}</SectionLink>
+          <SectionLink to="privacy">{t("nav.privacy")}</SectionLink>
+          <SectionLink to="faq">{t("nav.faq")}</SectionLink>
         </nav>
         <div className="header-actions">
           <LanguageSwitch />
@@ -201,7 +227,7 @@ export default function App() {
         </div>
       </header>
 
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <section className="hero">
           <div className="hero-glow" aria-hidden="true" />
           <span className="hero-eyebrow"><Sparkles size={15} aria-hidden="true" /> {t("hero.eyebrow")}</span>
