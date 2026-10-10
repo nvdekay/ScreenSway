@@ -12,11 +12,11 @@ jobs:
   build-macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -34,7 +34,7 @@ jobs:
           lipo -archs "$APP_PATH/Contents/MacOS/screensway-capture" | grep -q x86_64
       - name: Prepare macOS download
         run: cp apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg ScreenSway-macos-universal.dmg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screensway-macos
           path: ScreenSway-macos-universal.dmg
@@ -42,11 +42,11 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -57,16 +57,16 @@ jobs:
       - name: Prepare Windows download
         shell: pwsh
         run: Copy-Item (Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1) "ScreenSway-windows-x64.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screensway-windows
           path: ScreenSway-windows-x64.exe
 
   publish:
     needs: [build-macos, build-windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: screensway-*
           merge-multiple: true
