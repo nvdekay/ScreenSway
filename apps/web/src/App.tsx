@@ -2,7 +2,6 @@ import {
   Apple,
   ArrowRight,
   Check,
-  ChevronDown,
   Circle,
   EyeOff,
   FolderOpen,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { Demo } from "./Demo";
+import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
@@ -168,15 +168,6 @@ const COMPARISON: { label: MessageKey; raw: "yes" | "no" | "depends" }[] = [
   { label: "compare.row3", raw: "no" },
   { label: "compare.row4", raw: "depends" },
   { label: "compare.row5", raw: "depends" },
-];
-
-const FAQ: [MessageKey, MessageKey][] = [
-  ["faq.q1", "faq.a1"],
-  ["faq.q2", "faq.a2"],
-  ["faq.q3", "faq.a3"],
-  ["faq.q4", "faq.a4"],
-  ["faq.q5", "faq.a5"],
-  ["faq.q6", "faq.a6"],
 ];
 
 function FeatureVisual({ name }: { name?: string }) {
@@ -346,17 +337,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="faq" id="faq">
-          <SectionIntro kicker="faq.kicker" title="faq.title" />
-          <div className="faq-list" data-reveal>
-            {FAQ.map(([question, answer]) => (
-              <details key={question} id={question === "faq.q6" ? "faq-open" : undefined}>
-                <summary>{t(question)}<ChevronDown size={18} aria-hidden="true" /></summary>
-                <p>{t(answer)}</p>
-              </details>
-            ))}
-          </div>
-        </section>
+        <Faq />
 
         <section className="cta" data-reveal>
           <div className="cta-glow" aria-hidden="true" />
