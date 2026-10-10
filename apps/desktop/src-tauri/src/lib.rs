@@ -36,6 +36,7 @@ struct CaptureSource {
     name: String,
     width: u32,
     height: u32,
+    pixel_scale: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]

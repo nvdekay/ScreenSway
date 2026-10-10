@@ -12,6 +12,9 @@ struct CaptureSource: Codable {
     let name: String
     let width: Int
     let height: Int
+    /// Pixels per point: 2 on Retina displays, 1 on standard ones. Recordings of standard
+    /// displays hold half the detail, which shows once the preview zooms in.
+    let pixelScale: Double
 }
 
 struct PointerSample: Codable, Sendable {
@@ -600,7 +603,8 @@ struct ScreenSwayCapture {
                 kind: "display",
                 name: "Display \(index + 1)",
                 width: display.width,
-                height: display.height
+                height: display.height,
+                pixelScale: Double(SCContentFilter(display: display, excludingWindows: []).pointPixelScale)
             )
         }
         let windows = content.windows
@@ -618,7 +622,8 @@ struct ScreenSwayCapture {
                     kind: "window",
                     name: "\(appName) — \(window.title ?? "Untitled")",
                     width: Int(window.frame.width),
-                    height: Int(window.frame.height)
+                    height: Int(window.frame.height),
+                    pixelScale: Double(SCContentFilter(desktopIndependentWindow: window).pointPixelScale)
                 )
             }
         return displays + windows
