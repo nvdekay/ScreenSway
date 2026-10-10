@@ -72,7 +72,12 @@ main:focus { outline: none; }
 /* Hero */
 .hero { position: relative; width: var(--content); margin: 0 auto; padding: 88px 0 0; text-align: center; }
 .hero-glow { position: absolute; inset: -120px -30% auto; height: 760px; z-index: -1; background: radial-gradient(40% 50% at 50% 30%, #6366f159 0, transparent 70%), radial-gradient(30% 40% at 75% 20%, #ec489929 0, transparent 70%), radial-gradient(30% 40% at 25% 25%, #2563eb29 0, transparent 70%); filter: blur(10px); animation: glow-drift 14s ease-in-out infinite alternate; }
-.hero-eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border: 1px solid #818cf84d; border-radius: 999px; background: var(--primary-soft); color: #c9cdff; font-size: 14px; font-weight: 600; animation: rise var(--dur-slow) var(--ease-out) both; }
+/* Release announcement: a plain, link-like pill rather than a decorative badge. */
+.release-pill { display: inline-flex; align-items: center; gap: 10px; padding: 4px 12px 4px 4px; border: 1px solid #ffffff1f; border-radius: 999px; background: #ffffff08; color: var(--text-muted); font-size: 14px; font-weight: 550; animation: rise var(--dur-slow) var(--ease-out) both; transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease, color var(--dur-fast) ease; }
+.release-pill:hover { border-color: #ffffff38; background: #ffffff0f; color: var(--text); }
+.release-tag { padding: 3px 10px; border-radius: 999px; background: var(--text); color: #0f0e15; font-size: 12px; font-weight: 750; letter-spacing: .02em; }
+.release-arrow { color: var(--text-subtle); transition: transform var(--dur-base) var(--ease-out); }
+.release-pill:hover .release-arrow { transform: translateX(3px); color: var(--text); }
 .hero h1 { margin: 28px auto 22px; max-width: 920px; font-size: clamp(44px, 7.4vw, 92px); font-weight: 750; line-height: 1.02; letter-spacing: -.045em; }
 .hero-line { display: block; padding-bottom: .06em; animation: rise var(--dur-slow) var(--ease-out) both; }
 .hero-line:first-child { animation-delay: 80ms; }

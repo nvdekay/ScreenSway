@@ -2,6 +2,7 @@ import {
   Apple,
   ArrowRight,
   Check,
+  ChevronRight,
   Circle,
   EyeOff,
   FolderOpen,
@@ -17,6 +18,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { Demo } from "./Demo";
 import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
@@ -24,7 +26,7 @@ import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
 
 const MAC_DOWNLOAD = "https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-macos-universal.dmg";
-const RELEASES = "https://github.com/nvdekay/ScreenSway/releases";
+const RELEASE_NOTES = `https://github.com/nvdekay/ScreenSway/releases/tag/v${appVersion}`;
 
 function WindowsIcon() {
   return (
@@ -221,7 +223,11 @@ export default function App() {
       <main id="main" tabIndex={-1}>
         <section className="hero">
           <div className="hero-glow" aria-hidden="true" />
-          <span className="hero-eyebrow"><Sparkles size={15} aria-hidden="true" /> {t("hero.eyebrow")}</span>
+          <a className="release-pill" href={RELEASE_NOTES}>
+            <span className="release-tag">{t("hero.releaseTag")}</span>
+            <span>{t("hero.release", { version: appVersion })}</span>
+            <ChevronRight size={16} className="release-arrow" aria-hidden="true" />
+          </a>
           <h1>
             <span className="hero-line">{t("hero.titleA")}</span>
             <span className="hero-line accent">{t("hero.titleB")}</span>
@@ -229,7 +235,7 @@ export default function App() {
           <p className="hero-copy">{t("hero.copy")}</p>
           <DownloadActions centered />
           <p className="hero-note">
-            {t("hero.macNote")} ·{" "}
+            {t("hero.perks")} · {t("hero.macNote")} ·{" "}
             <button className="link-button" onClick={openInstallGuide}>{t("hero.howToInstall")}</button>
           </p>
           <div className="hero-demo" id="demo">
@@ -354,7 +360,6 @@ export default function App() {
         <Logo />
         <p>{t("footer.tagline")}</p>
         <div>
-          <a href={RELEASES}>{t("footer.releases")}</a>
           <a href="mailto:hello@screensway.app">{t("footer.contact")}</a>
           <span>© 2026 ScreenSway</span>
         </div>
