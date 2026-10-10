@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { Demo } from "./Demo";
+import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
 
 const MAC_DOWNLOAD = "https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-macos-universal.dmg";
@@ -36,7 +37,7 @@ function Logo() {
   const { t } = useI18n();
   return (
     <a className="logo" href="#top" aria-label={t("nav.home")}>
-      <span className="logo-mark"><MousePointer2 size={16} strokeWidth={2.6} aria-hidden="true" /></span>
+      <LogoMark size={32} />
       <span>ScreenSway</span>
     </a>
   );
@@ -280,7 +281,7 @@ export default function App() {
                 <tr>
                   <th scope="col"><span className="sr-only">Feature</span></th>
                   <th scope="col">{t("compare.raw")}</th>
-                  <th scope="col" className="highlight"><MousePointer2 size={15} aria-hidden="true" /> {t("compare.sway")}</th>
+                  <th scope="col" className="highlight"><LogoMark size={18} /> {t("compare.sway")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -339,7 +340,7 @@ export default function App() {
 
         <section className="cta" data-reveal>
           <div className="cta-glow" aria-hidden="true" />
-          <span className="cta-mark" aria-hidden="true"><MousePointer2 size={26} strokeWidth={2.4} /></span>
+          <span className="cta-mark"><LogoMark size={72} /></span>
           <h2>{t("cta.title")}</h2>
           <p>{t("cta.copy")}</p>
           <DownloadActions centered />

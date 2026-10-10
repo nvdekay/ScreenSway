@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ScreenSway mark: an "S" framed by viewfinder corners, with a recording light. -->
+  <defs>
+    <linearGradient id="base" x1="200" y1="100" x2="824" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B5BF0"/>
+      <stop offset="0.55" stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(760 820) scale(420)">
+      <stop stop-color="#EC4899" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#EC4899" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="512" y1="100" x2="512" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#base)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+  <path d="M262 384V346C262 301.817 297.817 266 342 266H380" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M762 640V678C762 722.183 726.183 758 682 758H644" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M600 372H442C404.445 372 374 402.445 374 440C374 477.555 404.445 508 442 508H582C619.555 508 650 538.445 650 576C650 613.555 619.555 644 582 644H424" stroke="#FFFFFF" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="674" cy="372" r="42" fill="#FF5A6E"/>
+</svg>

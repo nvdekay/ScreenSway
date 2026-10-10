@@ -79,7 +79,7 @@ html:not(.glass) .app-shell { background-color: var(--bg); }
 .titlebar { position: sticky; top: 0; z-index: 10; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 88px; }
 html.glass .titlebar { -webkit-backdrop-filter: blur(20px) saturate(150%); backdrop-filter: blur(20px) saturate(150%); }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--font-heading); font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
-.brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; background: linear-gradient(145deg, var(--primary), var(--primary-strong)); box-shadow: inset 0 1px 0 #ffffff59, 0 8px 20px #6366f155; }
+.brand svg { flex: none; border-radius: 9px; box-shadow: 0 8px 20px #4338ca55; }
 
 .icon-button { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border: 1px solid var(--glass-border); border-radius: 50%; background: var(--glass-fill); color: var(--text-muted); box-shadow: var(--glass-highlight); transition: background var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-fast) ease; }
 .icon-button:hover, .icon-button.active { background: #ffffff1f; color: var(--text); }
