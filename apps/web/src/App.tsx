@@ -7,11 +7,13 @@ import {
   FolderOpen,
   Languages,
   MousePointer2,
+  Moon,
   MousePointerClick,
   Pause,
   ShieldCheck,
   Sparkles,
   Square,
+  Sun,
   Video,
   X,
   ZoomIn,
@@ -24,6 +26,7 @@ import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
+import { useTheme } from "./theme";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
 const MAC_DOWNLOAD = "./download/ScreenSway-macos-universal.dmg";
@@ -93,6 +96,17 @@ function LanguageSwitch() {
         </button>
       ))}
     </div>
+  );
+}
+
+function ThemeSwitch() {
+  const { t } = useI18n();
+  const { theme, toggleTheme } = useTheme();
+  const label = theme === "dark" ? t("nav.lightMode") : t("nav.darkMode");
+  return (
+    <button className="theme-switch" onClick={toggleTheme} aria-label={label} title={label}>
+      {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+    </button>
   );
 }
 
@@ -215,6 +229,7 @@ export default function App() {
           <SectionLink to="faq">{t("nav.faq")}</SectionLink>
         </nav>
         <div className="header-actions">
+          <ThemeSwitch />
           <LanguageSwitch />
           <a className="header-download" href={MAC_DOWNLOAD} download onClick={openInstallGuide}>{t("nav.download")}</a>
         </div>
