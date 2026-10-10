@@ -146,6 +146,14 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .secondary-button:hover { background: #ffffff1f; }
 
 .recorder .record-hint { margin: 14px 4px 0; color: var(--text-subtle); font-size: 13px; line-height: 1.5; }
+.permission-card { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding: 16px; border: 1px solid #e6ac5240; border-radius: var(--radius-md); background: #e6ac5212; animation: rise var(--dur-slow) var(--ease-out); }
+.permission-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: #e6ac5226; color: var(--warning); }
+.permission-card strong { font-size: 15px; font-weight: 650; }
+.permission-card p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.permission-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.permission-primary { min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--text); color: #16141d; font-size: 13px; font-weight: 650; }
+.permission-primary:hover { background: #fff; }
+.secondary-button.compact { min-height: 40px; padding: 0 14px; font-size: 13px; }
 .capture-message { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 13px; animation: rise var(--dur-slow) var(--ease-out); }
 .capture-message.success { color: var(--success); background: var(--success-soft); border: 1px solid #34d39933; }
 .capture-message.error { color: #ff9aab; background: var(--danger-soft); border: 1px solid #f2586f40; }

@@ -13,7 +13,9 @@ import {
   MousePointer2,
   Pause,
   Play,
+  RotateCw,
   Settings2,
+  ShieldAlert,
   Square,
   Video,
   X,
@@ -45,6 +47,7 @@ interface LibraryEntry {
 }
 
 const CANCELLED_MESSAGE = "Recording cancelled.";
+const PERMISSION_DENIED_MARKER = "SCREENSWAY_SCREEN_RECORDING_DENIED";
 
 function formatCreatedAt(value: string, language: Language): string {
   const date = new Date(value);
@@ -187,29 +190,30 @@ export default function App() {
     }
   }, []);
 
+  const loadSources = useCallback(async (isCancelled: () => boolean = () => false) => {
+    setLoadingSources(true);
+    setError(null);
+    try {
+      const availableSources = await invoke<CaptureSource[]>("list_capture_sources");
+      if (isCancelled()) return;
+      setSources(availableSources);
+      const first = availableSources[0];
+      if (first) setSelectedSourceKey((current) => current || `${first.kind}:${first.id}`);
+    } catch (sourceError) {
+      if (!isCancelled()) setError(String(sourceError));
+    } finally {
+      if (!isCancelled()) setLoadingSources(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    async function loadSources() {
-      try {
-        const availableSources = await invoke<CaptureSource[]>("list_capture_sources");
-        if (cancelled) return;
-        setSources(availableSources);
-        if (availableSources[0]) {
-          setSelectedSourceKey(`${availableSources[0].kind}:${availableSources[0].id}`);
-        }
-      } catch (sourceError) {
-        if (!cancelled) setError(String(sourceError));
-      } finally {
-        if (!cancelled) setLoadingSources(false);
-      }
-    }
-
-    void loadSources();
+    void loadSources(() => cancelled);
     void refreshLibrary();
     return () => {
       cancelled = true;
     };
-  }, [refreshLibrary]);
+  }, [loadSources, refreshLibrary]);
 
   useEffect(() => {
     if (result) previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -344,7 +348,7 @@ export default function App() {
                 <span className="sr-only">{t("source.loading")}</span>
               </>
             )}
-            {!loadingSources && visibleSources.length === 0 && <p className="source-empty">{t("source.empty")}</p>}
+            {!loadingSources && !error && visibleSources.length === 0 && <p className="source-empty">{t("source.empty")}</p>}
             {visibleSources.map((source) => {
               const key = `${source.kind}:${source.id}`;
               const selected = key === selectedSourceKey;
@@ -403,7 +407,25 @@ export default function App() {
               <span><strong>{t("record.saved")}</strong><small>{result.projectPath}</small></span>
             </div>
           )}
-          {error && (
+          {error?.includes(PERMISSION_DENIED_MARKER) && (
+            <div className="permission-card" role="alert">
+              <span className="permission-icon" aria-hidden="true"><ShieldAlert size={20} /></span>
+              <strong>{t("permission.title")}</strong>
+              <p>{t("permission.body")}</p>
+              <div className="permission-actions">
+                <button
+                  className="permission-primary"
+                  onClick={() => void invoke("open_screen_recording_settings").catch(() => {})}
+                >
+                  {t("permission.open")}
+                </button>
+                <button className="secondary-button compact" onClick={() => void loadSources()}>
+                  <RotateCw size={14} aria-hidden="true" /> {t("permission.retry")}
+                </button>
+              </div>
+            </div>
+          )}
+          {error && !error.includes(PERMISSION_DENIED_MARKER) && (
             <div className="capture-message error" role="alert">
               <AlertCircle size={18} aria-hidden="true" />
               <span><strong>{t("record.failed")}</strong><small>{error}</small></span>

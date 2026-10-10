@@ -823,6 +823,16 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
 }
 
 #[tauri::command]
+fn open_screen_recording_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn()
+        .map_err(|error| format!("Could not open System Settings: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn reveal_recording(project_path: String) -> Result<(), String> {
     let project = resolve_project(&project_path)?;
     #[cfg(target_os = "macos")]
@@ -878,7 +888,8 @@ pub fn run() {
             set_native_labels,
             list_recordings,
             load_recording,
-            reveal_recording
+            reveal_recording,
+            open_screen_recording_settings
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")
