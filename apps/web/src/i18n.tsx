@@ -12,7 +12,9 @@ const en = {
   "nav.home": "ScreenSway home",
   "nav.skip": "Skip to content",
 
-  "hero.eyebrow": "Free · No watermark · No account",
+  "hero.releaseTag": "New",
+  "hero.release": "ScreenSway {version} for macOS is out",
+  "hero.perks": "Free, no watermark, no account",
   "hero.titleA": "Your screen knows",
   "hero.titleB": "where to look.",
   "hero.copy": "Record once. ScreenSway follows every click with smooth, cinematic zooms — so your demos, tutorials and bug reports look edited without any editing.",
@@ -152,7 +154,6 @@ const en = {
   "cta.copy": "Download ScreenSway and turn your next screen recording into something people actually enjoy watching.",
 
   "footer.tagline": "Beautiful screen recordings, automatically.",
-  "footer.releases": "Releases",
   "footer.contact": "Contact",
 };
 
@@ -168,7 +169,9 @@ const vi: Record<MessageKey, string> = {
   "nav.home": "Trang chủ ScreenSway",
   "nav.skip": "Bỏ qua tới nội dung",
 
-  "hero.eyebrow": "Miễn phí · Không watermark · Không cần tài khoản",
+  "hero.releaseTag": "Mới",
+  "hero.release": "ScreenSway {version} cho macOS đã ra mắt",
+  "hero.perks": "Miễn phí, không watermark, không cần tài khoản",
   "hero.titleA": "Màn hình của bạn",
   "hero.titleB": "tự biết nhìn vào đâu.",
   "hero.copy": "Chỉ cần quay một lần. ScreenSway tự zoom theo từng cú click một cách mượt mà như quay phim — bản demo, video hướng dẫn hay báo lỗi trông như đã được dựng kỹ mà bạn không cần chỉnh sửa gì.",
@@ -308,7 +311,6 @@ const vi: Record<MessageKey, string> = {
   "cta.copy": "Tải ScreenSway và biến bản quay màn hình tiếp theo thành video mà mọi người thật sự muốn xem.",
 
   "footer.tagline": "Video quay màn hình đẹp, hoàn toàn tự động.",
-  "footer.releases": "Bản phát hành",
   "footer.contact": "Liên hệ",
 };
 
