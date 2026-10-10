@@ -210,3 +210,5 @@ function stepSpring(
   const nextVelocity = (velocity - omega * (velocity + omega * offset) * dt) * decay;
   return [target + nextOffset, nextVelocity];
 }
+
+export * from "./frame";
