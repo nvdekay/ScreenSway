@@ -114,6 +114,9 @@ const en = {
   "faq.a4": "In Movies › ScreenSway on your Mac. Each recording is a folder with the video and cursor data.",
   "faq.q5": "Does ScreenSway record audio?",
   "faq.a5": "Not yet. Microphone and system audio are on the roadmap.",
+  "faq.q6": "macOS says it can't verify ScreenSway. How do I open it?",
+  "faq.a6": "This early build isn't notarized by Apple yet. Open the DMG, drag ScreenSway to Applications and open it once. When macOS blocks it, go to System Settings › Privacy & Security, scroll down and click “Open Anyway”. You only need to do this once.",
+  "hero.firstOpen": "First time opening it?",
 
   "cta.title": "Make every click worth watching.",
   "cta.copy": "Download ScreenSway and turn your next screen recording into something people actually enjoy watching.",
@@ -237,6 +240,9 @@ const vi: Record<MessageKey, string> = {
   "faq.a4": "Trong Phim › ScreenSway trên máy Mac của bạn. Mỗi bản quay là một thư mục chứa video và dữ liệu con trỏ.",
   "faq.q5": "ScreenSway có ghi âm không?",
   "faq.a5": "Chưa. Micro và âm thanh hệ thống nằm trong lộ trình phát triển.",
+  "faq.q6": "macOS báo không thể xác minh ScreenSway. Làm sao để mở?",
+  "faq.a6": "Bản thử nghiệm này chưa được Apple chứng nhận (notarize). Mở file DMG, kéo ScreenSway vào Applications rồi mở app một lần. Khi macOS chặn, vào Cài đặt hệ thống › Quyền riêng tư & Bảo mật, kéo xuống dưới và bấm “Vẫn mở”. Bạn chỉ cần làm việc này một lần.",
+  "hero.firstOpen": "Lần đầu mở app?",
 
   "cta.title": "Biến mỗi cú click thành khoảnh khắc đáng xem.",
   "cta.copy": "Tải ScreenSway và biến bản quay màn hình tiếp theo thành video mà mọi người thật sự muốn xem.",
