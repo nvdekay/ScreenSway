@@ -148,6 +148,7 @@ const FAQ: [MessageKey, MessageKey][] = [
   ["faq.q3", "faq.a3"],
   ["faq.q4", "faq.a4"],
   ["faq.q5", "faq.a5"],
+  ["faq.q6", "faq.a6"],
 ];
 
 function FeatureVisual({ name }: { name?: string }) {
@@ -208,7 +209,17 @@ export default function App() {
           </h1>
           <p className="hero-copy">{t("hero.copy")}</p>
           <DownloadActions centered />
-          <p className="hero-note">{t("hero.macNote")}</p>
+          <p className="hero-note">
+            {t("hero.macNote")} · <a
+              href="#faq-open"
+              onClick={() => {
+                const answer = document.getElementById("faq-open");
+                if (answer instanceof HTMLDetailsElement) answer.open = true;
+              }}
+            >
+              {t("hero.firstOpen")}
+            </a>
+          </p>
           <div className="hero-demo" id="demo">
             <Demo />
           </div>
@@ -318,7 +329,7 @@ export default function App() {
           <SectionIntro kicker="faq.kicker" title="faq.title" />
           <div className="faq-list" data-reveal>
             {FAQ.map(([question, answer]) => (
-              <details key={question}>
+              <details key={question} id={question === "faq.q6" ? "faq-open" : undefined}>
                 <summary>{t(question)}<ChevronDown size={18} aria-hidden="true" /></summary>
                 <p>{t(answer)}</p>
               </details>
