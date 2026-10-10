@@ -1,5 +1,6 @@
 import { ChevronDown, HelpCircle } from "lucide-react";
 import { useId, useState } from "react";
+import { CONTACT_MAILTO } from "./contact";
 import { useI18n, type MessageKey } from "./i18n";
 import { LogoMark } from "./LogoMark";
 
@@ -41,7 +42,7 @@ export function Faq() {
         <span className="faq-badge"><HelpCircle size={15} aria-hidden="true" /> {t("faq.kicker")}</span>
         <h2>{t("faq.title")}</h2>
         <p>
-          {t("faq.more")} <a href="mailto:hello@screensway.app">{t("faq.email")}</a>.
+          {t("faq.more")} <a href={CONTACT_MAILTO}>{t("faq.email")}</a>.
         </p>
         <ChatIllustration />
       </div>
