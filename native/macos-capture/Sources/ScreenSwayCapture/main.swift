@@ -263,6 +263,12 @@ enum CaptureError: LocalizedError {
 }
 
 private let maximumEncodedDimension = 3_840.0
+private let screenRecordingDeniedMarker = "SCREENSWAY_SCREEN_RECORDING_DENIED"
+
+private func isPermissionDenied(_ error: Error) -> Bool {
+    let error = error as NSError
+    return error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
+}
 
 @main
 struct ScreenSwayCapture {
@@ -274,7 +280,11 @@ struct ScreenSwayCapture {
             FileHandle.standardOutput.write(data)
             FileHandle.standardOutput.write(Data("\n".utf8))
         } catch {
-            FileHandle.standardError.write(Data("ScreenSway capture failed: \(error.localizedDescription)\n".utf8))
+            // The desktop shell recognizes this marker and guides the user to System Settings.
+            let message = isPermissionDenied(error)
+                ? screenRecordingDeniedMarker
+                : "ScreenSway capture failed: \(error.localizedDescription)"
+            FileHandle.standardError.write(Data("\(message)\n".utf8))
             Foundation.exit(1)
         }
     }
