@@ -1,17 +1,26 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ScreenSway mark: an "S" framed by viewfinder corners, with a recording light. -->
   <defs>
-    <linearGradient id="bg" x1="56" y1="34" x2="443" y2="473" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#A987FF"/>
-      <stop offset="1" stop-color="#6040C8"/>
+    <linearGradient id="base" x1="200" y1="100" x2="824" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B5BF0"/>
+      <stop offset="0.55" stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
     </linearGradient>
-    <filter id="shadow" x="92" y="72" width="351" height="372" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="20" stdDeviation="16" flood-color="#2A1767" flood-opacity="0.28"/>
-    </filter>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(760 820) scale(420)">
+      <stop stop-color="#EC4899" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#EC4899" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="512" y1="100" x2="512" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="122" fill="url(#bg)"/>
-  <circle cx="257" cy="257" r="150" stroke="white" stroke-opacity="0.2" stroke-width="15"/>
-  <circle cx="257" cy="257" r="91" stroke="white" stroke-opacity="0.34" stroke-width="13"/>
-  <path filter="url(#shadow)" d="M151 121L365 296C379 308 371 331 353 332L271 338L228 408C218 424 194 420 190 401L124 145C119 123 134 107 151 121Z" fill="white"/>
-  <path d="M263 337L319 398" stroke="white" stroke-width="34" stroke-linecap="round"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#base)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+  <path d="M262 384V346C262 301.817 297.817 266 342 266H380" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M762 640V678C762 722.183 726.183 758 682 758H644" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M600 372H442C404.445 372 374 402.445 374 440C374 477.555 404.445 508 442 508H582C619.555 508 650 538.445 650 576C650 613.555 619.555 644 582 644H424" stroke="#FFFFFF" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="674" cy="372" r="42" fill="#FF5A6E"/>
 </svg>
-

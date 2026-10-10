@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
 import { LANGUAGES, useI18n, type Language } from "./i18n";
 import { useRecordingState } from "./recordingState";
+import { LogoMark } from "./LogoMark";
 import { ZoomPreview, type RecordingResult } from "./ZoomPreview";
 
 interface CaptureSource {
@@ -298,7 +299,7 @@ export default function App() {
     <main className="app-shell">
       <header className="titlebar" data-tauri-drag-region>
         <a className="brand" href="#" aria-label={t("app.home")}>
-          <span className="brand-mark"><MousePointer2 size={15} strokeWidth={2.5} aria-hidden="true" /></span>
+          <LogoMark size={30} />
           <span>ScreenSway</span>
         </a>
         <SettingsMenu />
