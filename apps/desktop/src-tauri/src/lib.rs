@@ -148,7 +148,9 @@ async fn start_recording(
     app: tauri::AppHandle,
     source_kind: String,
     source_id: String,
+    system_audio: Option<bool>,
 ) -> Result<RecordingStarted, String> {
+    let system_audio = system_audio.unwrap_or(false);
     if source_kind != "display" && source_kind != "window" {
         return Err("Capture source must be a display or window.".into());
     }
@@ -157,7 +159,7 @@ async fn start_recording(
     {
         reserve_recording(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
-            let result = start_recording_macos(&app, &source_kind, &source_id);
+            let result = start_recording_macos(&app, &source_kind, &source_id, system_audio);
             if result.is_err() {
                 publish_state(&app, RecordingState { status: "idle", ..Default::default() });
                 restore_main_window(&app);
@@ -170,7 +172,7 @@ async fn start_recording(
 
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, source_id);
+        let _ = (app, source_id, system_audio);
         Err("The first ScreenSway capture prototype currently supports macOS only.".into())
     }
 }
@@ -267,6 +269,7 @@ fn start_recording_macos(
     app: &tauri::AppHandle,
     source_kind: &str,
     source_id: &str,
+    system_audio: bool,
 ) -> Result<RecordingStarted, String> {
     use std::io::BufRead;
     use std::process::{Command, Stdio};
@@ -301,7 +304,11 @@ fn start_recording_macos(
         .map_err(|error| format!("Could not initialize recording controls: {error}"))?;
 
     let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut child = Command::new(capture_binary()?)
+    let mut command = Command::new(capture_binary()?);
+    if system_audio {
+        command.arg("--system-audio");
+    }
+    let mut child = command
         .arg("--output")
         .arg(&project_path)
         .arg("--control")

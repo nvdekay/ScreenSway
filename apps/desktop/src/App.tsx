@@ -19,6 +19,8 @@ import {
   ShieldAlert,
   Square,
   Video,
+  Volume2,
+  VolumeX,
   X,
   ZoomIn,
 } from "lucide-react";
@@ -51,6 +53,31 @@ interface LibraryEntry {
 }
 
 const CANCELLED_MESSAGE = "Recording cancelled.";
+const SYSTEM_AUDIO_KEY = "screensway.systemAudio";
+
+/** A per-device preference; falls back to the default when storage is unavailable. */
+function useStoredBoolean(key: string, fallback: boolean) {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored === null ? fallback : stored === "true";
+    } catch {
+      return fallback;
+    }
+  });
+  const update = useCallback(
+    (next: boolean) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, String(next));
+      } catch {
+        // The choice still applies for this session.
+      }
+    },
+    [key],
+  );
+  return [value, update] as const;
+}
 const PERMISSION_DENIED_MARKER = "SCREENSWAY_SCREEN_RECORDING_DENIED";
 
 function formatCreatedAt(value: string, language: Language): string {
@@ -172,6 +199,7 @@ export default function App() {
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  const [systemAudio, setSystemAudio] = useStoredBoolean(SYSTEM_AUDIO_KEY, true);
   const previewRef = useRef<HTMLElement>(null);
   const recording = recorder.status !== "idle";
   const paused = recorder.status === "paused";
@@ -248,6 +276,7 @@ export default function App() {
       await invoke("start_recording", {
         sourceKind: selectedSource.kind,
         sourceId: selectedSource.id,
+        systemAudio,
       });
     } catch (captureError) {
       if (String(captureError) !== CANCELLED_MESSAGE) setError(String(captureError));
@@ -384,6 +413,24 @@ export default function App() {
               );
             })}
           </div>
+
+          <label className={`audio-toggle${recording ? " disabled" : ""}`}>
+            <span className="audio-icon" aria-hidden="true">
+              {systemAudio ? <Volume2 size={17} /> : <VolumeX size={17} />}
+            </span>
+            <span className="audio-text">
+              <strong>{t("audio.label")}</strong>
+              <small>{t("audio.hint")}</small>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={systemAudio}
+              disabled={recording}
+              onChange={(event) => setSystemAudio(event.target.checked)}
+            />
+            <span className="switch" aria-hidden="true" />
+          </label>
 
           <div className="recorder-status" aria-live="polite">
             <span className={`status-dot ${recorder.status}`} aria-hidden="true" />

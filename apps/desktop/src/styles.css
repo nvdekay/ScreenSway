@@ -133,6 +133,20 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .source-skeleton { height: 56px; flex: none; border-radius: var(--radius-md); background: linear-gradient(90deg, #ffffff0a 25%, #ffffff17 50%, #ffffff0a 75%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
 .source-empty { margin: auto; color: var(--text-subtle); font-size: 14px; }
 
+/* System audio switch */
+.audio-toggle { min-height: 56px; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 10px; padding: 8px 12px 8px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: #ffffff06; cursor: pointer; transition: background var(--dur-fast) ease; }
+.audio-toggle:hover { background: var(--surface-hover); }
+.audio-toggle.disabled { cursor: default; opacity: .6; }
+.audio-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--radius-sm); background: var(--glass-fill); border: 1px solid var(--hairline); color: var(--primary); }
+.audio-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.audio-text strong { font-size: 14px; font-weight: 600; }
+.audio-text small { overflow: hidden; color: var(--text-subtle); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.audio-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { position: relative; width: 40px; height: 24px; border-radius: 999px; background: #ffffff26; transition: background var(--dur-base) var(--ease-out); }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0006; transition: transform var(--dur-base) var(--ease-out); }
+.audio-toggle input:checked + .switch { background: var(--primary-strong); }
+.audio-toggle input:checked + .switch::after { transform: translateX(16px); }
+.audio-toggle input:focus-visible + .switch { outline: 2px solid var(--primary); outline-offset: 2px; }
 .recorder-status { display: flex; align-items: center; gap: 8px; padding: 14px 4px 12px; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px #34d39926; }
 .status-dot.recording, .status-dot.countdown { background: var(--danger); box-shadow: 0 0 0 3px #f2586f33; animation: pulse 1.2s ease-in-out infinite; }

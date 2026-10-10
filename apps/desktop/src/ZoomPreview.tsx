@@ -6,7 +6,7 @@ import {
   samplePointer,
   type PointerEvent,
 } from "@screensway/core";
-import { Pause, Play, RotateCcw, ZoomIn } from "lucide-react";
+import { Pause, Play, RotateCcw, Volume2, VolumeX, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
 import { useI18n } from "./i18n";
@@ -24,6 +24,11 @@ export interface RecordingResult {
 const CLICK_RIPPLE_MS = 550;
 const FULL_FRAME = { x: 0.5, y: 0.5, scale: 1 };
 
+function hasAudioTrack(video: HTMLVideoElement): boolean {
+  const tracks = (video as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
+  return tracks ? tracks.length > 0 : true;
+}
+
 export function ZoomPreview({ recording }: { recording: RecordingResult }) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -35,6 +40,8 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
   const timeRef = useRef<HTMLSpanElement>(null);
   const scrubbingRef = useRef(false);
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [hasAudio, setHasAudio] = useState(false);
   const [autoZoom, setAutoZoom] = useState(true);
   const [durationMs, setDurationMs] = useState(recording.durationMs);
 
@@ -135,14 +142,20 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
             <video
               ref={videoRef}
               src={convertFileSrc(recording.videoPath)}
-              autoPlay
               playsInline
               preload="auto"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onLoadedMetadata={(event) => {
-                const duration = event.currentTarget.duration;
-                if (Number.isFinite(duration)) setDurationMs(duration * 1_000);
+                const video = event.currentTarget;
+                if (Number.isFinite(video.duration)) setDurationMs(video.duration * 1_000);
+                setHasAudio(hasAudioTrack(video));
+                // Autoplay with sound can be refused; fall back to muted playback rather than none.
+                void video.play().catch(() => {
+                  video.muted = true;
+                  setMuted(true);
+                  void video.play().catch(() => {});
+                });
               }}
             />
             <span className="click-ripple" ref={rippleRef} />
@@ -180,6 +193,21 @@ export function ZoomPreview({ recording }: { recording: RecordingResult }) {
         >
           <RotateCcw size={14} />
         </button>
+        {hasAudio && (
+          <button
+            className="player-button"
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              video.muted = !video.muted;
+              setMuted(video.muted);
+            }}
+            aria-label={muted ? t("player.unmute") : t("player.mute")}
+            aria-pressed={muted}
+          >
+            {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          </button>
+        )}
         <div className="scrubber">
           <div className="scrubber-track">
             {segments.map((segment) => (
