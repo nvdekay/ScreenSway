@@ -290,7 +290,7 @@ main:focus { outline: none; }
 .cta .download-actions { position: relative; animation: none; }
 
 /* Install guide (shown when the download starts) */
-.install-guide { width: min(720px, calc(100% - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 0; background: transparent; color: var(--text); }
+.install-guide { width: min(720px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; padding: 0; border: 0; border-radius: var(--radius-xl); background: transparent; color: var(--text); scrollbar-width: thin; }
 .install-guide::backdrop { background: #05050acc; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .install-guide[open] { animation: guide-in var(--dur-slow) var(--ease-out); }
 .guide-panel { position: relative; padding: 36px 36px 28px; border: 1px solid var(--glass-border); border-radius: var(--radius-xl); background: linear-gradient(180deg, #1b1a2b, #101018); box-shadow: var(--glass-highlight), 0 40px 120px #000c; }
