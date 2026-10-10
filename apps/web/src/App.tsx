@@ -2,7 +2,6 @@ import {
   Apple,
   ArrowRight,
   Check,
-  ChevronRight,
   Circle,
   EyeOff,
   FolderOpen,
@@ -27,7 +26,6 @@ import { LogoMark } from "./LogoMark";
 import { useI18n, type Language, type MessageKey } from "./i18n";
 
 const MAC_DOWNLOAD = "https://github.com/nvdekay/ScreenSway/releases/latest/download/ScreenSway-macos-universal.dmg";
-const RELEASE_NOTES = `https://github.com/nvdekay/ScreenSway/releases/tag/v${appVersion}`;
 
 function WindowsIcon() {
   return (
@@ -224,11 +222,10 @@ export default function App() {
       <main id="main" tabIndex={-1}>
         <section className="hero">
           <div className="hero-glow" aria-hidden="true" />
-          <a className="release-pill" href={RELEASE_NOTES}>
+          <p className="release-pill">
             <span className="release-tag">{t("hero.releaseTag")}</span>
             <span>{t("hero.release", { version: appVersion })}</span>
-            <ChevronRight size={16} className="release-arrow" aria-hidden="true" />
-          </a>
+          </p>
           <h1>
             <span className="hero-line">{t("hero.titleA")}</span>
             <span className="hero-line accent">{t("hero.titleB")}</span>
