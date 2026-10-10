@@ -93,7 +93,7 @@ async function record(source, name, commands) {
     [
       "-v", "error",
       "-select_streams", "v:0",
-      "-show_entries", "stream=codec_name,width,height",
+      "-show_entries", "stream=codec_name,profile,width,height,bit_rate",
       "-show_entries", "format=duration",
       "-of", "json",
       videoPath,
@@ -101,6 +101,8 @@ async function record(source, name, commands) {
     { encoding: "utf8" },
   ));
   assert.equal(probe.streams[0].codec_name, "h264");
+  // ScreenSway encodes itself instead of using SCRecordingOutput's low default bitrate.
+  assert.equal(probe.streams[0].profile, "High", `${name} should use the H.264 High profile.`);
   assert.equal(probe.streams[0].width, result.width);
   assert.equal(probe.streams[0].height, result.height);
 
@@ -113,16 +115,16 @@ const displayCapture = await record(display, "Display", [
   { afterMs: 1_200, value: "stop" },
 ]);
 assert(displayCapture.result.durationMs >= 1_900 && displayCapture.result.durationMs <= 2_900);
-assert(Math.abs(displayCapture.videoDurationMs - displayCapture.result.durationMs) <= 400);
+// The video is extended to the stop time, so it matches the pointer timeline closely.
+assert(Math.abs(displayCapture.videoDurationMs - displayCapture.result.durationMs) <= 60);
 
 if (windowSource) {
   const windowCapture = await record(windowSource, "Window", [
     { afterMs: 1_500, value: "stop" },
   ]);
   assert(windowCapture.result.durationMs >= 1_000 && windowCapture.result.durationMs <= 2_000);
-  // ScreenCaptureKit may emit only a single frame for a completely static window.
   assert(windowCapture.videoDurationMs > 0);
-  assert(windowCapture.videoDurationMs <= windowCapture.result.durationMs + 400);
+  assert(Math.abs(windowCapture.videoDurationMs - windowCapture.result.durationMs) <= 60);
 } else {
   console.log("Window capture test skipped because no eligible window is open.");
 }
