@@ -59,19 +59,27 @@ function buildSwiftTarget(target) {
 mkdirSync(binariesPath, { recursive: true });
 const destination = path.join(binariesPath, `screensway-capture-${targetTriple}`);
 
+// Local symbols are only useful for debugging; dropping them roughly halves the sidecar.
+function stripSymbols(binary) {
+  const result = spawnSync("strip", ["-x", binary], { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
 function installBinary(source, target) {
   const targetPath = path.join(binariesPath, `screensway-capture-${target}`);
   copyFileSync(source, targetPath);
   chmodSync(targetPath, 0o755);
+  stripSymbols(targetPath);
   return targetPath;
 }
 
 if (targetTriple === "universal-apple-darwin") {
   const armBinary = buildSwiftTarget("aarch64-apple-darwin");
   const intelBinary = buildSwiftTarget("x86_64-apple-darwin");
-  installBinary(armBinary, "aarch64-apple-darwin");
-  installBinary(intelBinary, "x86_64-apple-darwin");
-  const result = spawnSync("lipo", ["-create", armBinary, intelBinary, "-output", destination], {
+  const armInstalled = installBinary(armBinary, "aarch64-apple-darwin");
+  const intelInstalled = installBinary(intelBinary, "x86_64-apple-darwin");
+  const result = spawnSync("lipo", ["-create", armInstalled, intelInstalled, "-output", destination], {
     stdio: "inherit",
   });
   if (result.error) throw result.error;

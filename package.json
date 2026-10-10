@@ -12,6 +12,7 @@
     "build:capture:macos": "node scripts/build-native.mjs",
     "test:capture:macos": "node scripts/build-native.mjs && node scripts/test-macos-capture.mjs",
     "build:desktop": "pnpm --filter @screensway/desktop tauri build",
+    "build:macos": "pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles dmg && node scripts/compress-dmg.mjs",
     "build:web": "pnpm --filter @screensway/web build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
