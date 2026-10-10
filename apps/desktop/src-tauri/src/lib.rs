@@ -830,6 +830,238 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
     .map_err(|error| format!("Library task failed: {error}"))?
 }
 
+/// The running export, so it can be cancelled.
+#[derive(Default)]
+struct ExportManager {
+    child: Arc<Mutex<Option<std::process::Child>>>,
+    output: Arc<Mutex<Option<std::path::PathBuf>>>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportResult {
+    output_path: String,
+    duration_ms: u64,
+    width: u32,
+    height: u32,
+}
+
+const EXPORT_PROGRESS_EVENT: &str = "export-progress";
+const EXPORT_PROGRESS_PREFIX: &str = "SCREENSWAY_PROGRESS ";
+
+fn exports_directory() -> Result<std::path::PathBuf, String> {
+    Ok(recordings_directory()?.join("Exports"))
+}
+
+/// Accepts only files inside the ScreenSway folder, so the UI cannot open arbitrary paths.
+fn resolve_library_file(path: &str) -> Result<std::path::PathBuf, String> {
+    let root = recordings_directory()?
+        .canonicalize()
+        .map_err(|_| "The ScreenSway folder does not exist yet.".to_string())?;
+    let file = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|_| "This file no longer exists.".to_string())?;
+    if !file.starts_with(&root) {
+        return Err("This file is outside the ScreenSway folder.".into());
+    }
+    Ok(file)
+}
+
+fn decode_png(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let encoded = data.split_once(',').map_or(data, |(_, rest)| rest);
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|error| format!("The export image is invalid: {error}"))
+}
+
+/// Picks "<name>.mp4", or "<name> 2.mp4" and so on when the name is taken.
+fn unique_export_path(directory: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let cleaned: String = name
+        .chars()
+        .map(|character| if matches!(character, '/' | ':' | '\\' | '\0') { '-' } else { character })
+        .collect();
+    let base = if cleaned.trim().is_empty() { "ScreenSway".to_string() } else { cleaned.trim().to_string() };
+    let mut candidate = directory.join(format!("{base}.mp4"));
+    let mut counter = 2;
+    while candidate.exists() {
+        candidate = directory.join(format!("{base} {counter}.mp4"));
+        counter += 1;
+    }
+    candidate
+}
+
+/// Renders a recording with its zoom, cursor and frame into Movies/ScreenSway/Exports.
+/// `job` is the per-frame plan from @screensway/core; the PNGs are data URLs drawn by the UI.
+#[tauri::command]
+async fn export_recording(
+    app: tauri::AppHandle,
+    project_path: String,
+    file_name: String,
+    job: serde_json::Value,
+    base_layer: String,
+    cursor: String,
+) -> Result<ExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        export_recording_blocking(&app, &project_path, &file_name, job, &base_layer, &cursor)
+    })
+    .await
+    .map_err(|error| format!("Export task failed: {error}"))?
+}
+
+fn export_recording_blocking(
+    app: &tauri::AppHandle,
+    project_path: &str,
+    file_name: &str,
+    mut job: serde_json::Value,
+    base_layer: &str,
+    cursor: &str,
+) -> Result<ExportResult, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, project_path, file_name, &mut job, base_layer, cursor);
+        return Err("Export currently supports macOS only.".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::{BufRead, Read};
+        use std::process::{Command, Stdio};
+
+        let manager = app.state::<ExportManager>();
+        if manager.child.lock().map(|child| child.is_some()).unwrap_or(true) {
+            return Err("An export is already running.".into());
+        }
+
+        let project = resolve_project(project_path)?;
+        let manifest = read_manifest(&project)?;
+        let exports = exports_directory()?;
+        std::fs::create_dir_all(&exports)
+            .map_err(|error| format!("Could not create the Exports folder: {error}"))?;
+        let output = unique_export_path(&exports, file_name);
+
+        let work = project.join(".export");
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).map_err(|error| format!("Could not prepare the export: {error}"))?;
+        let base_path = work.join("base.png");
+        let cursor_path = work.join("cursor.png");
+        std::fs::write(&base_path, decode_png(base_layer)?)
+            .map_err(|error| format!("Could not prepare the export: {error}"))?;
+        std::fs::write(&cursor_path, decode_png(cursor)?)
+            .map_err(|error| format!("Could not prepare the export: {error}"))?;
+
+        let fields = job.as_object_mut().ok_or("The export plan is invalid.")?;
+        let path = |path: &std::path::Path| serde_json::Value::String(path.to_string_lossy().into_owned());
+        fields.insert("source".into(), path(&project.join(&manifest.media.screen)));
+        fields.insert("output".into(), path(&output));
+        fields.insert("baseLayer".into(), path(&base_path));
+        fields.insert("cursor".into(), path(&cursor_path));
+        let job_path = work.join("job.json");
+        std::fs::write(&job_path, serde_json::to_vec(&job).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("Could not prepare the export: {error}"))?;
+
+        let mut child = Command::new(capture_binary()?)
+            .arg("--export")
+            .arg(&job_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Could not start the exporter: {error}"))?;
+        let stderr = child.stderr.take().ok_or("Could not read the exporter output.")?;
+        let mut stdout = child.stdout.take().ok_or("Could not read the exporter output.")?;
+        if let Ok(mut current) = manager.output.lock() {
+            *current = Some(output.clone());
+        }
+        if let Ok(mut current) = manager.child.lock() {
+            *current = Some(child);
+        }
+
+        let progress_app = app.clone();
+        let errors = std::thread::spawn(move || {
+            let mut message = String::new();
+            for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+                match line.strip_prefix(EXPORT_PROGRESS_PREFIX).and_then(|value| value.trim().parse::<u32>().ok()) {
+                    Some(percent) => {
+                        let _ = progress_app.emit(EXPORT_PROGRESS_EVENT, percent);
+                    }
+                    None => {
+                        message.push_str(&line);
+                        message.push('\n');
+                    }
+                }
+            }
+            message
+        });
+
+        let mut result_json = Vec::new();
+        let _ = stdout.read_to_end(&mut result_json);
+        let child = manager.child.lock().ok().and_then(|mut child| child.take());
+        let cancelled = child.is_none();
+        let status = child.map(|mut child| child.wait());
+        let message = errors.join().unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&work);
+        if let Ok(mut current) = manager.output.lock() {
+            *current = None;
+        }
+
+        match status {
+            Some(Ok(status)) if status.success() => serde_json::from_slice(&result_json)
+                .map_err(|error| format!("Could not read the export result: {error}")),
+            _ => {
+                let _ = std::fs::remove_file(&output);
+                let _ = std::fs::remove_file(output.with_extension("video.mp4"));
+                Err(if cancelled {
+                    "Export cancelled.".into()
+                } else if message.trim().is_empty() {
+                    "The export stopped unexpectedly.".into()
+                } else {
+                    message.trim().to_string()
+                })
+            }
+        }
+    }
+}
+
+/// The recording's thumbnail as a data URL, for sampling colors in the UI without
+/// tainting a canvas with a cross-origin image.
+#[tauri::command]
+fn read_thumbnail(project_path: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    let project = resolve_project(&project_path)?;
+    let thumbnail = project.join("media").join("thumbnail.jpg");
+    if !thumbnail.is_file() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(thumbnail).map_err(|error| format!("Could not read the thumbnail: {error}"))?;
+    Ok(Some(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )))
+}
+
+#[tauri::command]
+fn cancel_export(state: tauri::State<'_, ExportManager>) {
+    if let Some(mut child) = state.child.lock().ok().and_then(|mut child| child.take()) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Opens an exported video in the default player, or reveals it in Finder.
+#[tauri::command]
+fn open_export(path: String, reveal: bool) -> Result<(), String> {
+    let file = resolve_library_file(&path)?;
+    let mut command = std::process::Command::new("open");
+    if reveal {
+        command.arg("-R");
+    }
+    command
+        .arg(file)
+        .spawn()
+        .map_err(|error| format!("Could not open the video: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn open_screen_recording_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -875,6 +1107,7 @@ fn parse_helper_output<T: serde::de::DeserializeOwned>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ExportManager::default())
         .manage(CaptureManager {
             state: Arc::new(Mutex::new(RecordingState { status: "idle", ..Default::default() })),
             ..Default::default()
@@ -897,7 +1130,11 @@ pub fn run() {
             list_recordings,
             load_recording,
             reveal_recording,
-            open_screen_recording_settings
+            open_screen_recording_settings,
+            export_recording,
+            cancel_export,
+            open_export,
+            read_thumbnail
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")
@@ -909,4 +1146,30 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             let _ = (app, event);
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_png_data_urls_and_plain_base64() {
+        assert_eq!(decode_png("data:image/png;base64,aGk=").unwrap(), b"hi");
+        assert_eq!(decode_png("aGk=").unwrap(), b"hi");
+        assert!(decode_png("data:image/png;base64,***").is_err());
+    }
+
+    #[test]
+    fn export_names_are_sanitized_and_never_overwrite() {
+        let directory = std::env::temp_dir().join(format!("screensway-export-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+
+        let first = unique_export_path(&directory, "Demo: take/1");
+        assert_eq!(first.file_name().unwrap(), "Demo- take-1.mp4");
+        std::fs::write(&first, b"").unwrap();
+        assert_eq!(unique_export_path(&directory, "Demo: take/1").file_name().unwrap(), "Demo- take-1 2.mp4");
+        assert_eq!(unique_export_path(&directory, "   ").file_name().unwrap(), "ScreenSway.mp4");
+
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
 }
