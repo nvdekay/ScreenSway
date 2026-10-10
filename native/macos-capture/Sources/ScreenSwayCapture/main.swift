@@ -69,8 +69,9 @@ final class PointerRecorder: @unchecked Sendable {
         self.pixelScale = pixelScale
     }
 
-    func start() -> Task<Void, Never> {
-        lock.withLock { startedAt = DispatchTime.now().uptimeNanoseconds }
+    /// `startTime` is an uptime timestamp shared with the video writer so both timelines start together.
+    func start(at startTime: UInt64) -> Task<Void, Never> {
+        lock.withLock { startedAt = startTime }
         return Task.detached(priority: .userInitiated) { [self] in
             var previousPoint = CGPoint(x: -.greatestFiniteMagnitude, y: -.greatestFiniteMagnitude)
             var previousLeft = false
@@ -112,9 +113,8 @@ final class PointerRecorder: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    func stop(at now: UInt64) {
         lock.withLock {
-            let now = DispatchTime.now().uptimeNanoseconds
             dropControlClicks(at: now)
             finishPauseIfNeeded(at: now)
             stoppedAt = now
@@ -122,9 +122,9 @@ final class PointerRecorder: @unchecked Sendable {
         }
     }
 
-    func setPaused(_ paused: Bool) {
+    func setPaused(_ paused: Bool, at time: UInt64) {
         lock.withLock {
-            let now = stoppedAt ?? DispatchTime.now().uptimeNanoseconds
+            let now = stoppedAt ?? time
             if paused, pausedAt == nil {
                 dropControlClicks(at: now)
                 pausedAt = now
@@ -140,7 +140,8 @@ final class PointerRecorder: @unchecked Sendable {
 
     func durationMilliseconds() -> Int {
         lock.withLock {
-            let now = DispatchTime.now().uptimeNanoseconds
+            // Measure up to the stop command, not to when the video finished writing.
+            let now = stoppedAt ?? DispatchTime.now().uptimeNanoseconds
             let currentPause = pausedAt.map { now - $0 } ?? 0
             return Int((now - startedAt - pausedNanoseconds - currentPause) / 1_000_000)
         }
@@ -181,48 +182,176 @@ final class PointerRecorder: @unchecked Sendable {
     }
 }
 
-@available(macOS 15.0, *)
-struct RecordingSegment {
-    let output: SCRecordingOutput
-    let delegate: RecordingDelegate
-    let url: URL
-}
-
-final class RecordingDelegate: NSObject, SCRecordingOutputDelegate, @unchecked Sendable {
+/// Encodes ScreenCaptureKit frames with explicit quality settings. SCRecordingOutput picks
+/// its own (low) bitrate, which made text blocky, especially once the preview zooms in.
+///
+/// Timestamps are rebased so the video starts at the same instant as the pointer log and
+/// paused time is removed directly, without writing and re-assembling separate segments.
+final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
+    private let writer: AVAssetWriter
+    private let input: AVAssetWriterInput
     private let lock = NSLock()
-    private var completion: Result<Void, Error>?
-    private var continuation: CheckedContinuation<Void, Error>?
+    private var sessionStart: CMTime?
+    private var pausedAt: CMTime?
+    private var pausedTotal = CMTime.zero
+    private var lastAppended = CMTime.invalid
+    /// ScreenCaptureKit only sends a frame when the screen changes, so the most recent one
+    /// is kept to seed the video at start and to refresh it on resume.
+    private var latestFrame: CMSampleBuffer?
+    private var frameArrivedWhilePaused = false
+    private var finished = false
 
-    func waitUntilFinished() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let immediate = lock.withLock { () -> Result<Void, Error>? in
-                if let completion { return completion }
-                self.continuation = continuation
-                return nil
+    init(url: URL, width: Int, height: Int) throws {
+        writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        // About 0.15 bits per pixel per frame at 60 fps: ~18 Mbps for 1080p, ~53 Mbps for Retina.
+        let bitrate = min(80_000_000, max(10_000_000, Double(width * height) * 60 * 0.15))
+        input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitrate,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: 60,
+                AVVideoMaxKeyFrameIntervalDurationKey: 2,
+            ],
+        ])
+        input.expectsMediaDataInRealTime = true
+        guard writer.canAdd(input) else {
+            throw CaptureError.exportFailed("The video encoder rejected the capture settings.")
+        }
+        writer.add(input)
+        super.init()
+    }
+
+    func start(at hostTime: UInt64) throws {
+        try lock.withLock {
+            guard writer.startWriting() else {
+                throw writer.error ?? CaptureError.exportFailed("The video writer could not start.")
             }
-            if let immediate {
-                continuation.resume(with: immediate)
+            writer.startSession(atSourceTime: .zero)
+            sessionStart = Self.time(hostTime)
+            // The first frame often arrives before the writer starts; a static screen may never send another.
+            if let latestFrame { append(latestFrame, at: .zero) }
+        }
+    }
+
+    func setPaused(_ paused: Bool, at hostTime: UInt64) {
+        lock.withLock {
+            let now = Self.time(hostTime)
+            if paused, pausedAt == nil {
+                pausedAt = now
+            } else if !paused, let pausedAt {
+                pausedTotal = pausedTotal + (now - pausedAt)
+                self.pausedAt = nil
+                // The screen may have changed while paused; show its latest state at once
+                // instead of holding the last frame from before the pause.
+                if frameArrivedWhilePaused, let latestFrame {
+                    append(latestFrame, at: mediaTime(now))
+                }
+                frameArrivedWhilePaused = false
             }
         }
     }
 
-    func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
-
-    func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
-        finish(.success(()))
-    }
-
-    func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
-        finish(.failure(error))
-    }
-
-    private func finish(_ result: Result<Void, Error>) {
-        let waiter = lock.withLock { () -> CheckedContinuation<Void, Error>? in
-            completion = result
-            defer { continuation = nil }
-            return continuation
+    func finish(at hostTime: UInt64) async throws {
+        let end: CMTime = lock.withLock {
+            finished = true
+            let now = Self.time(hostTime)
+            if let pausedAt {
+                pausedTotal = pausedTotal + (now - pausedAt)
+                self.pausedAt = nil
+            }
+            // ScreenCaptureKit only sends frames when the screen changes, so repeat the last
+            // frame just before the stop time. endSession alone does not reliably extend a
+            // file that holds very few frames, and the video must match the pointer timeline.
+            let end = mediaTime(now)
+            let closingFrameTime = end - Self.frameDuration
+            if let latestFrame, lastAppended.isValid, closingFrameTime > lastAppended {
+                waitUntilInputIsReady()
+                append(latestFrame, at: closingFrameTime)
+            }
+            input.markAsFinished()
+            return lastAppended.isValid ? CMTimeMaximum(end, lastAppended + Self.frameDuration) : end
         }
-        waiter?.resume(with: result)
+        guard lastAppended.isValid else {
+            writer.cancelWriting()
+            throw CaptureError.outputMissing
+        }
+        writer.endSession(atSourceTime: end)
+        await writer.finishWriting()
+        if writer.status != .completed {
+            throw writer.error ?? CaptureError.exportFailed("The video file could not be finalized.")
+        }
+    }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, sampleBuffer.isValid, Self.isCompleteFrame(sampleBuffer) else { return }
+        lock.withLock {
+            guard !finished else { return }
+            latestFrame = sampleBuffer
+            guard sessionStart != nil else { return }
+            if pausedAt != nil {
+                frameArrivedWhilePaused = true
+                return
+            }
+            append(sampleBuffer, at: mediaTime(sampleBuffer.presentationTimeStamp))
+        }
+    }
+
+    /// Must be called with the lock held.
+    private func append(_ sampleBuffer: CMSampleBuffer, at requestedTime: CMTime) {
+        // The first frame starts the video at zero; later frames must keep moving forward.
+        var time = lastAppended.isValid ? requestedTime : .zero
+        if lastAppended.isValid, time <= lastAppended {
+            time = lastAppended + CMTime(value: 1, timescale: 600)
+        }
+        guard time >= .zero, input.isReadyForMoreMediaData else { return }
+
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: time, decodeTimeStamp: .invalid)
+        var retimed: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &retimed
+        )
+        guard status == noErr, let retimed, input.append(retimed) else { return }
+        lastAppended = time
+    }
+
+    private static let frameDuration = CMTime(value: 1, timescale: 60)
+
+    /// Must be called with the lock held. The encoder can be briefly busy; give it a moment
+    /// so the closing frame is not dropped.
+    private func waitUntilInputIsReady() {
+        for _ in 0..<100 where !input.isReadyForMoreMediaData {
+            Thread.sleep(forTimeInterval: 0.002)
+        }
+    }
+
+    /// Must be called with the lock held.
+    private func mediaTime(_ hostTime: CMTime) -> CMTime {
+        guard let sessionStart else { return .invalid }
+        return hostTime - sessionStart - pausedTotal
+    }
+
+    private static func time(_ uptimeNanoseconds: UInt64) -> CMTime {
+        CMTime(value: CMTimeValue(uptimeNanoseconds), timescale: 1_000_000_000)
+    }
+
+    private static func isCompleteFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+            as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              let status = SCFrameStatus(rawValue: rawStatus) else { return false }
+        return status == .complete
     }
 }
 
@@ -315,12 +444,10 @@ struct ScreenSwayCapture {
         let mediaURL = projectURL.appending(path: "media", directoryHint: .isDirectory)
         let metadataURL = projectURL.appending(path: "metadata", directoryHint: .isDirectory)
         let videoURL = mediaURL.appending(path: "screen.mp4")
-        let segmentsURL = mediaURL.appending(path: "segments", directoryHint: .isDirectory)
         let pointerEventsURL = metadataURL.appending(path: "pointer-events.json")
 
         try FileManager.default.createDirectory(at: mediaURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: metadataURL, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: segmentsURL, withIntermediateDirectories: true)
 
         let content = try await shareableContent()
         let sourceKind = argument(named: "--source-kind", in: arguments) ?? "display"
@@ -366,17 +493,25 @@ struct ScreenSwayCapture {
         streamConfiguration.capturesAudio = false
         streamConfiguration.scalesToFit = true
         streamConfiguration.colorSpaceName = CGColorSpace.sRGB
+        // Deliver frames in the encoder's native format so they are not converted twice.
+        streamConfiguration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        streamConfiguration.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
 
         let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
 
         let pointerRecorder = PointerRecorder(captureBounds: captureBounds, pixelScale: pixelScale)
+        let videoWriter = try VideoWriter(url: videoURL, width: captureWidth, height: captureHeight)
         let startedAt = Date()
-        var segmentURLs: [URL] = []
-        var activeSegment = try makeSegment(index: 1, directory: segmentsURL)
-        try stream.addRecordingOutput(activeSegment.output)
+        try stream.addStreamOutput(
+            videoWriter,
+            type: .screen,
+            sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.video", qos: .userInteractive)
+        )
 
         try await stream.startCapture()
-        let pointerTask = pointerRecorder.start()
+        let recordingStart = DispatchTime.now().uptimeNanoseconds
+        try videoWriter.start(at: recordingStart)
+        let pointerTask = pointerRecorder.start(at: recordingStart)
         // Tells the desktop shell that frames are being recorded, so its timer starts in sync.
         FileHandle.standardError.write(Data("SCREENSWAY_READY\n".utf8))
         var isPaused = false
@@ -388,30 +523,24 @@ struct ScreenSwayCapture {
                     break
                 }
                 if command == "pause", !isPaused {
-                    pointerRecorder.setPaused(true)
-                    try stream.removeRecordingOutput(activeSegment.output)
-                    try await activeSegment.delegate.waitUntilFinished()
-                    segmentURLs.append(activeSegment.url)
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    pointerRecorder.setPaused(true, at: now)
+                    videoWriter.setPaused(true, at: now)
                     isPaused = true
                 } else if command == "recording", isPaused {
-                    activeSegment = try makeSegment(index: segmentURLs.count + 1, directory: segmentsURL)
-                    try stream.addRecordingOutput(activeSegment.output)
-                    pointerRecorder.setPaused(false)
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    pointerRecorder.setPaused(false, at: now)
+                    videoWriter.setPaused(false, at: now)
                     isPaused = false
                 }
             }
             try await Task.sleep(for: .milliseconds(100))
         }
+        let recordingEnd = DispatchTime.now().uptimeNanoseconds
+        pointerRecorder.stop(at: recordingEnd)
         try await stream.stopCapture()
-        pointerRecorder.stop()
+        try await videoWriter.finish(at: recordingEnd)
         await pointerTask.value
-        if !isPaused {
-            try await activeSegment.delegate.waitUntilFinished()
-            segmentURLs.append(activeSegment.url)
-        }
-
-        try await assembleSegments(segmentURLs, at: videoURL)
-        try? FileManager.default.removeItem(at: segmentsURL)
 
         guard FileManager.default.fileExists(atPath: videoURL.path) else {
             throw CaptureError.outputMissing
@@ -446,62 +575,6 @@ struct ScreenSwayCapture {
             height: captureHeight,
             pointerEvents: pointerEvents
         )
-    }
-
-    @available(macOS 15.0, *)
-    static func makeSegment(index: Int, directory: URL) throws -> RecordingSegment {
-        let url = directory.appending(path: String(format: "part-%03d.mp4", index))
-        let configuration = SCRecordingOutputConfiguration()
-        configuration.outputURL = url
-        configuration.outputFileType = .mp4
-        if configuration.availableVideoCodecTypes.contains(.h264) {
-            configuration.videoCodecType = .h264
-        }
-        let delegate = RecordingDelegate()
-        return RecordingSegment(
-            output: SCRecordingOutput(configuration: configuration, delegate: delegate),
-            delegate: delegate,
-            url: url
-        )
-    }
-
-    static func assembleSegments(_ segmentURLs: [URL], at destinationURL: URL) async throws {
-        guard let firstURL = segmentURLs.first else { throw CaptureError.outputMissing }
-        if segmentURLs.count == 1 {
-            try FileManager.default.moveItem(at: firstURL, to: destinationURL)
-            return
-        }
-
-        let composition = AVMutableComposition()
-        guard let compositionTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            throw CaptureError.exportFailed("Could not create the video track.")
-        }
-
-        var insertionTime = CMTime.zero
-        for segmentURL in segmentURLs {
-            let asset = AVURLAsset(url: segmentURL)
-            let duration = try await asset.load(.duration)
-            guard let sourceTrack = try await asset.loadTracks(withMediaType: .video).first else {
-                throw CaptureError.exportFailed("A recorded segment has no video track.")
-            }
-            try compositionTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: sourceTrack,
-                at: insertionTime
-            )
-            insertionTime = CMTimeAdd(insertionTime, duration)
-        }
-
-        guard let exporter = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetPassthrough
-        ) else {
-            throw CaptureError.exportFailed("Could not initialize the video exporter.")
-        }
-        try await exporter.export(to: destinationURL, as: .mp4)
     }
 
     static func writeThumbnail(of videoURL: URL, to thumbnailURL: URL) async {
