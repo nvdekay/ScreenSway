@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
+import { CONTACT_MAILTO } from "./contact";
 import { Demo } from "./Demo";
 import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
@@ -360,7 +361,7 @@ export default function App() {
         <Logo />
         <p>{t("footer.tagline")}</p>
         <div>
-          <a href="mailto:hello@screensway.app">{t("footer.contact")}</a>
+          <a href={CONTACT_MAILTO}>{t("footer.contact")}</a>
           <span>© 2026 ScreenSway</span>
         </div>
       </footer>
