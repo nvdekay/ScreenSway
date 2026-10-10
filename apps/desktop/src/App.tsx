@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   FolderOpen,
+  Info,
   Languages,
   Lock,
   Monitor,
@@ -34,6 +35,8 @@ interface CaptureSource {
   name: string;
   width: number;
   height: number;
+  /** Pixels per point: 2 on Retina, 1 on standard displays. */
+  pixelScale?: number;
 }
 
 interface LibraryEntry {
@@ -367,7 +370,14 @@ export default function App() {
                   </span>
                   <span className="source-text">
                     <strong>{sourceLabel(source)}</strong>
-                    <small>{source.width} × {source.height}</small>
+                    <small>
+                      {source.width * (source.pixelScale ?? 1)} × {source.height * (source.pixelScale ?? 1)}
+                      {source.pixelScale !== undefined && (
+                        <span className={`density${source.pixelScale >= 2 ? " retina" : ""}`}>
+                          {source.pixelScale >= 2 ? "Retina" : t("source.standard")}
+                        </span>
+                      )}
+                    </small>
                   </span>
                   <span className="source-check" aria-hidden="true">{selected && <Check size={14} strokeWidth={3} />}</span>
                 </button>
@@ -401,6 +411,12 @@ export default function App() {
             </button>
           </div>
 
+          {!recording && selectedSource?.pixelScale !== undefined && selectedSource.pixelScale < 2 && (
+            <p className="density-hint">
+              <Info size={15} aria-hidden="true" />
+              <span>{t("source.standardHint")}</span>
+            </p>
+          )}
           {!recording && !justSaved && !error && <p className="record-hint">{t("record.hint")}</p>}
           {justSaved && result && !recording && (
             <div className="capture-message success" role="status">
