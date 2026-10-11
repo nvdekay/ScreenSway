@@ -1,14 +1,22 @@
 # ScreenSway
 
-Local-first macOS screen recorder with automatic cursor-aware zooms. Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap) and `docs/releasing.md` (release flow) before larger changes.
+Local-first screen recorder with automatic cursor-aware zooms. macOS is the complete released platform; the Windows port can capture displays/windows and build an unsigned NSIS installer, while audio, export and captions are still pending. Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap), `docs/landing-page.md` (marketing demo constraints) and `docs/releasing.md` (release flow) before larger changes.
 
 ## Layout
 
-- `packages/core` — shared TypeScript logic (zoom segments, spring camera, frame model, per-frame render plan). Preview and export must both go through it.
+- `packages/core` — shared TypeScript logic (zoom segments, spring camera, frame model/painter, per-frame render plan). Desktop preview/export and the landing demo use the same frame painter; do not replace landing frames with approximate CSS.
 - `apps/desktop` — Tauri 2 shell (`src-tauri/src/lib.rs`) and React UI (`src/`, studio in `src/frame/`). UI strings live in `src/i18n.tsx` (English and Vietnamese, keep both in sync).
 - `native/macos-capture` — Swift sidecar: capture (`ScreenSwayCapture.swift`) and `--export` renderer (`Exporter.swift`). Built into `apps/desktop/src-tauri/binaries/` by `scripts/build-native.mjs`.
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture done; audio, export, captions to come). Shell code shared by both platforms is gated with `cfg(capture)`.
 - `apps/web` — landing page (GitHub Pages), bilingual, light/dark themes via CSS tokens in `src/styles.css`.
+
+## Current state
+
+- Version `0.3.0`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS DMG from its own `download/` path.
+- The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
+- macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
+- Windows display/window capture, pointer metadata, pause/resume, thumbnails, shared desktop shell and NSIS CI build are implemented. Windows audio, export, captions and public download remain unfinished; keep the landing button marked coming soon.
+- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags, and `windows.yml` tests/builds the unsigned Windows installer artifact on relevant pushes.
 
 ## Commands
 
@@ -31,6 +39,7 @@ pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the
 - The app must not make network requests (fonts are bundled). File access from the UI is restricted to `~/Movies/ScreenSway`.
 - Versions live in four places: root and desktop `package.json`, `tauri.conf.json`, `Cargo.toml`. Release = push a matching `vX.Y.Z` tag; the workflow builds, verifies, publishes and redeploys the landing page with the new DMG.
 - The repository is private: the landing page serves the DMG itself (`download/ScreenSway-macos-universal.dmg`) and must not link to GitHub.
+- Before ending a coding session, keep `CLAUDE.md` and the relevant file in `docs/` aligned with shipped behavior, run proportionate checks, split unrelated work into focused commits, and push `main` when the user asks for a full handoff.
 
 ## Verification notes
 
