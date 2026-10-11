@@ -33,7 +33,7 @@ const MAC_DOWNLOAD = DOWNLOADS.macos;
 
 function WindowsIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="#0078d4" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="#0078d4" aria-hidden="true">
       <path d="M3 4.7 10.4 3.7v7.6H3V4.7Zm8.4-1.15L21 2.2v9.1h-9.6V3.55ZM3 12.3h7.4v7.6L3 18.85V12.3Zm8.4 0H21v9.5l-9.6-1.35V12.3Z" />
     </svg>
   );
@@ -119,9 +119,10 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
       </a>
-      <a className="button-secondary" href={DOWNLOADS.windows} download onClick={() => openInstallGuide("windows")}>
+      <a className="button-primary" href={DOWNLOADS.windows} download onClick={() => openInstallGuide("windows")}>
         <WindowsIcon />
         {t("hero.windows")}
+        <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
       </a>
     </div>
   );
