@@ -18,7 +18,7 @@ The "Deploy landing page" workflow downloads `ScreenSway-macos-universal.dmg` fr
 4. The workflow builds the universal DMG on a macOS 26 runner, verifies its signature, architectures and icon, publishes the release with install notes and the SHA-256 checksum, then starts the landing page deploy so the site serves the new DMG.
 5. Download the DMG from the landing page and test it before announcing the release.
 
-Only macOS is released for now; Windows capture is not implemented yet.
+Only macOS is publicly released for now. Windows display/window capture and the unsigned NSIS build are implemented, but audio, export and captions are not; `windows.yml` uploads a test installer artifact on relevant pushes to `main` rather than publishing a Windows release.
 
 ## Signing
 
