@@ -30,6 +30,9 @@ export interface RecordingResult {
 }
 
 const CLICK_RIPPLE_MS = 550;
+/** Cursor and ripple widths in percent of the video at 1×, as in styles.css. */
+const CURSOR_WIDTH_PERCENT = 1.9;
+const RIPPLE_WIDTH_PERCENT = 4.5;
 const FULL_FRAME = { x: 0.5, y: 0.5, scale: 1 };
 
 function hasAudioTrack(video: HTMLVideoElement): boolean {
@@ -187,14 +190,18 @@ export function ZoomPreview({
       const offsetY = (0.5 - camera.y * camera.scale) * 100;
       content.style.transform = `translate3d(${offsetX}%, ${offsetY}%, 0) scale(${camera.scale})`;
 
-      const stageWidth = videoWidth;
-      const stageHeight = videoHeight;
+      // The cursor and ripple sit above the zoomed content instead of inside it and are
+      // sized by the zoom, so they are drawn sharp at every zoom level. Scaling them with the
+      // content's transform shows a stretched low-resolution copy in Chromium (WebView2).
+      const toStageX = (x: number) => (offsetX / 100) * videoWidth + (x / width) * videoWidth * camera.scale;
+      const toStageY = (y: number) => (offsetY / 100) * videoHeight + (y / height) * videoHeight * camera.scale;
       const pointer = samplePointer(events, timeMs);
       const cursor = cursorRef.current;
       if (cursor) {
         cursor.style.opacity = pointer ? "1" : "0";
         if (pointer) {
-          cursor.style.transform = `translate3d(${(pointer.x / width) * stageWidth}px, ${(pointer.y / height) * stageHeight}px, 0)`;
+          cursor.style.width = `${CURSOR_WIDTH_PERCENT * camera.scale}%`;
+          cursor.style.transform = `translate3d(${toStageX(pointer.x)}px, ${toStageY(pointer.y)}px, 0)`;
         }
       }
 
@@ -208,7 +215,8 @@ export function ZoomPreview({
       if (ripple && click && clickAge < CLICK_RIPPLE_MS) {
         const progress = clickAge / CLICK_RIPPLE_MS;
         ripple.style.opacity = String(1 - progress);
-        ripple.style.transform = `translate3d(${(click.x / width) * stageWidth}px, ${(click.y / height) * stageHeight}px, 0) translate(-50%, -50%) scale(${0.4 + progress * 0.9})`;
+        ripple.style.width = `${RIPPLE_WIDTH_PERCENT * camera.scale}%`;
+        ripple.style.transform = `translate3d(${toStageX(click.x)}px, ${toStageY(click.y)}px, 0) translate(-50%, -50%) scale(${0.4 + progress * 0.9})`;
       } else if (ripple) {
         ripple.style.opacity = "0";
       }
@@ -298,18 +306,18 @@ export function ZoomPreview({
                 });
               }}
             />
-            <span className="click-ripple" ref={rippleRef} />
-            <div className="player-cursor" ref={cursorRef}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d={CURSOR_PATH}
-                  fill="#111"
-                  stroke="#fff"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
+          </div>
+          <span className="click-ripple" ref={rippleRef} />
+          <div className="player-cursor" ref={cursorRef}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d={CURSOR_PATH}
+                fill="#111"
+                stroke="#fff"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           </div>
           <canvas className="frame-canvas caption-canvas" ref={captionCanvasRef} aria-hidden="true" />
