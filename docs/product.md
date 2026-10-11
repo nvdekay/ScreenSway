@@ -14,7 +14,7 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 
 ## What ships today (macOS)
 
-- Record a display or an application window, with optional system audio. Pause and resume without keeping the paused interval.
+- Record a display or an application window, with optional system audio and microphone (pick the device; the voice is leveled and background noise is lowered between phrases). Pause and resume without keeping the paused interval.
 - 3-second countdown, floating Liquid Glass controls and a menu bar timer; ScreenSway stays out of the video.
 - Studio preview with automatic, spring-based zoom and pan that follows clicks, a smooth re-rendered cursor and click ripples.
 - Frame customization: mesh and linear gradients, solid or custom colors, your own image with blur, a Magic background built from the recording's colors, film grain, macOS light/dark, glass and outline frames, aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
@@ -28,7 +28,7 @@ Ordered by expected impact on activation, sharing and retention.
 1. Notarization (Apple Developer Program) to remove the first-launch block.
 2. In-app auto-update, documented as the only network exception.
 3. Global shortcut and quick record from the menu bar; first-run onboarding.
-4. Microphone voice-over and webcam overlay.
+4. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
 5. Timeline editing: trim, edit or remove zoom points, adjust zoom depth; speed up idle stretches; keystroke overlay.
 6. On-device captions.
 7. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.

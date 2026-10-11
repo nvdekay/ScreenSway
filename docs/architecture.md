@@ -18,7 +18,7 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
 ~/Movies/ScreenSway/
   Recording-<unix time>.screensway/
     project.json                  manifest: title, createdAt, durationMs, canvas (video pixels)
-    media/screen.mp4              H.264 High video, plus an AAC track when system audio was on
+    media/screen.mp4              H.264 High video, plus one AAC track when system audio and/or the microphone was on
     media/thumbnail.jpg           written by the helper for the library
     metadata/pointer-events.json  pointer moves and clicks in video pixels, ms on the video timeline
   Exports/
@@ -32,7 +32,7 @@ The pointer is stored as metadata instead of being burned into the video, so the
 - The helper is driven by the shell through a project-local control file containing `recording`, `pause` or `stop`. It prints `SCREENSWAY_READY` on stderr once frames are flowing, and a JSON summary on stdout when done.
 - `SCStream` delivers 420v frames at native pixel density (Retina = 2x points; the long side is capped at 3840 px for H.264). `VideoWriter` encodes them with `AVAssetWriter`: H.264 High, BT.709, about 0.15 bits per pixel per frame.
 - Timestamps are rebased so the video and the pointer log share one clock. Paused time is cut from video, audio and pointer data alike. The last frame is repeated at the stop time (ScreenCaptureKit only sends frames on change), and the newest frame is shown on resume. Video and pointer timelines agree within about 10 ms.
-- `--system-audio` adds a 48 kHz stereo AAC track (ScreenSway's own audio excluded) on the same clock.
+- `--system-audio` captures system audio (ScreenSway's own audio excluded); `--microphone <id|default>` captures a microphone through ScreenCaptureKit (`--list-microphones` lists devices). `AudioMixer` places both on the video's clock and mixes them into one 48 kHz stereo AAC track, so every player plays it and export can copy it unchanged. The microphone first goes through `VoiceProcessor`: a 90 Hz high-pass, slow leveling toward -20 dBFS (at most +12 dB), a gentle gate that lowers noise between phrases (noise floor = 10th percentile of the last 3 s), and an instant peak limit. A missing permission is reported as `SCREENSWAY_MICROPHONE_DENIED`; the bundle declares `NSMicrophoneUsageDescription` and the `audio-input` entitlement the hardened runtime requires.
 - If ScreenCaptureKit ends the stream (a captured window closes, a display disconnects) or ScreenSway itself quits, the helper finishes and saves the file instead of recording on unattended. An encoder failure (for example a full disk) stops the recording with an error.
 - `--list-sources` returns displays and windows with their point size and `pixelScale` (2 on Retina). The UI warns when a non-Retina source is selected, since zoomed-in moments look softer.
 - ScreenCaptureKit can drop a shareable-content query when two processes ask at once, so queries time out and retry, and the shell serializes helper launches. A missing Screen Recording permission is reported as `SCREENSWAY_SCREEN_RECORDING_DENIED`; the UI then shows how to grant it.
@@ -48,7 +48,7 @@ The pointer is stored as metadata instead of being burned into the video, so the
 
 ## Desktop shell commands
 
-Recording: `list_capture_sources`, `start_recording` (with `systemAudio`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `reveal_recording`, `read_thumbnail`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`. File access is limited to `~/Movies/ScreenSway`.
+Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `systemAudio` and `microphone`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `reveal_recording`, `read_thumbnail`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`, `open_microphone_settings`. File access is limited to `~/Movies/ScreenSway`.
 
 ## Privacy boundary
 

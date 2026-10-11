@@ -10,6 +10,8 @@ import {
   Info,
   Languages,
   Lock,
+  Mic,
+  MicOff,
   Monitor,
   MousePointer2,
   Pause,
@@ -42,6 +44,12 @@ interface CaptureSource {
   pixelScale?: number;
 }
 
+interface Microphone {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
 interface LibraryEntry {
   projectPath: string;
   videoPath: string;
@@ -55,6 +63,10 @@ interface LibraryEntry {
 
 const CANCELLED_MESSAGE = "Recording cancelled.";
 const SYSTEM_AUDIO_KEY = "screensway.systemAudio";
+const MICROPHONE_KEY = "screensway.microphone";
+const MICROPHONE_DEVICE_KEY = "screensway.microphoneDevice";
+/** Lets the capture helper use whatever input macOS currently has selected. */
+const DEFAULT_MICROPHONE = "default";
 
 /** A per-device preference; falls back to the default when storage is unavailable. */
 function useStoredBoolean(key: string, fallback: boolean) {
@@ -79,7 +91,30 @@ function useStoredBoolean(key: string, fallback: boolean) {
   );
   return [value, update] as const;
 }
+/** Like useStoredBoolean, for a short string such as a device ID. */
+function useStoredString(key: string, fallback: string) {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  const update = useCallback(
+    (next: string) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, next);
+      } catch {
+        // The choice still applies for this session.
+      }
+    },
+    [key],
+  );
+  return [value, update] as const;
+}
 const PERMISSION_DENIED_MARKER = "SCREENSWAY_SCREEN_RECORDING_DENIED";
+const MICROPHONE_DENIED_MARKER = "SCREENSWAY_MICROPHONE_DENIED";
 
 function formatCreatedAt(value: string, language: Language): string {
   const date = new Date(value);
@@ -201,6 +236,14 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryEntry[]>([]);
   const [systemAudio, setSystemAudio] = useStoredBoolean(SYSTEM_AUDIO_KEY, true);
+  const [microphoneOn, setMicrophoneOn] = useStoredBoolean(MICROPHONE_KEY, false);
+  const [microphoneDevice, setMicrophoneDevice] = useStoredString(MICROPHONE_DEVICE_KEY, DEFAULT_MICROPHONE);
+  const [microphones, setMicrophones] = useState<Microphone[]>([]);
+  // A remembered device that is unplugged now falls back to the system input.
+  const chosenMicrophone = microphones.some((microphone) => microphone.id === microphoneDevice)
+    ? microphoneDevice
+    : DEFAULT_MICROPHONE;
+  const defaultMicrophoneName = microphones.find((microphone) => microphone.isDefault)?.name;
   const previewRef = useRef<HTMLElement>(null);
   const recording = recorder.status !== "idle";
   const paused = recorder.status === "paused";
@@ -248,6 +291,22 @@ export default function App() {
     };
   }, [loadSources, refreshLibrary]);
 
+  // Devices come and go (headsets, iPhone), so the list is refreshed whenever the microphone is turned on.
+  useEffect(() => {
+    if (!microphoneOn) return;
+    let cancelled = false;
+    invoke<Microphone[]>("list_microphones")
+      .then((available) => {
+        if (!cancelled) setMicrophones(available);
+      })
+      .catch(() => {
+        // Recording still works with the default input.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [microphoneOn]);
+
   useEffect(() => {
     if (result) previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [result]);
@@ -278,6 +337,7 @@ export default function App() {
         sourceKind: selectedSource.kind,
         sourceId: selectedSource.id,
         systemAudio,
+        microphone: microphoneOn ? chosenMicrophone : null,
       });
     } catch (captureError) {
       if (String(captureError) !== CANCELLED_MESSAGE) setError(String(captureError));
@@ -433,6 +493,45 @@ export default function App() {
             <span className="switch" aria-hidden="true" />
           </label>
 
+          <label className={`audio-toggle${recording ? " disabled" : ""}`}>
+            <span className="audio-icon" aria-hidden="true">
+              {microphoneOn ? <Mic size={17} /> : <MicOff size={17} />}
+            </span>
+            <span className="audio-text">
+              <strong>{t("mic.label")}</strong>
+              <small>{t("mic.hint")}</small>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={microphoneOn}
+              disabled={recording}
+              onChange={(event) => setMicrophoneOn(event.target.checked)}
+            />
+            <span className="switch" aria-hidden="true" />
+          </label>
+          {microphoneOn && (
+            <div className="mic-options">
+              <select
+                className="mic-select"
+                aria-label={t("mic.device")}
+                value={chosenMicrophone}
+                disabled={recording}
+                onChange={(event) => setMicrophoneDevice(event.target.value)}
+              >
+                <option value={DEFAULT_MICROPHONE}>
+                  {defaultMicrophoneName
+                    ? t("mic.systemDefaultNamed", { name: defaultMicrophoneName })
+                    : t("mic.systemDefault")}
+                </option>
+                {microphones.map((microphone) => (
+                  <option key={microphone.id} value={microphone.id}>{microphone.name}</option>
+                ))}
+              </select>
+              {systemAudio && <small className="mic-tip">{t("mic.headphones")}</small>}
+            </div>
+          )}
+
           <div className="recorder-status" aria-live="polite">
             <span className={`status-dot ${recorder.status}`} aria-hidden="true" />
             <span>{statusLabel}</span>
@@ -490,7 +589,25 @@ export default function App() {
               </div>
             </div>
           )}
-          {error && !error.includes(PERMISSION_DENIED_MARKER) && (
+          {error?.includes(MICROPHONE_DENIED_MARKER) && (
+            <div className="permission-card" role="alert">
+              <span className="permission-icon" aria-hidden="true"><MicOff size={20} /></span>
+              <strong>{t("micPermission.title")}</strong>
+              <p>{t("micPermission.body")}</p>
+              <div className="permission-actions">
+                <button
+                  className="permission-primary"
+                  onClick={() => void invoke("open_microphone_settings").catch(() => {})}
+                >
+                  {t("permission.open")}
+                </button>
+                <button className="secondary-button compact" onClick={() => setMicrophoneOn(false)}>
+                  {t("micPermission.withoutMic")}
+                </button>
+              </div>
+            </div>
+          )}
+          {error && !error.includes(PERMISSION_DENIED_MARKER) && !error.includes(MICROPHONE_DENIED_MARKER) && (
             <div className="capture-message error" role="alert">
               <AlertCircle size={18} aria-hidden="true" />
               <span><strong>{t("record.failed")}</strong><small>{error}</small></span>
