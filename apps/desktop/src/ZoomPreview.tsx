@@ -1,7 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   buildCameraTrack,
+  captionAt,
   computeLayout,
+  type CaptionLine,
   sampleCameraTrack,
   samplePointer,
   type FrameSettings,
@@ -14,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
 import { CURSOR_PATH, paintFrameBase } from "./frame/paint";
 import { Timeline } from "./frame/Timeline";
+import { loadCaptionFont, paintCaption, type CaptionStyle } from "./frame/captionPaint";
 import { useI18n } from "./i18n";
 
 export interface RecordingResult {
@@ -45,6 +48,10 @@ interface ZoomPreviewProps {
   /** The zooms in effect and the kept range, resolved from the edits by the studio. */
   zooms: ZoomSegment[];
   range: { startMs: number; endMs: number };
+  /** Captions to show, or null when they are off. */
+  captions: { lines: CaptionLine[]; style: CaptionStyle } | null;
+  /** Lets the studio move the playhead, e.g. from the caption list. */
+  seekRef?: { current: ((timeMs: number) => void) | null };
 }
 
 export function ZoomPreview({
@@ -57,6 +64,8 @@ export function ZoomPreview({
   onEditsChange,
   zooms,
   range,
+  captions,
+  seekRef,
 }: ZoomPreviewProps) {
   const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -70,6 +79,7 @@ export function ZoomPreview({
   const scrubberRef = useRef<HTMLInputElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const captionCanvasRef = useRef<HTMLCanvasElement>(null);
   // Read by the frame loop, so moving a trim handle never restarts playback.
   const rangeRef = useRef(range);
   rangeRef.current = range;
@@ -109,6 +119,37 @@ export function ZoomPreview({
     const context = canvas.getContext("2d");
     if (context) paintFrameBase(context, previewLayout, settings, backgroundImage);
   }, [backgroundImage, height, settings, stageSize, width]);
+
+  // Captions are painted by the export's own function onto a canvas over the stage,
+  // so the preview shows exactly the exported text, size and position.
+  const [fontReady, setFontReady] = useState(false);
+  useEffect(() => void loadCaptionFont().then(() => setFontReady(true)), []);
+  const shownCaption = useRef("");
+  const drawCaption = useMemo(() => {
+    return (line: CaptionLine | null) => {
+      const canvas = captionCanvasRef.current;
+      if (!canvas || stageSize.width === 0) return;
+      const key = line && captions ? `${line.id}|${line.text}|${captions.style.size}|${captions.style.look}|${stageSize.width}|${JSON.stringify(settings)}` : "";
+      if (key === shownCaption.current) return;
+      shownCaption.current = key;
+      const scale = window.devicePixelRatio;
+      canvas.width = Math.round(stageSize.width * scale);
+      canvas.height = Math.round(stageSize.height * scale);
+      const context = canvas.getContext("2d")!;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      if (!line || !captions) return;
+      const previewLayout = computeLayout(settings, { width, height }, Math.min(canvas.width, canvas.height));
+      const painted = paintCaption(line.text, previewLayout, captions.style);
+      if (painted) context.drawImage(painted.canvas, painted.x * (canvas.width / previewLayout.width), painted.y * (canvas.height / previewLayout.height), painted.canvas.width * (canvas.width / previewLayout.width), painted.canvas.height * (canvas.height / previewLayout.height));
+    };
+    // fontReady redraws once the bundled font is available.
+  }, [captions, fontReady, height, settings, stageSize, width]);
+  // Redraw at once when the captions or their style change, even while paused.
+  useEffect(() => {
+    shownCaption.current = "stale";
+    const timeMs = (videoRef.current?.currentTime ?? 0) * 1_000;
+    drawCaption(captions ? captionAt(captions.lines, timeMs) : null);
+  }, [captions, drawCaption]);
 
   const percent = (value: number, total: number) => `${(value / total) * 100}%`;
   const cornerRadius = (layout.videoRadius / layout.width) * stageSize.width;
@@ -169,11 +210,12 @@ export function ZoomPreview({
       if (timeRef.current) {
         timeRef.current.textContent = `${formatDuration(timeMs - startMs)} / ${formatDuration(kept)}`;
       }
+      drawCaption(captions ? captionAt(captions.lines, timeMs) : null);
       if (playheadRef.current) playheadRef.current.style.left = `${(timeMs / Math.max(1, recording.durationMs)) * 100}%`;
     };
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [autoZoom, clicks, durationMs, events, height, recording.durationMs, track, width]);
+  }, [autoZoom, captions, clicks, drawCaption, durationMs, events, height, recording.durationMs, track, width]);
 
   function togglePlayback() {
     const video = videoRef.current;
@@ -190,6 +232,7 @@ export function ZoomPreview({
   function seek(value: string) {
     if (videoRef.current) videoRef.current.currentTime = Number(value) / 1_000;
   }
+  if (seekRef) seekRef.current = (timeMs) => seek(String(timeMs));
 
   return (
     <div className="player">
@@ -258,6 +301,7 @@ export function ZoomPreview({
             </div>
           </div>
           </div>
+          <canvas className="frame-canvas caption-canvas" ref={captionCanvasRef} aria-hidden="true" />
           {!playing && (
             <span className="play-overlay" aria-hidden="true">
               <Play size={22} fill="currentColor" />

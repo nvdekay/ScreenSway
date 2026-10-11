@@ -52,7 +52,7 @@ pnpm test:capture:macos
 pnpm build:macos
 ```
 
-`test:capture:macos` performs real display and window recordings (with system audio and the default microphone; set `SCREENSWAY_TEST_MICROPHONE=0` to skip it), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
+`test:capture:macos` performs real display and window recordings (with system audio and the default microphone; set `SCREENSWAY_TEST_MICROPHONE=0` to skip it), a trimmed export with a caption, and with `SCREENSWAY_TEST_CAPTIONS=1` on-device captions in Vietnamese and English (needs Speech Recognition permission), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
 
 Windows capture is part of the product plan but is not implemented yet.
 

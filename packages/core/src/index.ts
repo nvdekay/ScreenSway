@@ -266,3 +266,4 @@ function stepSpring(
 }
 
 export * from "./frame";
+export * from "./captions";

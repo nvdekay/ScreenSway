@@ -34,6 +34,18 @@ struct ExportJob: Decodable {
     let frames: [[Double]]
     /// Where the export starts in the recording, when the start was trimmed.
     let startMs: Double?
+    /// Captions drawn over the finished frame, timed on the exported video's timeline.
+    let captions: [Caption]?
+
+    struct Caption: Decodable {
+        let startMs: Double
+        let endMs: Double
+        /// PNG of the caption, already sized for the output.
+        let image: String
+        /// Top-left corner in output pixels.
+        let x: Double
+        let y: Double
+    }
 
     var start: CMTime {
         CMTime(value: CMTimeValue(max(0, startMs ?? 0).rounded()), timescale: 1_000)
@@ -144,6 +156,10 @@ enum Exporter {
         var current: CMSampleBuffer?
         var pending = readerOutput.copyNextSampleBuffer()
         var lastReported = -1
+        let captions = (job.captions ?? []).sorted { $0.startMs < $1.startMs }
+        var captionIndex = 0
+        // Only the caption on screen is kept in memory.
+        var loadedCaption: (index: Int, image: CIImage)?
 
         for (index, frame) in job.frames.enumerated() where frame.count >= 11 {
             try autoreleasepool {
@@ -196,10 +212,24 @@ enum Exporter {
                     video = placed.composited(over: video)
                 }
 
-                let composed = video.cropped(to: videoRect).applyingFilter("CIBlendWithMask", parameters: [
+                var composed = video.cropped(to: videoRect).applyingFilter("CIBlendWithMask", parameters: [
                     kCIInputBackgroundImageKey: base,
                     kCIInputMaskImageKey: mask,
                 ])
+
+                let timeMs = Double(index) * 1_000 / Double(job.fps)
+                while captionIndex < captions.count, captions[captionIndex].endMs <= timeMs { captionIndex += 1 }
+                if captionIndex < captions.count, captions[captionIndex].startMs <= timeMs {
+                    let caption = captions[captionIndex]
+                    if loadedCaption?.index != captionIndex {
+                        loadedCaption = (captionIndex, try loadImage(caption.image))
+                    }
+                    let image = loadedCaption!.image
+                    let placed = image.transformed(by: CGAffineTransform(
+                        translationX: caption.x, y: outputHeight - caption.y - image.extent.height
+                    ))
+                    composed = placed.composited(over: composed)
+                }
 
                 while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.001) }
                 guard let pool = adaptor.pixelBufferPool else {

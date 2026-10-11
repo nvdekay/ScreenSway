@@ -461,6 +461,9 @@ enum CaptureError: LocalizedError {
     case unsupportedOS
     case outputMissing
     case microphoneDenied
+    case speechDenied
+    case languageUnavailable(String)
+    case noAudio
     case exportFailed(String)
 
     var errorDescription: String? {
@@ -470,6 +473,9 @@ enum CaptureError: LocalizedError {
         case .unsupportedOS: "This capture prototype requires macOS 15 or newer."
         case .outputMissing: "Screen recording finished without creating a video file."
         case .microphoneDenied: "ScreenSway is not allowed to use the microphone."
+        case .speechDenied: "ScreenSway is not allowed to use speech recognition."
+        case .languageUnavailable(let locale): "Captions in \(locale) are not available on this Mac."
+        case .noAudio: "This recording has no audio to caption."
         case .exportFailed(let message): "ScreenSway could not assemble the recording: \(message)"
         }
     }
@@ -478,6 +484,7 @@ enum CaptureError: LocalizedError {
 private let maximumEncodedDimension = 3_840.0
 private let screenRecordingDeniedMarker = "SCREENSWAY_SCREEN_RECORDING_DENIED"
 private let microphoneDeniedMarker = "SCREENSWAY_MICROPHONE_DENIED"
+private let speechDeniedMarker = "SCREENSWAY_SPEECH_DENIED"
 
 private func isPermissionDenied(_ error: Error) -> Bool {
     let error = error as NSError
@@ -495,6 +502,17 @@ struct ScreenSwayCapture {
                 FileHandle.standardOutput.write(Data("\n".utf8))
                 Foundation.exit(0)
             }
+            if let videoPath = argument(named: "--transcribe", in: CommandLine.arguments),
+               let outputPath = argument(named: "--output", in: CommandLine.arguments) {
+                let result = try await Transcriber.run(
+                    videoURL: URL(fileURLWithPath: videoPath),
+                    localeIdentifier: argument(named: "--locale", in: CommandLine.arguments) ?? "en-US",
+                    outputURL: URL(fileURLWithPath: outputPath)
+                )
+                FileHandle.standardOutput.write(try JSONEncoder.screenSway.encode(result))
+                FileHandle.standardOutput.write(Data("\n".utf8))
+                Foundation.exit(0)
+            }
             let summary = try await run()
             let data = try JSONEncoder.screenSway.encode(summary)
             FileHandle.standardOutput.write(data)
@@ -505,6 +523,8 @@ struct ScreenSwayCapture {
                 screenRecordingDeniedMarker
             } else if case CaptureError.microphoneDenied = error {
                 microphoneDeniedMarker
+            } else if case CaptureError.speechDenied = error {
+                speechDeniedMarker
             } else {
                 "ScreenSway capture failed: \(error.localizedDescription)"
             }

@@ -35,3 +35,4 @@ pnpm build:web                                    # landing page
 - UI changes can be checked in a browser: Vite plus `@tauri-apps/api/mocks` (`mockIPC`) render the React components without the Tauri runtime. Remove any temporary harness files afterwards.
 - WebKit pauses CSS animations and `requestAnimationFrame` in offscreen or locked sessions; elements with entrance animations can look invisible in such screenshots.
 - Release builds must be opened with `open` (LaunchServices); launching the raw binary can show an empty window.
+- Speech recognition run from a terminal is killed by TCC: macOS asks the *responsible* app (the terminal) for `NSSpeechRecognitionUsageDescription`. `SCREENSWAY_TEST_CAPTIONS=1 pnpm test:capture:macos` wraps the helper in a temporary app opened with `open -W`; the first run needs "Allow" on the prompt.

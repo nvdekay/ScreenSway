@@ -219,7 +219,7 @@ function Slider({ label, value, min, max, step, format, onChange }: {
   );
 }
 
-export function FrameEditor({ settings, onChange, onImage, hasImage, onMagic, magicBackground, recentImages, onRecentImage, onDeleteRecentImage }: {
+export function FrameEditor({ settings, onChange, onImage, hasImage, onMagic, magicBackground, recentImages, onRecentImage, onDeleteRecentImage, children }: {
   settings: FrameSettings;
   onChange: (patch: Partial<FrameSettings>) => void;
   onImage: (file: File) => void;
@@ -229,6 +229,8 @@ export function FrameEditor({ settings, onChange, onImage, hasImage, onMagic, ma
   recentImages: RecentImage[];
   onRecentImage: (path: string) => void;
   onDeleteRecentImage: (path: string) => void;
+  /** Recording-specific sections shown above the look settings. */
+  children?: ReactNode;
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<BackgroundTab>(() => tabFor(settings.background));
@@ -238,6 +240,7 @@ export function FrameEditor({ settings, onChange, onImage, hasImage, onMagic, ma
 
   return (
     <div className="frame-editor">
+      {children}
       <StylesSection settings={settings} onChange={onChange} recentImages={recentImages} />
 
       <Section title={t("frame.background")}>
