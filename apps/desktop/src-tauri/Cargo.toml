@@ -26,5 +26,6 @@ tauri = { version = "2", features = ["protocol-asset", "tray-icon", "macos-priva
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
+# Keep unwinding: wry catches Objective-C exceptions from WebKit (for example when a
+# webview goes away while a request is pending), which does not work with panic = "abort".
 strip = true
