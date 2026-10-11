@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -64,7 +64,7 @@ struct RecordingState {
     elapsed_ms: u64,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 struct ActiveRecording {
     child: std::process::Child,
     stderr_log: Arc<Mutex<String>>,
@@ -75,7 +75,7 @@ struct ActiveRecording {
     paused_at: Option<Instant>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 impl ActiveRecording {
     fn elapsed(&self) -> Duration {
         let current_pause = self.paused_at.map(|at| at.elapsed()).unwrap_or_default();
@@ -96,22 +96,22 @@ impl ActiveRecording {
 #[derive(Default)]
 struct CaptureManager {
     state: Arc<Mutex<RecordingState>>,
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     active: Arc<Mutex<Option<ActiveRecording>>>,
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     cancel_countdown: Arc<AtomicBool>,
 }
 
 const RECORDING_STATE_EVENT: &str = "recording-state";
 const RECORDING_FINISHED_EVENT: &str = "recording-finished";
 const RECORDING_FAILED_EVENT: &str = "recording-failed";
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 const HUD_LABEL: &str = "hud";
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 const TRAY_ID: &str = "recording";
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 const COUNTDOWN_SECONDS: u8 = 3;
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 const HELPER_READY_LINE: &str = "SCREENSWAY_READY";
 
 fn publish_state(app: &tauri::AppHandle, state: RecordingState) {
@@ -123,7 +123,7 @@ fn publish_state(app: &tauri::AppHandle, state: RecordingState) {
 
 #[tauri::command]
 fn get_recording_state(state: tauri::State<'_, CaptureManager>) -> RecordingState {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     if let Ok(active) = state.active.lock() {
         if let Some(recording) = active.as_ref() {
             return recording.state();
@@ -138,16 +138,16 @@ fn get_recording_state(state: tauri::State<'_, CaptureManager>) -> RecordingStat
 
 #[tauri::command]
 async fn list_capture_sources() -> Result<Vec<CaptureSource>, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
-        tauri::async_runtime::spawn_blocking(list_capture_sources_macos)
+        tauri::async_runtime::spawn_blocking(list_capture_sources_blocking)
             .await
             .map_err(|error| format!("Source discovery task failed: {error}"))?
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
-        Err("Capture source discovery currently supports macOS only.".into())
+        Err("Capture source discovery is not supported on this platform.".into())
     }
 }
 
@@ -166,12 +166,12 @@ async fn start_recording(
         return Err("Capture source must be a display or window.".into());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
         reserve_recording(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
             let result =
-                start_recording_macos(&app, &source_kind, &source_id, system_audio, microphone.as_deref());
+                start_recording_blocking(&app, &source_kind, &source_id, system_audio, microphone.as_deref());
             if result.is_err() {
                 publish_state(&app, RecordingState { status: "idle", ..Default::default() });
                 restore_main_window(&app);
@@ -182,19 +182,19 @@ async fn start_recording(
         .map_err(|error| format!("Capture start task failed: {error}"))?
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         let _ = (app, source_id, system_audio, microphone);
-        Err("The first ScreenSway capture prototype currently supports macOS only.".into())
+        Err("The first ScreenSway capture prototype is not supported on this platform.".into())
     }
 }
 
 #[tauri::command]
 async fn list_microphones() -> Result<Vec<Microphone>, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
         tauri::async_runtime::spawn_blocking(|| {
-            let output = std::process::Command::new(capture_binary()?)
+            let output = helper_command()?
                 .arg("--list-microphones")
                 .output()
                 .map_err(|error| format!("Could not list microphones: {error}"))?;
@@ -204,7 +204,7 @@ async fn list_microphones() -> Result<Vec<Microphone>, String> {
         .map_err(|error| format!("Microphone discovery task failed: {error}"))?
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         Ok(Vec::new())
     }
@@ -212,78 +212,100 @@ async fn list_microphones() -> Result<Vec<Microphone>, String> {
 
 #[tauri::command]
 fn cancel_countdown(state: tauri::State<'_, CaptureManager>) {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     state.cancel_countdown.store(true, Ordering::SeqCst);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     let _ = state;
 }
 
 #[tauri::command]
 async fn stop_recording(app: tauri::AppHandle) -> Result<CaptureSummary, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
-        tauri::async_runtime::spawn_blocking(move || stop_recording_macos(&app))
+        tauri::async_runtime::spawn_blocking(move || stop_recording_blocking(&app))
             .await
             .map_err(|error| format!("Capture stop task failed: {error}"))?
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         let _ = app;
-        Err("The first ScreenSway capture prototype currently supports macOS only.".into())
+        Err("The first ScreenSway capture prototype is not supported on this platform.".into())
     }
 }
 
 #[tauri::command]
 async fn set_recording_paused(app: tauri::AppHandle, paused: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
-        tauri::async_runtime::spawn_blocking(move || set_recording_paused_macos(&app, paused))
+        tauri::async_runtime::spawn_blocking(move || set_recording_paused_blocking(&app, paused))
             .await
             .map_err(|error| format!("Capture control task failed: {error}"))?
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         let _ = (app, paused);
-        Err("Pause and resume currently support macOS only.".into())
+        Err("Pause and resume are not supported on this platform.".into())
     }
 }
 
 /// ScreenCaptureKit can hang when two processes query shareable content at once,
-/// so helper launches that do so are serialized.
-#[cfg(target_os = "macos")]
+/// so helper launches that do so are serialized. Windows keeps the same order.
+#[cfg(capture)]
 static HELPER_QUERY_LOCK: Mutex<()> = Mutex::new(());
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn capture_binary() -> Result<std::path::PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    const HELPER: &str = "screensway-capture";
+    #[cfg(target_os = "windows")]
+    const HELPER: &str = "screensway-capture.exe";
+    #[cfg(target_os = "macos")]
+    const DEVELOPMENT_BINARY: &str = "../../../native/macos-capture/.build/debug/screensway-capture";
+    #[cfg(target_os = "windows")]
+    const DEVELOPMENT_BINARY: &str = "../../../native/windows-capture/target/release/screensway-capture.exe";
+
     let bundled_binary = std::env::current_exe()
         .map_err(|error| format!("Could not locate the ScreenSway executable: {error}"))?
-        .with_file_name("screensway-capture");
+        .with_file_name(HELPER);
     if bundled_binary.is_file() {
         return Ok(bundled_binary);
     }
 
-    let development_binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../native/macos-capture/.build/debug/screensway-capture");
+    let development_binary = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEVELOPMENT_BINARY);
     if development_binary.is_file() {
         return Ok(development_binary);
     }
 
-    Err("The macOS capture sidecar is missing. Rebuild ScreenSway with `pnpm build:capture:macos`.".into())
+    Err("The capture helper is missing. Rebuild it with `node scripts/build-native.mjs`.".into())
 }
 
-#[cfg(target_os = "macos")]
-fn list_capture_sources_macos() -> Result<Vec<CaptureSource>, String> {
+/// A helper process. On Windows it is a console program, so keep it from flashing a console window.
+#[cfg(capture)]
+fn helper_command() -> Result<std::process::Command, String> {
+    #[allow(unused_mut)]
+    let mut command = std::process::Command::new(capture_binary()?);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    Ok(command)
+}
+
+#[cfg(capture)]
+fn list_capture_sources_blocking() -> Result<Vec<CaptureSource>, String> {
     let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let output = std::process::Command::new(capture_binary()?)
+    let output = helper_command()?
         .arg("--list-sources")
         .output()
         .map_err(|error| format!("Could not discover capture sources: {error}"))?;
     parse_helper_output(output, "Capture source discovery")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn reserve_recording(app: &tauri::AppHandle) -> Result<(), String> {
     let manager = app.state::<CaptureManager>();
     let mut current = manager
@@ -297,8 +319,8 @@ fn reserve_recording(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn start_recording_macos(
+#[cfg(capture)]
+fn start_recording_blocking(
     app: &tauri::AppHandle,
     source_kind: &str,
     source_id: &str,
@@ -306,7 +328,7 @@ fn start_recording_macos(
     microphone: Option<&str>,
 ) -> Result<RecordingStarted, String> {
     use std::io::BufRead;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     let manager = app.state::<CaptureManager>();
     manager.cancel_countdown.store(false, Ordering::SeqCst);
@@ -338,7 +360,7 @@ fn start_recording_macos(
         .map_err(|error| format!("Could not initialize recording controls: {error}"))?;
 
     let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut command = Command::new(capture_binary()?);
+    let mut command = helper_command()?;
     if system_audio {
         command.arg("--system-audio");
     }
@@ -412,8 +434,8 @@ fn start_recording_macos(
     })
 }
 
-#[cfg(target_os = "macos")]
-fn set_recording_paused_macos(app: &tauri::AppHandle, paused: bool) -> Result<(), String> {
+#[cfg(capture)]
+fn set_recording_paused_blocking(app: &tauri::AppHandle, paused: bool) -> Result<(), String> {
     let manager = app.state::<CaptureManager>();
     let state = {
         let mut guard = manager
@@ -444,8 +466,8 @@ fn set_recording_paused_macos(app: &tauri::AppHandle, paused: bool) -> Result<()
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn stop_recording_macos(app: &tauri::AppHandle) -> Result<CaptureSummary, String> {
+#[cfg(capture)]
+fn stop_recording_blocking(app: &tauri::AppHandle) -> Result<CaptureSummary, String> {
     let manager = app.state::<CaptureManager>();
     let recording = manager
         .active
@@ -470,7 +492,7 @@ fn stop_recording_macos(app: &tauri::AppHandle) -> Result<CaptureSummary, String
 }
 
 /// Detects a helper that dies mid-recording and keeps the menu bar timer ticking.
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn start_recording_monitor(app: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(250));
@@ -497,7 +519,7 @@ fn start_recording_monitor(app: tauri::AppHandle) {
     });
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String>) {
     hide_hud(app);
     update_tray(app);
@@ -513,7 +535,7 @@ fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String
     restore_main_window(app);
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn finish_helper(
     mut child: std::process::Child,
     stderr_log: &Arc<Mutex<String>>,
@@ -537,13 +559,13 @@ fn finish_helper(
     )
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 enum HudLayout {
     Countdown,
     Controls,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
 
@@ -554,23 +576,27 @@ fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
 
     let hud = match app.get_webview_window(HUD_LABEL) {
         Some(window) => window,
-        None => WebviewWindowBuilder::new(app, HUD_LABEL, WebviewUrl::App("index.html#hud".into()))
-            .title("ScreenSway Recording")
-            .inner_size(width, height)
-            .decorations(false)
-            .transparent(true)
-            .shadow(false)
-            .resizable(false)
-            .always_on_top(true)
-            .visible_on_all_workspaces(true)
-            .skip_taskbar(true)
-            .focused(false)
-            .accept_first_mouse(true)
-            // Keeps the controls out of this and any other screen recording.
-            .content_protected(true)
-            .effects(liquid_glass(radius))
-            .build()
-            .map_err(|error| format!("Could not show the recording controls: {error}"))?,
+        None => {
+            let builder = WebviewWindowBuilder::new(app, HUD_LABEL, WebviewUrl::App("index.html#hud".into()))
+                .title("ScreenSway Recording")
+                .inner_size(width, height)
+                .decorations(false)
+                .transparent(true)
+                .shadow(false)
+                .resizable(false)
+                .always_on_top(true)
+                .visible_on_all_workspaces(true)
+                .skip_taskbar(true)
+                .focused(false)
+                .accept_first_mouse(true)
+                // Keeps the controls out of this and any other screen recording.
+                .content_protected(true);
+            #[cfg(target_os = "macos")]
+            let builder = builder.effects(liquid_glass(radius));
+            builder
+                .build()
+                .map_err(|error| format!("Could not show the recording controls: {error}"))?
+        }
     };
 
     let monitor = app
@@ -578,7 +604,10 @@ fn show_hud(app: &tauri::AppHandle, layout: HudLayout) -> Result<(), String> {
         .and_then(|main| main.current_monitor().ok().flatten())
         .or_else(|| hud.primary_monitor().ok().flatten());
     let _ = hud.set_size(LogicalSize::new(width, height));
+    #[cfg(target_os = "macos")]
     let _ = hud.set_effects(liquid_glass(radius));
+    #[cfg(not(target_os = "macos"))]
+    let _ = radius;
     if let Some(monitor) = monitor {
         let scale = monitor.scale_factor();
         let origin = monitor.position().to_logical::<f64>(scale);
@@ -611,7 +640,7 @@ fn liquid_glass(radius: f64) -> tauri::utils::config::WindowEffectsConfig {
 /// requests are still waiting for their replies at this point, and answering a request
 /// from a destroyed webview raises an exception inside WebKit that aborts the app.
 /// The hidden HUD is reused by the next recording.
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn hide_hud(app: &tauri::AppHandle) {
     if let Some(hud) = app.get_webview_window(HUD_LABEL) {
         let _ = hud.hide();
@@ -626,7 +655,7 @@ fn restore_main_window(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -637,7 +666,14 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&stop, &pause, &separator, &show])?;
 
-    let tray = TrayIconBuilder::with_id(TRAY_ID)
+    let builder = TrayIconBuilder::with_id(TRAY_ID);
+    // The macOS menu bar shows only the timer text; the Windows notification area needs an icon.
+    #[cfg(target_os = "windows")]
+    let builder = match app.default_window_icon() {
+        Some(icon) => builder.icon(icon.clone()),
+        None => builder,
+    };
+    let tray = builder
         .menu(&menu)
         .show_menu_on_left_click(true)
         .tooltip("ScreenSway is recording")
@@ -646,7 +682,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
             match event.id().as_ref() {
                 "stop" => {
                     std::thread::spawn(move || {
-                        let _ = stop_recording_macos(&app);
+                        let _ = stop_recording_blocking(&app);
                     });
                 }
                 "pause" => {
@@ -657,7 +693,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                             .lock()
                             .map(|state| state.status == "paused")
                             .unwrap_or(false);
-                        let _ = set_recording_paused_macos(&app, !paused);
+                        let _ = set_recording_paused_blocking(&app, !paused);
                     });
                 }
                 "show" => restore_main_window(&app),
@@ -670,7 +706,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 struct TrayMenu {
     pause: tauri::menu::MenuItem<tauri::Wry>,
     stop: tauri::menu::MenuItem<tauri::Wry>,
@@ -679,7 +715,7 @@ struct TrayMenu {
     labels: Mutex<std::collections::HashMap<String, String>>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 impl TrayMenu {
     fn label(&self, key: &str, fallback: &str) -> String {
         self.labels
@@ -693,7 +729,7 @@ impl TrayMenu {
 /// Native menu bar items cannot read the web UI's language, so the UI pushes its labels here.
 #[tauri::command]
 fn set_native_labels(app: tauri::AppHandle, labels: std::collections::HashMap<String, String>) {
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
         let Some(menu) = app.try_state::<TrayMenu>() else { return };
         if let Ok(mut current) = menu.labels.lock() {
@@ -706,12 +742,12 @@ fn set_native_labels(app: tauri::AppHandle, labels: std::collections::HashMap<St
         }
         update_tray(&app);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     let _ = (app, labels);
 }
 
 /// Shows a live timer in the menu bar while recording, so the state is visible from any app.
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn update_tray(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
     let state = app
@@ -727,7 +763,13 @@ fn update_tray(app: &tauri::AppHandle) {
 
     let seconds = state.elapsed_ms / 1_000;
     let marker = if state.status == "paused" { "❚❚" } else { "●" };
+    #[cfg(target_os = "macos")]
     let _ = tray.set_title(Some(format!(" {marker} {}:{:02}", seconds / 60, seconds % 60)));
+    #[cfg(target_os = "windows")]
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let tooltip = menu.label("tooltip", "ScreenSway is recording");
+        let _ = tray.set_tooltip(Some(format!("{marker} {}:{:02} · {tooltip}", seconds / 60, seconds % 60)));
+    }
     let _ = tray.set_visible(true);
     if let Some(menu) = app.try_state::<TrayMenu>() {
         let label = if state.status == "paused" {
@@ -739,7 +781,7 @@ fn update_tray(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn create_project_path() -> Result<std::path::PathBuf, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -753,9 +795,10 @@ fn create_project_path() -> Result<std::path::PathBuf, String> {
     Ok(recordings_directory.join(format!("Recording-{timestamp}.screensway")))
 }
 
+/// Movies/ScreenSway on macOS, Videos\ScreenSway on Windows (wherever the Videos folder was moved).
 fn recordings_directory() -> Result<std::path::PathBuf, String> {
-    let home = std::env::var_os("HOME").ok_or("Could not locate the user home directory.")?;
-    Ok(std::path::PathBuf::from(home).join("Movies").join("ScreenSway"))
+    let videos = dirs::video_dir().ok_or("Could not locate the Videos folder.")?;
+    Ok(videos.join("ScreenSway"))
 }
 
 #[derive(Deserialize)]
@@ -941,16 +984,16 @@ async fn transcribe_recording(app: tauri::AppHandle, project_path: String, local
 }
 
 fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str) -> Result<serde_json::Value, String> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         let _ = (app, project_path, locale);
         return Err("Captions currently support macOS only.".into());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
         use std::io::{BufRead, Read};
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
 
         if !locale.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_') {
             return Err("The caption language is invalid.".into());
@@ -961,7 +1004,7 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
         }
         let project = resolve_project(project_path)?;
         let manifest = read_manifest(&project)?;
-        let mut child = Command::new(capture_binary()?)
+        let mut child = helper_command()?
             .arg("--transcribe")
             .arg(project.join(&manifest.media.screen))
             .arg("--locale")
@@ -1140,16 +1183,16 @@ fn export_recording_blocking(
     captions: &[CaptionImage],
     subtitles: Option<&str>,
 ) -> Result<ExportResult, String> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(capture))]
     {
         let _ = (app, project_path, file_name, &mut job, base_layer, cursor, captions, subtitles);
-        return Err("Export currently supports macOS only.".into());
+        return Err("Export is not supported on this platform.".into());
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(capture)]
     {
         use std::io::{BufRead, Read};
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
 
         let manager = app.state::<ExportManager>();
         if manager.child.lock().map(|child| child.is_some()).unwrap_or(true) {
@@ -1197,7 +1240,7 @@ fn export_recording_blocking(
         std::fs::write(&job_path, serde_json::to_vec(&job).map_err(|error| error.to_string())?)
             .map_err(|error| format!("Could not prepare the export: {error}"))?;
 
-        let mut child = Command::new(capture_binary()?)
+        let mut child = helper_command()?
             .arg("--export")
             .arg(&job_path)
             .stdout(Stdio::piped())
@@ -1427,19 +1470,38 @@ fn cancel_export(state: tauri::State<'_, ExportManager>) {
     }
 }
 
-/// Opens an exported video in the default player, or reveals it in Finder.
+/// Opens an exported video in the default player, or reveals it in Finder / File Explorer.
 #[tauri::command]
 fn open_export(path: String, reveal: bool) -> Result<(), String> {
     let file = resolve_library_file(&path)?;
-    let mut command = std::process::Command::new("open");
     if reveal {
-        command.arg("-R");
+        reveal_in_file_manager(&file)
+    } else {
+        open_with_default_app(&file)
     }
-    command
-        .arg(file)
-        .spawn()
-        .map_err(|error| format!("Could not open the video: {error}"))?;
-    Ok(())
+    .map_err(|error| format!("Could not open the video: {error}"))
+}
+
+fn open_with_default_app(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(not(target_os = "windows"))]
+    let program = "open";
+    std::process::Command::new(program).arg(path).spawn().map(drop)
+}
+
+fn reveal_in_file_manager(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // Explorer parses `/select,` itself and does not accept the whole argument quoted.
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn()
+            .map(drop)
+    }
+    #[cfg(not(target_os = "windows"))]
+    std::process::Command::new("open").arg("-R").arg(path).spawn().map(drop)
 }
 
 #[tauri::command]
@@ -1465,18 +1527,10 @@ fn open_microphone_settings() -> Result<(), String> {
 #[tauri::command]
 fn reveal_recording(project_path: String) -> Result<(), String> {
     let project = resolve_project(&project_path)?;
-    #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(project)
-        .spawn()
-        .map_err(|error| format!("Could not open Finder: {error}"))?;
-    #[cfg(not(target_os = "macos"))]
-    let _ = project;
-    Ok(())
+    reveal_in_file_manager(&project).map_err(|error| format!("Could not show the recording: {error}"))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(capture)]
 fn parse_helper_output<T: serde::de::DeserializeOwned>(
     output: std::process::Output,
     operation: &str,
@@ -1504,9 +1558,9 @@ pub fn run() {
             ..Default::default()
         })
         .setup(|app| {
-            #[cfg(target_os = "macos")]
+            #[cfg(capture)]
             setup_tray(app)?;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(capture))]
             let _ = app;
             Ok(())
         })

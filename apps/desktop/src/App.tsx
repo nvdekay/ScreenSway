@@ -31,6 +31,7 @@ import { formatDuration } from "./format";
 import { LANGUAGES, useI18n, type Language } from "./i18n";
 import { useRecordingState } from "./recordingState";
 import { LogoMark } from "./LogoMark";
+import { isWindows, supportsAudio } from "./platform";
 import { RecordingStudio } from "./frame/RecordingStudio";
 import { type RecordingResult } from "./ZoomPreview";
 
@@ -336,8 +337,8 @@ export default function App() {
       await invoke("start_recording", {
         sourceKind: selectedSource.kind,
         sourceId: selectedSource.id,
-        systemAudio,
-        microphone: microphoneOn ? chosenMicrophone : null,
+        systemAudio: supportsAudio && systemAudio,
+        microphone: supportsAudio && microphoneOn ? chosenMicrophone : null,
       });
     } catch (captureError) {
       if (String(captureError) !== CANCELLED_MESSAGE) setError(String(captureError));
@@ -461,8 +462,9 @@ export default function App() {
                   <span className="source-text">
                     <strong>{sourceLabel(source)}</strong>
                     <small>
-                      {source.width * (source.pixelScale ?? 1)} × {source.height * (source.pixelScale ?? 1)}
-                      {source.pixelScale !== undefined && (
+                      {Math.round(source.width * (source.pixelScale ?? 1))} × {Math.round(source.height * (source.pixelScale ?? 1))}
+                      {/* Retina is a Mac idea; Windows scaling says little about sharpness. */}
+                      {!isWindows && source.pixelScale !== undefined && (
                         <span className={`density${source.pixelScale >= 2 ? " retina" : ""}`}>
                           {source.pixelScale >= 2 ? "Retina" : t("source.standard")}
                         </span>
@@ -475,61 +477,65 @@ export default function App() {
             })}
           </div>
 
-          <label className={`audio-toggle${recording ? " disabled" : ""}`}>
-            <span className="audio-icon" aria-hidden="true">
-              {systemAudio ? <Volume2 size={17} /> : <VolumeX size={17} />}
-            </span>
-            <span className="audio-text">
-              <strong>{t("audio.label")}</strong>
-              <small>{t("audio.hint")}</small>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={systemAudio}
-              disabled={recording}
-              onChange={(event) => setSystemAudio(event.target.checked)}
-            />
-            <span className="switch" aria-hidden="true" />
-          </label>
+          {supportsAudio && (
+            <>
+              <label className={`audio-toggle${recording ? " disabled" : ""}`}>
+                <span className="audio-icon" aria-hidden="true">
+                  {systemAudio ? <Volume2 size={17} /> : <VolumeX size={17} />}
+                </span>
+                <span className="audio-text">
+                  <strong>{t("audio.label")}</strong>
+                  <small>{t("audio.hint")}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={systemAudio}
+                  disabled={recording}
+                  onChange={(event) => setSystemAudio(event.target.checked)}
+                />
+                <span className="switch" aria-hidden="true" />
+              </label>
 
-          <label className={`audio-toggle${recording ? " disabled" : ""}`}>
-            <span className="audio-icon" aria-hidden="true">
-              {microphoneOn ? <Mic size={17} /> : <MicOff size={17} />}
-            </span>
-            <span className="audio-text">
-              <strong>{t("mic.label")}</strong>
-              <small>{t("mic.hint")}</small>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={microphoneOn}
-              disabled={recording}
-              onChange={(event) => setMicrophoneOn(event.target.checked)}
-            />
-            <span className="switch" aria-hidden="true" />
-          </label>
-          {microphoneOn && (
-            <div className="mic-options">
-              <select
-                className="mic-select"
-                aria-label={t("mic.device")}
-                value={chosenMicrophone}
-                disabled={recording}
-                onChange={(event) => setMicrophoneDevice(event.target.value)}
-              >
-                <option value={DEFAULT_MICROPHONE}>
-                  {defaultMicrophoneName
-                    ? t("mic.systemDefaultNamed", { name: defaultMicrophoneName })
-                    : t("mic.systemDefault")}
-                </option>
-                {microphones.map((microphone) => (
-                  <option key={microphone.id} value={microphone.id}>{microphone.name}</option>
-                ))}
-              </select>
-              {systemAudio && <small className="mic-tip">{t("mic.headphones")}</small>}
-            </div>
+              <label className={`audio-toggle${recording ? " disabled" : ""}`}>
+                <span className="audio-icon" aria-hidden="true">
+                  {microphoneOn ? <Mic size={17} /> : <MicOff size={17} />}
+                </span>
+                <span className="audio-text">
+                  <strong>{t("mic.label")}</strong>
+                  <small>{t("mic.hint")}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={microphoneOn}
+                  disabled={recording}
+                  onChange={(event) => setMicrophoneOn(event.target.checked)}
+                />
+                <span className="switch" aria-hidden="true" />
+              </label>
+              {microphoneOn && (
+                <div className="mic-options">
+                  <select
+                    className="mic-select"
+                    aria-label={t("mic.device")}
+                    value={chosenMicrophone}
+                    disabled={recording}
+                    onChange={(event) => setMicrophoneDevice(event.target.value)}
+                  >
+                    <option value={DEFAULT_MICROPHONE}>
+                      {defaultMicrophoneName
+                        ? t("mic.systemDefaultNamed", { name: defaultMicrophoneName })
+                        : t("mic.systemDefault")}
+                    </option>
+                    {microphones.map((microphone) => (
+                      <option key={microphone.id} value={microphone.id}>{microphone.name}</option>
+                    ))}
+                  </select>
+                  {systemAudio && <small className="mic-tip">{t("mic.headphones")}</small>}
+                </div>
+              )}
+            </>
           )}
 
           <div className="recorder-status" aria-live="polite">
@@ -558,7 +564,7 @@ export default function App() {
             </button>
           </div>
 
-          {!recording && selectedSource?.pixelScale !== undefined && selectedSource.pixelScale < 2 && (
+          {!recording && !isWindows && selectedSource?.pixelScale !== undefined && selectedSource.pixelScale < 2 && (
             <p className="density-hint">
               <Info size={15} aria-hidden="true" />
               <span>{t("source.standardHint")}</span>

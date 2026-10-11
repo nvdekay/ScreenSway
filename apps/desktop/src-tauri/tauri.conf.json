@@ -35,7 +35,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/Movies/ScreenSway/**"]
+        "scope": ["$VIDEO/ScreenSway/**"]
       }
     },
     "macOSPrivateApi": true

@@ -2582,6 +2582,7 @@ name = "screensway"
 version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
+ "dirs",
  "serde",
  "serde_json",
  "tauri",

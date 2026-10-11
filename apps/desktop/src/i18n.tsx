@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { isWindows } from "./platform";
 
 export type Language = "en" | "vi";
 
@@ -336,7 +337,33 @@ const vi: Record<MessageKey, string> = {
   "tray.tooltip": "ScreenSway đang quay",
 };
 
-const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, vi };
+/** Wording that names macOS places (Finder, Movies, "this Mac") reads differently on Windows. */
+const enWindows: Partial<Record<MessageKey, string>> = {
+  "highlight.private": "Stays on this PC",
+  "frame.imageNote": "Images stay on this PC, in Videos › ScreenSway › Backgrounds, so you can reuse them.",
+  "captions.note": "Speech is recognized on this PC; nothing is uploaded.",
+  "export.reveal": "Show in File Explorer",
+  "audio.hint": "Music, videos and alerts playing on this PC",
+  "library.count": "{count} recordings · stored on this PC",
+  "library.countOne": "1 recording · stored on this PC",
+  "library.reveal": "Show in File Explorer",
+  "library.emptyHint": "Everything stays on this PC, in Videos › ScreenSway.",
+};
+
+const viWindows: Partial<Record<MessageKey, string>> = {
+  "highlight.private": "Lưu ngay trên máy tính",
+  "frame.imageNote": "Ảnh chỉ nằm trên máy tính này, trong Video › ScreenSway › Backgrounds, để bạn dùng lại.",
+  "captions.note": "Giọng nói được nhận dạng ngay trên máy tính, không tải lên đâu cả.",
+  "export.reveal": "Hiện trong File Explorer",
+  "library.count": "{count} bản quay · lưu trên máy tính này",
+  "library.countOne": "1 bản quay · lưu trên máy tính này",
+  "library.reveal": "Hiện trong File Explorer",
+  "library.emptyHint": "Mọi thứ được lưu trên máy tính này, trong Video › ScreenSway.",
+};
+
+const MESSAGES: Record<Language, Record<MessageKey, string>> = isWindows
+  ? { en: { ...en, ...enWindows }, vi: { ...vi, ...viWindows } }
+  : { en, vi };
 const STORAGE_KEY = "screensway.language";
 
 export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
