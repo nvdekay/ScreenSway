@@ -4,11 +4,15 @@ import {
   buildRenderFrames,
   computeLayout,
   DEFAULT_FRAME_SETTINGS,
+  NO_EDITS,
+  resolveZooms,
+  trimRange,
   type BackgroundSpec,
   type FrameSettings,
+  type RecordingEdits,
 } from "@screensway/core";
 import { AlertCircle, CheckCircle2, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
 import { FrameEditor, type RecentImage } from "./FrameEditor";
@@ -50,6 +54,17 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   });
 }
 
+/** Accepts edits saved by this or an older version; anything unexpected means no edits. */
+function parseEdits(value: unknown): RecordingEdits {
+  if (!value || typeof value !== "object") return NO_EDITS;
+  const edits = value as Partial<RecordingEdits>;
+  const number = (candidate: unknown) => (typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null);
+  const zooms = Array.isArray(edits.zooms)
+    ? edits.zooms.filter((zoom) => zoom && [zoom.startMs, zoom.endMs, zoom.centerX, zoom.centerY, zoom.scale].every((field) => number(field) !== null))
+    : null;
+  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms };
+}
+
 function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -87,6 +102,39 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   const [recentImages, setRecentImages] = useState<RecentImage[]>([]);
   const [magic, setMagic] = useState<BackgroundSpec | null>(null);
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
+  const [edits, setEdits] = useState<RecordingEdits>(NO_EDITS);
+  const saveTimer = useRef<number | undefined>(undefined);
+  const range = useMemo(() => trimRange(edits, recording.durationMs), [edits, recording.durationMs]);
+  const zooms = useMemo(
+    () => resolveZooms(edits, recording.pointerEvents, recording.durationMs),
+    [edits, recording.durationMs, recording.pointerEvents],
+  );
+
+  // Each recording keeps its own trim and zooms in edits.json.
+  useEffect(() => {
+    let cancelled = false;
+    setEdits(NO_EDITS);
+    invoke<unknown>("load_edits", { projectPath: recording.projectPath })
+      .then((stored) => {
+        if (!cancelled) setEdits(parseEdits(stored));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [recording.projectPath]);
+
+  const editsRef = useRef(edits);
+  editsRef.current = edits;
+  const updateEdits = useCallback((update: (current: RecordingEdits) => RecordingEdits) => {
+    const next = update(editsRef.current);
+    editsRef.current = next;
+    setEdits(next);
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void invoke("save_edits", { projectPath: recording.projectPath, edits: next }).catch(() => {});
+    }, 300);
+  }, [recording.projectPath]);
   // An image background without a loaded image (e.g. after a restart) falls back to the default.
   const effectiveSettings = useMemo(
     () => (settings.background.kind === "image" && (!image || imagePath !== (settings.background.path ?? null))
@@ -213,7 +261,12 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           video: layout.video,
           radius: layout.videoRadius,
           roundTopCorners: layout.roundVideoTop,
-          frames: buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom),
+          startMs: range.startMs,
+          frames: buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom, {
+            zooms,
+            startMs: range.startMs,
+            endMs: range.endMs,
+          }),
         },
       });
       setExportState({ status: "done", result });
@@ -233,6 +286,10 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
         backgroundImage={image}
         autoZoom={autoZoom}
         onAutoZoomChange={setAutoZoom}
+        edits={edits}
+        onEditsChange={updateEdits}
+        zooms={zooms}
+        range={range}
       />
 
       <aside className="editor-panel glass">

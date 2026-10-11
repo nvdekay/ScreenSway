@@ -871,6 +871,37 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
     .map_err(|error| format!("Library task failed: {error}"))?
 }
 
+const EDITS_FILE: &str = "edits.json";
+
+/// Trim and zoom edits made in the studio, or null when the recording is untouched.
+#[tauri::command]
+fn load_edits(project_path: String) -> Result<Option<serde_json::Value>, String> {
+    let project = resolve_project(&project_path)?;
+    Ok(read_edits(&project))
+}
+
+#[tauri::command]
+fn save_edits(project_path: String, edits: serde_json::Value) -> Result<(), String> {
+    let project = resolve_project(&project_path)?;
+    write_edits(&project, &edits)
+}
+
+fn read_edits(project: &std::path::Path) -> Option<serde_json::Value> {
+    let data = std::fs::read(project.join(EDITS_FILE)).ok()?;
+    serde_json::from_slice::<serde_json::Value>(&data).ok().filter(serde_json::Value::is_object)
+}
+
+fn write_edits(project: &std::path::Path, edits: &serde_json::Value) -> Result<(), String> {
+    if !edits.is_object() {
+        return Err("The edits are invalid.".into());
+    }
+    let data = serde_json::to_vec_pretty(edits).map_err(|error| error.to_string())?;
+    // Write next to the file and rename, so a crash never leaves half a file behind.
+    let temporary = project.join(format!("{EDITS_FILE}.tmp"));
+    std::fs::write(&temporary, data).map_err(|error| format!("Could not save the edits: {error}"))?;
+    std::fs::rename(&temporary, project.join(EDITS_FILE)).map_err(|error| format!("Could not save the edits: {error}"))
+}
+
 /// The running export, so it can be cancelled.
 #[derive(Default)]
 struct ExportManager {
@@ -1322,6 +1353,8 @@ pub fn run() {
             cancel_export,
             open_export,
             read_thumbnail,
+            load_edits,
+            save_edits,
             save_background_image,
             list_background_images,
             read_background_image,
@@ -1348,6 +1381,24 @@ mod tests {
         assert_eq!(decode_png("data:image/png;base64,aGk=").unwrap(), b"hi");
         assert_eq!(decode_png("aGk=").unwrap(), b"hi");
         assert!(decode_png("data:image/png;base64,***").is_err());
+    }
+
+    #[test]
+    fn edits_round_trip_and_ignore_damaged_files() {
+        let project = std::env::temp_dir().join(format!("screensway-edits-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+
+        assert_eq!(read_edits(&project), None);
+        let edits = serde_json::json!({ "trimStartMs": 1200, "trimEndMs": null, "zooms": [] });
+        write_edits(&project, &edits).unwrap();
+        assert_eq!(read_edits(&project), Some(edits));
+        assert!(!project.join("edits.json.tmp").exists());
+        assert!(write_edits(&project, &serde_json::json!([1, 2])).is_err());
+
+        std::fs::write(project.join(EDITS_FILE), b"{ broken").unwrap();
+        assert_eq!(read_edits(&project), None);
+        std::fs::remove_dir_all(&project).unwrap();
     }
 
     #[test]

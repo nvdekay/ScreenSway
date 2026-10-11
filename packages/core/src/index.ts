@@ -42,7 +42,61 @@ export interface CameraTrack {
   frames: CameraState[];
 }
 
-const DEFAULT_ZOOM_SCALE = 1.8;
+export const DEFAULT_ZOOM_SCALE = 1.8;
+export const MIN_ZOOM_SCALE = 1.2;
+export const MAX_ZOOM_SCALE = 3;
+/** Shortest zoom the timeline allows, so a segment can always be grabbed and seen. */
+export const MIN_ZOOM_MS = 400;
+/** Shortest part of a recording that can be kept. */
+export const MIN_TRIM_MS = 500;
+
+/**
+ * What the user changed in the studio. `zooms` is null while the zooms still follow
+ * the clicks automatically; once edited it holds the full list (empty = no zooms).
+ */
+export interface RecordingEdits {
+  trimStartMs: number;
+  /** Null keeps the recording to its end. */
+  trimEndMs: number | null;
+  zooms: ZoomSegment[] | null;
+}
+
+export const NO_EDITS: RecordingEdits = { trimStartMs: 0, trimEndMs: null, zooms: null };
+
+/** The kept part of the recording, always at least MIN_TRIM_MS long and inside it. */
+export function trimRange(edits: RecordingEdits, durationMs: number): { startMs: number; endMs: number } {
+  const minimum = Math.min(MIN_TRIM_MS, durationMs);
+  const endMs = Math.min(durationMs, Math.max(minimum, edits.trimEndMs ?? durationMs));
+  const startMs = Math.max(0, Math.min(edits.trimStartMs, endMs - minimum));
+  return { startMs, endMs };
+}
+
+/** The zooms in effect: edited ones if any, otherwise the ones generated from clicks. */
+export function resolveZooms(edits: RecordingEdits, events: PointerEvent[], durationMs: number): ZoomSegment[] {
+  return normalizeZooms(edits.zooms ?? generateZoomSegments(events), durationMs);
+}
+
+/**
+ * Sorted, inside the recording, at least MIN_ZOOM_MS long, never overlapping (a later
+ * zoom starts where the earlier one ends) and with a scale in the allowed range.
+ */
+export function normalizeZooms(zooms: ZoomSegment[], durationMs: number): ZoomSegment[] {
+  const sorted = [...zooms].sort((a, b) => a.startMs - b.startMs);
+  const result: ZoomSegment[] = [];
+  for (const zoom of sorted) {
+    const earliest = result.at(-1)?.endMs ?? 0;
+    const startMs = Math.max(earliest, Math.min(zoom.startMs, durationMs - MIN_ZOOM_MS));
+    const endMs = Math.min(durationMs, Math.max(zoom.endMs, startMs + MIN_ZOOM_MS));
+    if (endMs - startMs < MIN_ZOOM_MS) continue;
+    result.push({
+      ...zoom,
+      startMs,
+      endMs,
+      scale: Math.min(MAX_ZOOM_SCALE, Math.max(MIN_ZOOM_SCALE, zoom.scale)),
+    });
+  }
+  return result;
+}
 /** How long the camera stays zoomed after the last click of a cluster. */
 const ZOOM_HOLD_MS = 2_400;
 /** Clicks closer than this to an active zoom extend it instead of zooming out and back in. */

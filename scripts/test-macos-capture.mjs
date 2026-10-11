@@ -173,4 +173,55 @@ if (windowSource) {
   console.log("Window capture test skipped because no eligible window is open.");
 }
 
+
+// Export: a trimmed start must pick up video and audio at the same source moment.
+{
+  const exportRoot = path.join(testRoot, "Export");
+  mkdirSync(exportRoot, { recursive: true });
+  const source = path.join(exportRoot, "source.mp4");
+  // Each second has its own green level (25 per second) and the red channel flips every second;
+  // a 1 kHz beep plays only from 4.0 to 4.5 s.
+  execFileSync("ffmpeg", [
+    "-v", "error", "-y",
+    "-f", "lavfi", "-i", "color=black:s=640x400:r=60:d=8,format=rgb24,geq=r='mod(floor(T),2)*255':g='floor(T)*25':b=0",
+    "-f", "lavfi", "-i", "aevalsrc='if(between(t,4,4.5),0.5*sin(2*PI*1000*t),0)':s=48000:d=8",
+    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "120", "-c:a", "aac", "-shortest", source,
+  ]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=640x400", "-frames:v", "1", path.join(exportRoot, "base.png")]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=16x16", "-frames:v", "1", path.join(exportRoot, "cursor.png")]);
+  const output = path.join(exportRoot, "out.mp4");
+  const job = {
+    source, output,
+    width: 640, height: 400, fps: 60,
+    baseLayer: path.join(exportRoot, "base.png"), cursor: path.join(exportRoot, "cursor.png"),
+    cursorHotspotX: 0, cursorHotspotY: 0,
+    video: { x: 0, y: 0, width: 640, height: 400 }, radius: 0, roundTopCorners: true,
+    startMs: 3_000,
+    frames: Array.from({ length: 180 }, () => [0, 0, 640, 400, 0, 0, 0, 0, 0, 0, 0]),
+  };
+  writeFileSync(path.join(exportRoot, "job.json"), JSON.stringify(job));
+  execFileSync(binaryPath, ["--export", path.join(exportRoot, "job.json")], { stdio: ["ignore", "pipe", "pipe"] });
+
+  const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", output], { encoding: "utf8" }));
+  assert(Math.abs(duration - 3) < 0.05, `Trimmed export should last 3 s, got ${duration}`);
+  const pixel = (seconds) => [...execFileSync("ffmpeg", [
+    "-v", "error", "-ss", String(seconds), "-i", output, "-frames:v", "1", "-vf", "crop=2:2:320:200,scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+  ])];
+  // Output 0.5 s is source 3.5 s (red on, green 75); output 1.5 s is source 4.5 s (red off,
+  // green 100). Colors shift a little between color spaces, so the neighbors are told apart
+  // by the red parity and the green order: 2.5 s has green 50, 5.5 s has green 125.
+  const [r1, g1] = pixel(0.5);
+  const [r2, g2] = pixel(1.5);
+  assert(r1 > 200 && g1 > 62 && g1 < 108, `Export frame at 0.5 s shows the wrong source time (${r1}, ${g1}).`);
+  assert(r2 < 60 && g2 > 85 && g2 < 125, `Export frame at 1.5 s shows the wrong source time (${r2}, ${g2}).`);
+  // The beep (source 4.0–4.5 s) must now play at 1.0–1.5 s.
+  const loudness = (from, to) => {
+    const stats = spawnSync("ffmpeg", ["-v", "info", "-ss", String(from), "-t", String(to - from), "-i", output, "-map", "0:a", "-af", "astats", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    const level = /Overall[\s\S]*?RMS level dB: (-?[\d.]+|-inf)/.exec(stats)?.[1];
+    return level === undefined || level === "-inf" ? -200 : Number(level);
+  };
+  assert(loudness(1.1, 1.4) > -20, "The beep is missing from the trimmed export.");
+  assert(loudness(0.2, 0.8) < -60 && loudness(1.7, 2.8) < -60, "The trimmed export's audio is misaligned.");
+}
+
 console.log(`macOS capture integration tests passed. Artifacts: ${testRoot}`);

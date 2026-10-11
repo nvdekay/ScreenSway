@@ -145,6 +145,19 @@ describe("buildRenderFrames", () => {
     }
   });
 
+  it("renders only the trimmed part, with the camera of the full timeline", () => {
+    const zooms = [{ id: "z", startMs: 1_000, endMs: 3_000, centerX: 2800, centerY: 1800, scale: 2 }];
+    const full = buildRenderFrames(events, source, layout, 6_000, 60, true, { zooms });
+    const trimmed = buildRenderFrames(events, source, layout, 6_000, 60, true, { zooms, startMs: 2_000, endMs: 4_000 });
+    expect(trimmed).toHaveLength(120);
+    expect(trimmed[0]).toEqual(full[120]);
+    expect(trimmed[60]).toEqual(full[180]);
+    // The edited zoom is followed instead of the automatic one.
+    expect(trimmed[0][2]).toBeLessThan(source.width * 0.6);
+    const none = buildRenderFrames(events, source, layout, 6_000, 60, true, { zooms: [] });
+    expect(none.every((frame) => frame[2] === source.width)).toBe(true);
+  });
+
   it("maps the cursor into the video rectangle and shows a ripple after a click", () => {
     const frames = buildRenderFrames(events, source, layout, 2_000, 60, false);
     const [, , , , cursorX, cursorY] = frames[0];

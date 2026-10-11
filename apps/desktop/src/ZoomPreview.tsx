@@ -2,16 +2,18 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   buildCameraTrack,
   computeLayout,
-  generateZoomSegments,
   sampleCameraTrack,
   samplePointer,
   type FrameSettings,
   type PointerEvent,
+  type RecordingEdits,
+  type ZoomSegment,
 } from "@screensway/core";
 import { Pause, Play, RotateCcw, Volume2, VolumeX, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDuration } from "./format";
 import { CURSOR_PATH, paintFrameBase } from "./frame/paint";
+import { Timeline } from "./frame/Timeline";
 import { useI18n } from "./i18n";
 
 export interface RecordingResult {
@@ -38,6 +40,11 @@ interface ZoomPreviewProps {
   backgroundImage: HTMLImageElement | null;
   autoZoom: boolean;
   onAutoZoomChange: (autoZoom: boolean) => void;
+  edits: RecordingEdits;
+  onEditsChange: (update: (edits: RecordingEdits) => RecordingEdits) => void;
+  /** The zooms in effect and the kept range, resolved from the edits by the studio. */
+  zooms: ZoomSegment[];
+  range: { startMs: number; endMs: number };
 }
 
 export function ZoomPreview({
@@ -46,6 +53,10 @@ export function ZoomPreview({
   backgroundImage,
   autoZoom,
   onAutoZoomChange,
+  edits,
+  onEditsChange,
+  zooms,
+  range,
 }: ZoomPreviewProps) {
   const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -58,6 +69,10 @@ export function ZoomPreview({
   const progressRef = useRef<HTMLDivElement>(null);
   const scrubberRef = useRef<HTMLInputElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  // Read by the frame loop, so moving a trim handle never restarts playback.
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
   const scrubbingRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -65,11 +80,10 @@ export function ZoomPreview({
   const [durationMs, setDurationMs] = useState(recording.durationMs);
 
   const { pointerEvents: events, width, height } = recording;
-  const segments = useMemo(() => generateZoomSegments(events), [events]);
   const clicks = useMemo(() => events.filter((event) => event.type !== "move"), [events]);
   const track = useMemo(
-    () => buildCameraTrack(events, segments, { width, height }, durationMs + 1_000),
-    [events, segments, width, height, durationMs],
+    () => buildCameraTrack(events, zooms, { width, height }, durationMs + 1_000),
+    [events, zooms, width, height, durationMs],
   );
   // Proportions only; the canvas is painted at the stage's real pixel size below.
   const layout = useMemo(() => computeLayout(settings, { width, height }), [settings, width, height]);
@@ -109,7 +123,15 @@ export function ZoomPreview({
       const content = contentRef.current;
       if (!video || !content) return;
 
-      const timeMs = video.currentTime * 1_000;
+      const { startMs, endMs } = rangeRef.current;
+      // Play only the kept part: stop at its end and never show what was trimmed away.
+      if (!video.paused && video.currentTime * 1_000 >= endMs) {
+        video.pause();
+        video.currentTime = endMs / 1_000;
+      } else if (!video.seeking && video.currentTime * 1_000 < startMs - 40) {
+        video.currentTime = startMs / 1_000;
+      }
+      const timeMs = Math.min(endMs, Math.max(startMs, video.currentTime * 1_000));
       const camera = autoZoom ? sampleCameraTrack(track, timeMs) : FULL_FRAME;
       const offsetX = (0.5 - camera.x * camera.scale) * 100;
       const offsetY = (0.5 - camera.y * camera.scale) * 100;
@@ -141,22 +163,24 @@ export function ZoomPreview({
         ripple.style.opacity = "0";
       }
 
-      const total = Math.max(1, video.duration * 1_000 || durationMs);
-      if (progressRef.current) progressRef.current.style.width = `${Math.min(100, (timeMs / total) * 100)}%`;
+      const kept = Math.max(1, endMs - startMs);
+      if (progressRef.current) progressRef.current.style.width = `${Math.min(100, ((timeMs - startMs) / kept) * 100)}%`;
       if (scrubberRef.current && !scrubbingRef.current) scrubberRef.current.value = String(timeMs);
       if (timeRef.current) {
-        timeRef.current.textContent = `${formatDuration(timeMs)} / ${formatDuration(total)}`;
+        timeRef.current.textContent = `${formatDuration(timeMs - startMs)} / ${formatDuration(kept)}`;
       }
+      if (playheadRef.current) playheadRef.current.style.left = `${(timeMs / Math.max(1, recording.durationMs)) * 100}%`;
     };
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [autoZoom, clicks, durationMs, events, height, track, width]);
+  }, [autoZoom, clicks, durationMs, events, height, recording.durationMs, track, width]);
 
   function togglePlayback() {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      if (video.ended) video.currentTime = 0;
+      const { startMs, endMs } = rangeRef.current;
+      if (video.ended || video.currentTime * 1_000 >= endMs - 30) video.currentTime = startMs / 1_000;
       void video.play();
     } else {
       video.pause();
@@ -210,6 +234,7 @@ export function ZoomPreview({
               onLoadedMetadata={(event) => {
                 const video = event.currentTarget;
                 if (Number.isFinite(video.duration)) setDurationMs(video.duration * 1_000);
+                video.currentTime = rangeRef.current.startMs / 1_000;
                 setHasAudio(hasAudioTrack(video));
                 // Autoplay with sound can be refused; fall back to muted playback rather than none.
                 void video.play().catch(() => {
@@ -248,7 +273,7 @@ export function ZoomPreview({
         <button
           className="player-button"
           onClick={() => {
-            seek("0");
+            seek(String(range.startMs));
             void videoRef.current?.play();
           }}
           aria-label={t("player.replay")}
@@ -272,23 +297,26 @@ export function ZoomPreview({
         )}
         <div className="scrubber">
           <div className="scrubber-track">
-            {segments.map((segment) => (
-              <span
-                key={segment.id}
-                className="scrubber-zoom"
-                style={{
-                  left: `${(segment.startMs / durationMs) * 100}%`,
-                  width: `${(Math.min(segment.endMs, durationMs) - segment.startMs) / durationMs * 100}%`,
-                }}
-              />
-            ))}
+            {autoZoom && zooms.map((segment) => {
+              const kept = Math.max(1, range.endMs - range.startMs);
+              const start = Math.max(segment.startMs, range.startMs);
+              const end = Math.min(segment.endMs, range.endMs);
+              if (end <= start) return null;
+              return (
+                <span
+                  key={segment.id}
+                  className="scrubber-zoom"
+                  style={{ left: `${((start - range.startMs) / kept) * 100}%`, width: `${((end - start) / kept) * 100}%` }}
+                />
+              );
+            })}
             <div className="scrubber-progress" ref={progressRef} />
           </div>
           <input
             ref={scrubberRef}
             type="range"
-            min={0}
-            max={durationMs}
+            min={range.startMs}
+            max={range.endMs}
             step={1}
             defaultValue={0}
             aria-label={t("player.seek")}
@@ -297,7 +325,7 @@ export function ZoomPreview({
             onInput={(event) => seek(event.currentTarget.value)}
           />
         </div>
-        <span className="player-time" ref={timeRef}>0:00 / {formatDuration(durationMs)}</span>
+        <span className="player-time" ref={timeRef}>0:00 / {formatDuration(range.endMs - range.startMs)}</span>
         <button
           className={`zoom-toggle${autoZoom ? " active" : ""}`}
           onClick={() => onAutoZoomChange(!autoZoom)}
@@ -306,6 +334,20 @@ export function ZoomPreview({
           <ZoomIn size={14} /> {t("player.autoZoom")}
         </button>
       </div>
+
+      <Timeline
+        durationMs={recording.durationMs}
+        canvas={{ width, height }}
+        events={events}
+        edits={edits}
+        range={range}
+        zooms={zooms}
+        zoomEnabled={autoZoom}
+        onChange={onEditsChange}
+        onSeek={(timeMs) => seek(String(timeMs))}
+        currentTimeMs={() => (videoRef.current?.currentTime ?? 0) * 1_000}
+        playheadRef={playheadRef}
+      />
     </div>
   );
 }
