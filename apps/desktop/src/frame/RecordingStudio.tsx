@@ -15,7 +15,7 @@ import {
   type FrameSettings,
   type RecordingEdits,
 } from "@screensway/core";
-import { AlertCircle, CheckCircle2, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
+import { AlertCircle, Captions, Check, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
@@ -441,21 +441,25 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           )}
 
           {exportState.status === "done" && (
-            <div className="capture-message success" role="status">
-              <CheckCircle2 size={18} aria-hidden="true" />
-              <span>
-                <strong>{t("export.done")}</strong>
-                <small>{exportState.result.width} × {exportState.result.height} · 60 fps</small>
-                {exportState.result.subtitlesPath && <small>{t("captions.srtSaved")}</small>}
-                <span className="export-actions">
-                  <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
-                    <Play size={14} aria-hidden="true" /> {t("export.open")}
-                  </button>
-                  <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: true })}>
-                    <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
-                  </button>
-                </span>
-              </span>
+            <div className="export-done" role="status">
+              <div className="export-done-head">
+                <span className="export-done-icon" aria-hidden="true"><Check size={15} strokeWidth={3} /></span>
+                <div>
+                  <strong>{t("export.done")}</strong>
+                  <small>{exportState.result.width} × {exportState.result.height} · 60 fps</small>
+                </div>
+              </div>
+              {exportState.result.subtitlesPath && (
+                <p className="export-done-note"><Captions size={13} aria-hidden="true" /> {t("captions.srtSaved")}</p>
+              )}
+              <div className="export-done-actions">
+                <button className="editor-button accent" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
+                  <Play size={14} aria-hidden="true" /> {t("export.open")}
+                </button>
+                <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: true })}>
+                  <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
+                </button>
+              </div>
             </div>
           )}
           {exportState.status === "failed" && (
