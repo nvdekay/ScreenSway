@@ -114,7 +114,7 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .segmented button.selected { background: linear-gradient(180deg, #ffffff2e, #ffffff14); color: var(--text); box-shadow: inset 0 1px 0 #ffffff40, 0 4px 12px #0000004d; }
 .segmented button:disabled:not(.selected) { opacity: .5; }
 
-.source-list { min-height: 124px; max-height: 196px; margin: 12px 0 0; padding: 2px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; scrollbar-width: thin; }
+.source-list { min-height: 124px; max-height: 196px; margin: 12px 0 0; padding: 2px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; scrollbar-width: thin;  overscroll-behavior: contain;}
 .source-option { min-height: 56px; display: grid; grid-template-columns: 40px minmax(0, 1fr) 22px; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; text-align: left; transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease; }
 .source-option:hover:not(:disabled) { background: var(--surface-hover); }
 .source-option.selected { border-color: #818cf859; background: linear-gradient(180deg, #818cf826, #818cf80d); }
@@ -222,7 +222,7 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .captions-panel .chip-row { margin-top: 10px; }
 .captions-error { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px solid #f2586f55; border-radius: var(--radius-sm); background: #f2586f14; }
 .captions-error p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
-.caption-lines { max-height: 260px; display: flex; flex-direction: column; gap: 4px; margin: 12px 0 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; }
+.caption-lines { max-height: 260px; display: flex; flex-direction: column; gap: 4px; margin: 12px 0 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin;  overscroll-behavior: contain;}
 .caption-lines li { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 6px; }
 .caption-time { padding: 0; border: 0; background: none; color: var(--text-subtle); font-size: 11px; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
 .caption-time:hover { color: var(--text); }
@@ -259,7 +259,7 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .timeline .editor-note { margin: 0; }
 .studio-editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
 .editor-panel { position: sticky; top: 72px; max-height: calc(100vh - 96px); display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-xl); }
-.frame-editor { flex: 1; overflow-y: auto; padding: 16px 16px 4px; scrollbar-width: thin; }
+.frame-editor { flex: 1; overflow-y: auto; padding: 16px 16px 4px; scrollbar-width: thin;  overscroll-behavior: contain;}
 .editor-section { padding-bottom: 16px; margin-bottom: 14px; border-bottom: 1px solid var(--hairline); }
 .editor-section:last-child { border-bottom: 0; margin-bottom: 0; }
 .editor-section h3 { margin: 0 0 10px; color: var(--text-subtle); font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
