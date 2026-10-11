@@ -2,36 +2,14 @@ import { ChevronDown, HelpCircle } from "lucide-react";
 import { useId, useState } from "react";
 import { CONTACT_MAILTO } from "./contact";
 import { useI18n, type MessageKey } from "./i18n";
-import { LogoMark } from "./LogoMark";
 
 const QUESTIONS: [MessageKey, MessageKey][] = [
   ["faq.q1", "faq.a1"],
   ["faq.q2", "faq.a2"],
   ["faq.q3", "faq.a3"],
-  ["faq.q4", "faq.a4"],
-  ["faq.q5", "faq.a5"],
   ["faq.q7", "faq.a7"],
   ["faq.q8", "faq.a8"],
-  ["faq.q6", "faq.a6"],
 ];
-
-/** A short, friendly exchange that sets the tone next to the questions. */
-function ChatIllustration() {
-  const { t } = useI18n();
-  return (
-    <div className="faq-chat" aria-hidden="true">
-      <div className="chat-bubble question">{t("faq.chatQuestion")}</div>
-      <div className="chat-row">
-        <LogoMark size={30} />
-        <div className="chat-bubble answer">{t("faq.chatAnswer")}</div>
-      </div>
-      <div className="chat-row">
-        <LogoMark size={30} />
-        <div className="chat-bubble typing"><i /><i /><i /></div>
-      </div>
-    </div>
-  );
-}
 
 export function Faq() {
   const { t } = useI18n();
@@ -46,7 +24,6 @@ export function Faq() {
         <p>
           {t("faq.more")} <a href={CONTACT_MAILTO}>{t("faq.email")}</a>.
         </p>
-        <ChatIllustration />
       </div>
 
       <div className="faq-list" data-reveal>

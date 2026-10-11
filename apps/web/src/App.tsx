@@ -1,31 +1,14 @@
-import {
-  Apple,
-  ArrowRight,
-  Check,
-  Circle,
-  EyeOff,
-  FolderOpen,
-  Languages,
-  MousePointer2,
-  Moon,
-  MousePointerClick,
-  Pause,
-  ShieldCheck,
-  Sparkles,
-  Square,
-  Sun,
-  Video,
-  ZoomIn,
-} from "lucide-react";
+import { Apple, ArrowRight, Languages, Moon, Sun } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { DOWNLOADS, preferredPlatform } from "./downloads";
 import { CONTACT_MAILTO } from "./contact";
-import { StudioFeatures, StudioShowcase } from "./StudioShowcase";
+import { Benefits } from "./Benefits";
+import { StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
-import { useI18n, type Language, type MessageKey } from "./i18n";
+import { useI18n, type Language } from "./i18n";
 import { useTheme } from "./theme";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
@@ -153,59 +136,6 @@ function useScrollReveal() {
   }, [language]);
 }
 
-function SectionIntro({ kicker, title, children }: { kicker: MessageKey; title: MessageKey; children?: ReactNode }) {
-  const { t } = useI18n();
-  return (
-    <div className="section-intro" data-reveal>
-      <span className="kicker">{t(kicker)}</span>
-      <h2>{t(title)}</h2>
-      {children}
-    </div>
-  );
-}
-
-const STEPS: { icon: ReactNode; title: MessageKey; copy: MessageKey }[] = [
-  { icon: <Circle size={20} fill="currentColor" />, title: "how.step1", copy: "how.step1Copy" },
-  { icon: <MousePointerClick size={20} />, title: "how.step2", copy: "how.step2Copy" },
-  { icon: <Sparkles size={20} />, title: "how.step3", copy: "how.step3Copy" },
-];
-
-const FEATURES: { icon: ReactNode; title: MessageKey; copy: MessageKey; className?: string }[] = [
-  { icon: <ZoomIn size={22} />, title: "features.zoomTitle", copy: "features.zoomCopy", className: "wide zoom" },
-  { icon: <MousePointer2 size={22} />, title: "features.cursorTitle", copy: "features.cursorCopy", className: "cursor" },
-  { icon: <EyeOff size={22} />, title: "features.hudTitle", copy: "features.hudCopy", className: "hud" },
-  { icon: <Pause size={22} />, title: "features.pauseTitle", copy: "features.pauseCopy" },
-  { icon: <FolderOpen size={22} />, title: "features.libraryTitle", copy: "features.libraryCopy" },
-  { icon: <Video size={22} />, title: "features.nativeTitle", copy: "features.nativeCopy", className: "full" },
-];
-
-function FeatureVisual({ name }: { name?: string }) {
-  if (name?.includes("zoom")) {
-    return (
-      <div className="visual-zoom" aria-hidden="true">
-        <div className="visual-zoom-frame"><i /><i /><i /><b /></div>
-        <MousePointer2 className="visual-zoom-cursor" size={20} fill="#fff" />
-      </div>
-    );
-  }
-  if (name === "cursor") {
-    return (
-      <div className="visual-cursor" aria-hidden="true">
-        <span className="visual-ripple" />
-        <MousePointer2 size={22} fill="#fff" />
-      </div>
-    );
-  }
-  if (name === "hud") {
-    return (
-      <div className="visual-hud" aria-hidden="true">
-        <span className="visual-hud-dot" /> 0:42 <span className="visual-hud-stop"><Square size={10} fill="currentColor" /></span>
-      </div>
-    );
-  }
-  return null;
-}
-
 export default function App() {
   const { t } = useI18n();
   useScrollReveal();
@@ -217,9 +147,7 @@ export default function App() {
         <Logo />
         <nav aria-label="Main">
           <SectionLink to="demo">{t("nav.demo")}</SectionLink>
-          <SectionLink to="studio">Studio</SectionLink>
           <SectionLink to="features">{t("nav.features")}</SectionLink>
-          <SectionLink to="privacy">{t("nav.privacy")}</SectionLink>
           <SectionLink to="faq">{t("nav.faq")}</SectionLink>
         </nav>
         <div className="header-actions">
@@ -251,83 +179,13 @@ export default function App() {
           </div>
         </section>
 
-        <section className="metrics" aria-label="ScreenSway in numbers">
-          {([
-            ["metrics.cursorValue", "metrics.cursor"],
-            ["metrics.retinaValue", "metrics.retina"],
-            ["metrics.uploadValue", "metrics.upload"],
-            ["metrics.priceValue", "metrics.price"],
-          ] as [MessageKey, MessageKey][]).map(([value, label]) => (
-            <div key={label} data-reveal>
-              <strong>{t(value)}</strong>
-              <span>{t(label)}</span>
-            </div>
-          ))}
-        </section>
-
-        <section className="how">
-          <SectionIntro kicker="how.kicker" title="how.title" />
-          <ol className="steps">
-            {STEPS.map((step, index) => (
-              <li key={step.title} data-reveal style={{ transitionDelay: `${index * 90}ms` }}>
-                <span className="step-index">0{index + 1}</span>
-                <span className="step-icon" aria-hidden="true">{step.icon}</span>
-                <h3>{t(step.title)}</h3>
-                <p>{t(step.copy)}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="features" id="features">
-          <SectionIntro kicker="features.kicker" title="features.title" />
-          <div className="bento">
-            {FEATURES.map((feature, index) => (
-              <article
-                key={feature.title}
-                className={`bento-card ${feature.className ?? ""}`}
-                data-reveal
-                style={{ transitionDelay: `${(index % 3) * 80}ms` }}
-              >
-                <FeatureVisual name={feature.className} />
-                <span className="bento-icon" aria-hidden="true">{feature.icon}</span>
-                <h3>{t(feature.title)}</h3>
-                <p>{t(feature.copy)}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <StudioFeatures />
-
-        <section className="privacy" id="privacy">
-          <div className="privacy-visual" data-reveal aria-hidden="true">
-            <div className="orbit orbit-one" />
-            <div className="orbit orbit-two" />
-            <div className="device-core"><ShieldCheck size={36} /><span>{t("privacy.core")}</span></div>
-            <span className="data-pill pill-one"><Video size={14} /> {t("privacy.video")}</span>
-            <span className="data-pill pill-two"><MousePointer2 size={14} /> {t("privacy.cursor")}</span>
-            <span className="data-pill pill-three"><FolderOpen size={14} /> {t("privacy.project")}</span>
-          </div>
-          <div className="privacy-copy" data-reveal>
-            <span className="kicker">{t("privacy.kicker")}</span>
-            <h2>{t("privacy.title")}</h2>
-            <p>{t("privacy.copy")}</p>
-            <ul>
-              {(["privacy.item1", "privacy.item2", "privacy.item3"] as MessageKey[]).map((item) => (
-                <li key={item}><span><Check size={14} strokeWidth={3} aria-hidden="true" /></span>{t(item)}</li>
-              ))}
-            </ul>
-          </div>
-        </section>
+        <Benefits />
 
         <Faq />
 
         <section className="cta" data-reveal>
           <div className="cta-glow" aria-hidden="true" />
-          <span className="cta-mark"><LogoMark size={72} /></span>
           <h2>{t("cta.title")}</h2>
-          <p>{t("cta.copy")}</p>
           <DownloadActions centered />
         </section>
       </main>
