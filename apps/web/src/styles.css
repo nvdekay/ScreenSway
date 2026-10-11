@@ -266,8 +266,6 @@ main:focus { outline: none; }
 .button-primary:active { transform: scale(.98); }
 .button-arrow { transition: transform var(--dur-base) var(--ease-out); }
 .button-primary:hover .button-arrow { transform: translateX(4px); }
-.button-soon { min-height: 56px; display: inline-flex; align-items: center; gap: 10px; padding: 0 22px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass-fill); color: var(--text-muted); font-size: 16px; font-weight: 600; box-shadow: var(--glass-highlight); cursor: default; }
-.button-soon small { padding: 3px 9px; border-radius: 999px; background: var(--tint-3); color: var(--text-subtle); font-size: 12px; font-weight: 700; }
 .hero-note { margin-top: 14px; color: var(--text-subtle); font-size: 14px; animation: rise var(--dur-slow) var(--ease-out) 400ms both; }
 .link-button { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .link-button:hover { color: var(--text); }
@@ -714,3 +712,10 @@ main:focus { outline: none; }
   .audio-art > div { gap: 3px; }
   .audio-art i { width: 3px; }
 }
+
+.button-secondary { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:56px; padding:0 22px; border:1px solid var(--text-muted, #888); border-radius:999px; color:inherit; font-size:17px; font-weight:700; text-decoration:none; transition:background .2s; }
+.button-secondary:hover { background:color-mix(in srgb, currentColor 8%, transparent); }
+.guide-platforms { display:flex; gap:8px; margin:16px 0; }
+.guide-platforms button { padding:8px 18px; border:1px solid #8886; border-radius:999px; background:transparent; color:inherit; cursor:pointer; }
+.guide-platforms button[aria-pressed="true"] { background:#7258ef; color:white; border-color:#7258ef; }
+.hero { overflow: clip; }

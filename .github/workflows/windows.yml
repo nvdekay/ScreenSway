@@ -1,8 +1,7 @@
 name: Windows build
 
 # Builds and tests the Windows app on every relevant change to main and uploads the
-# installer as a workflow artifact, so it can be tried on a real Windows PC before the
-# Windows version is part of a release.
+# installer as a workflow artifact. Release dispatches also publish the public download.
 on:
   push:
     branches: [main]
@@ -19,9 +18,15 @@ on:
       - "pnpm-lock.yaml"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the installer to the matching release and deploy the site
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 concurrency:
   group: windows-${{ github.ref }}
@@ -79,3 +84,24 @@ jobs:
           name: ScreenSway-windows-x64-setup
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+      - name: Publish Windows installer and deploy downloads
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Matching release $tag does not exist" }
+          $installer = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if ($installer.Count -ne 1) { throw "Expected exactly one installer" }
+          $asset = "ScreenSway-windows-x64-setup.exe"
+          Copy-Item -LiteralPath $installer.FullName -Destination $asset
+          $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
+          "$hash  $asset" | Set-Content -Encoding ascii "$asset.sha256"
+          gh release upload $tag $asset "$asset.sha256" --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Windows release upload failed" }
+          gh workflow run web.yml --repo $env:GITHUB_REPOSITORY --ref main
+          if ($LASTEXITCODE -ne 0) { throw "Landing page dispatch failed" }

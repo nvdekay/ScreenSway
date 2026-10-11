@@ -17,7 +17,7 @@ concurrency:
 jobs:
   release-macos:
     # The capture helper uses macOS 15 APIs and the app uses Liquid Glass, so build
-    # with the macOS 26 SDK. Windows capture is not implemented yet, so no Windows build.
+    # with the macOS 26 SDK. Windows is built by the dispatched Windows workflow.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
@@ -73,8 +73,8 @@ jobs:
             --verify-tag
 
       # Releases created with GITHUB_TOKEN do not trigger other workflows, so start
-      # the landing page deploy explicitly; it copies the new DMG into the site.
-      - name: Deploy the new download to the landing page
+      # the Windows publish explicitly; it deploys the site once both installers exist.
+      - name: Build and publish Windows, then deploy both downloads
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run web.yml --repo "$GITHUB_REPOSITORY" --ref main
+        run: gh workflow run windows.yml --repo "$GITHUB_REPOSITORY" --ref main -f publish=true

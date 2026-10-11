@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
+import { DOWNLOADS, preferredPlatform } from "./downloads";
 import { CONTACT_MAILTO } from "./contact";
 import { StudioFeatures, StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
@@ -28,7 +29,7 @@ import { useI18n, type Language, type MessageKey } from "./i18n";
 import { useTheme } from "./theme";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
-const MAC_DOWNLOAD = "./download/ScreenSway-macos-universal.dmg";
+const MAC_DOWNLOAD = DOWNLOADS.macos;
 
 function WindowsIcon() {
   return (
@@ -113,16 +114,15 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
   const { t } = useI18n();
   return (
     <div className={`download-actions${centered ? " centered" : ""}`}>
-      <a className="button-primary" href={MAC_DOWNLOAD} download onClick={openInstallGuide}>
+      <a className="button-primary" href={MAC_DOWNLOAD} download onClick={() => openInstallGuide("macos")}>
         <Apple size={20} fill="currentColor" aria-hidden="true" />
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
       </a>
-      <span className="button-soon" aria-disabled="true">
+      <a className="button-secondary" href={DOWNLOADS.windows} download onClick={() => openInstallGuide("windows")}>
         <WindowsIcon />
         {t("hero.windows")}
-        <small>{t("hero.soon")}</small>
-      </span>
+      </a>
     </div>
   );
 }
@@ -175,7 +175,7 @@ const FEATURES: { icon: ReactNode; title: MessageKey; copy: MessageKey; classNam
   { icon: <EyeOff size={22} />, title: "features.hudTitle", copy: "features.hudCopy", className: "hud" },
   { icon: <Pause size={22} />, title: "features.pauseTitle", copy: "features.pauseCopy" },
   { icon: <FolderOpen size={22} />, title: "features.libraryTitle", copy: "features.libraryCopy" },
-  { icon: <Apple size={22} />, title: "features.nativeTitle", copy: "features.nativeCopy", className: "full" },
+  { icon: <Video size={22} />, title: "features.nativeTitle", copy: "features.nativeCopy", className: "full" },
 ];
 
 function FeatureVisual({ name }: { name?: string }) {
@@ -224,7 +224,7 @@ export default function App() {
         <div className="header-actions">
           <ThemeSwitch />
           <LanguageSwitch />
-          <a className="header-download" href={MAC_DOWNLOAD} download onClick={openInstallGuide}>{t("nav.download")}</a>
+          <a className="header-download" href={DOWNLOADS[preferredPlatform()]} download onClick={() => openInstallGuide(preferredPlatform())}>{t("nav.download")}</a>
         </div>
       </header>
 
@@ -242,8 +242,8 @@ export default function App() {
           <p className="hero-copy">{t("hero.copy")}</p>
           <DownloadActions centered />
           <p className="hero-note">
-            {t("hero.perks")} · {t("hero.macNote")} ·{" "}
-            <button className="link-button" onClick={openInstallGuide}>{t("hero.howToInstall")}</button>
+            {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
+            <button className="link-button" onClick={() => openInstallGuide(preferredPlatform())}>{t("hero.howToInstall")}</button>
           </p>
           <div className="hero-demo" id="demo">
             <StudioShowcase />
@@ -331,7 +331,7 @@ export default function App() {
         </section>
       </main>
 
-      <InstallGuide downloadUrl={MAC_DOWNLOAD} />
+      <InstallGuide />
 
       <footer className="site-footer">
         <Logo />
