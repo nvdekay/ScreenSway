@@ -5,6 +5,7 @@ target/
 .DS_Store
 .env
 .env.*
+.tools/
 !.env.example
 *.log
 .idea/
@@ -12,4 +13,6 @@ target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/binaries/screensway-capture-*
+apps/desktop/src-tauri/resources/models/*.bin
+apps/desktop/src-tauri/resources/models/*.download
 

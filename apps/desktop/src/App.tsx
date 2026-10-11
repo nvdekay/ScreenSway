@@ -599,7 +599,7 @@ export default function App() {
             <div className="permission-card" role="alert">
               <span className="permission-icon" aria-hidden="true"><MicOff size={20} /></span>
               <strong>{t("micPermission.title")}</strong>
-              <p>{t("micPermission.body")}</p>
+              <p>{t(isWindows ? "micPermission.windowsBody" : "micPermission.body")}</p>
               <div className="permission-actions">
                 <button
                   className="permission-primary"

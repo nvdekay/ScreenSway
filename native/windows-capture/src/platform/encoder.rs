@@ -5,7 +5,7 @@ use super::capture::Gpu;
 use super::Step;
 use crate::model::video_bitrate;
 use crate::timeline::TICKS_PER_MILLISECOND;
-use windows::core::{Interface, Result, GUID, HSTRING};
+use windows::core::{Interface, Result, GUID};
 use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Variant::VARIANT;
@@ -44,7 +44,7 @@ impl Encoder {
             attributes.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1).step("Enabling hardware encoding")?;
             attributes.SetUnknown(&MF_SINK_WRITER_D3D_MANAGER, &devices).step("Enabling hardware encoding")?;
 
-            let writer = MFCreateSinkWriterFromURL(&HSTRING::from(path.as_os_str()), None, &attributes)
+            let writer = MFCreateSinkWriterFromURL(&super::media_path(path), None, &attributes)
                 .step("Creating the video file")?;
 
             let bitrate = video_bitrate(width, height);

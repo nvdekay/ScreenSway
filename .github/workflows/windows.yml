@@ -8,10 +8,14 @@ on:
     branches: [main]
     paths:
       - "native/windows-capture/**"
+      - ".cargo/**"
       - "apps/desktop/**"
       - "packages/core/**"
       - "scripts/build-native.mjs"
       - "scripts/test-windows-capture.mjs"
+      - "scripts/test-windows-export.mjs"
+      - "scripts/test-windows-transcribe.mjs"
+      - "scripts/setup-windows-speech.mjs"
       - "pnpm-lock.yaml"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
@@ -38,15 +42,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          key: speech-${{ hashFiles('.cargo/**') }}
           workspaces: |
             native/windows-capture -> target
             apps/desktop/src-tauri -> target
 
+      - name: Configure native speech toolchain
+        shell: pwsh
+        run: |
+          if (!(Test-Path "C:\Program Files\LLVM\bin\libclang.dll")) { choco install llvm -y --no-progress }
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Test the capture helper
         run: cargo test --manifest-path native/windows-capture/Cargo.toml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:windows-speech
       - run: pnpm test && pnpm typecheck
       - run: pnpm build:capture:windows
+      - name: Verify native export
+        run: |
+          choco install ffmpeg -y --no-progress
+          node scripts/test-windows-export.mjs
       - name: Test the desktop shell
         run: cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
