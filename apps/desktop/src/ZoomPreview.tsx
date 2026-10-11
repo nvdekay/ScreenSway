@@ -129,7 +129,8 @@ export function ZoomPreview({
     return (line: CaptionLine | null) => {
       const canvas = captionCanvasRef.current;
       if (!canvas || stageSize.width === 0) return;
-      const key = line && captions ? `${line.id}|${line.text}|${captions.style.size}|${captions.style.look}|${stageSize.width}|${JSON.stringify(settings)}` : "";
+      // Style, layout and size changes create a new painter, which marks the overlay stale.
+      const key = line && captions ? `${line.id}|${line.text}` : "";
       if (key === shownCaption.current) return;
       shownCaption.current = key;
       const scale = window.devicePixelRatio;
@@ -156,8 +157,13 @@ export function ZoomPreview({
 
   // Camera, cursor and progress are written straight to the DOM on every display frame,
   // so motion stays at the screen's refresh rate instead of React's render cadence.
+  // While paused nothing moves, so the loop does no work and scrolling stays smooth.
   useEffect(() => {
     let frame = 0;
+    let shown = "";
+    let shownTime = "";
+    const videoWidth = (layout.video.width / layout.width) * stageSize.width;
+    const videoHeight = (layout.video.height / layout.height) * stageSize.height;
     const render = () => {
       frame = requestAnimationFrame(render);
       const video = videoRef.current;
@@ -173,13 +179,16 @@ export function ZoomPreview({
         video.currentTime = startMs / 1_000;
       }
       const timeMs = Math.min(endMs, Math.max(startMs, video.currentTime * 1_000));
+      const state = `${timeMs}|${startMs}|${endMs}`;
+      if (state === shown) return;
+      shown = state;
       const camera = autoZoom ? sampleCameraTrack(track, timeMs) : FULL_FRAME;
       const offsetX = (0.5 - camera.x * camera.scale) * 100;
       const offsetY = (0.5 - camera.y * camera.scale) * 100;
       content.style.transform = `translate3d(${offsetX}%, ${offsetY}%, 0) scale(${camera.scale})`;
 
-      const stageWidth = content.clientWidth;
-      const stageHeight = content.clientHeight;
+      const stageWidth = videoWidth;
+      const stageHeight = videoHeight;
       const pointer = samplePointer(events, timeMs);
       const cursor = cursorRef.current;
       if (cursor) {
@@ -207,15 +216,17 @@ export function ZoomPreview({
       const kept = Math.max(1, endMs - startMs);
       if (progressRef.current) progressRef.current.style.width = `${Math.min(100, ((timeMs - startMs) / kept) * 100)}%`;
       if (scrubberRef.current && !scrubbingRef.current) scrubberRef.current.value = String(timeMs);
-      if (timeRef.current) {
-        timeRef.current.textContent = `${formatDuration(timeMs - startMs)} / ${formatDuration(kept)}`;
+      const time = `${formatDuration(timeMs - startMs)} / ${formatDuration(kept)}`;
+      if (timeRef.current && time !== shownTime) {
+        timeRef.current.textContent = time;
+        shownTime = time;
       }
       drawCaption(captions ? captionAt(captions.lines, timeMs) : null);
       if (playheadRef.current) playheadRef.current.style.left = `${(timeMs / Math.max(1, recording.durationMs)) * 100}%`;
     };
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [autoZoom, captions, clicks, drawCaption, durationMs, events, height, recording.durationMs, track, width]);
+  }, [autoZoom, captions, clicks, drawCaption, durationMs, events, height, layout, recording.durationMs, stageSize, track, width]);
 
   function togglePlayback() {
     const video = videoRef.current;
