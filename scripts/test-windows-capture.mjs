@@ -37,7 +37,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function record(source, name, commands) {
+async function record(source, name, commands, audioArguments = []) {
   const projectPath = path.join(testRoot, `${name}.screensway`);
   const controlPath = path.join(projectPath, ".capture-control");
   mkdirSync(projectPath, { recursive: true });
@@ -48,7 +48,9 @@ async function record(source, name, commands) {
     "--control", controlPath,
     "--source-kind", source.kind,
     "--source-id", source.id,
-  ]);
+    "--duration", "30",
+    ...audioArguments,
+  ], { windowsHide: true });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -114,7 +116,7 @@ async function record(source, name, commands) {
   assert(stats.framesWritten > 0, `${name} wrote no frames.`);
   console.log(`${name}: ${result.width}×${result.height}, ${result.durationMs} ms, video ${videoDurationMs ?? "?"} ms, ${result.pointerEvents.length} pointer events`);
   console.log(`  ${stats.encoder}; ${stats.framesReceived} frames received, ${stats.framesWritten} written; ${stats.averageFrameMs.toFixed(2)} ms per frame, slowest ${stats.slowestFrameMs.toFixed(1)} ms, ${stats.slowFrames} slow`);
-  return { result, videoDurationMs };
+  return { result, videoDurationMs, videoPath };
 }
 
 const displayCapture = await record(display, "Display", [
@@ -136,6 +138,49 @@ if (windowSource) {
   }
 } else {
   console.log("Window capture test skipped because no eligible window is open.");
+}
+
+const microphones = JSON.parse(execFileSync(binaryPath, ["--list-microphones"], { encoding: "utf8" }));
+assert(microphones.every(device => device.id && device.name && typeof device.isDefault === "boolean"));
+console.log(`Microphones: ${microphones.length}`);
+
+function checkAudio(recording) {
+  if (!hasFfprobe) return;
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "a", "-show_streams", "-of", "json", recording.videoPath], { encoding: "utf8" }));
+  assert.equal(probe.streams.length, 1, "Capture must mix into one playable audio track.");
+  assert.equal(probe.streams[0].codec_name, "aac");
+  assert.equal(probe.streams[0].channels, 2);
+  assert.equal(probe.streams[0].sample_rate, "48000");
+  assert(Math.abs(Number(probe.streams[0].duration) * 1000 - recording.result.durationMs) < 100, "Audio and video must retain the same pause-free duration.");
+}
+if (process.env.SCREENSWAY_TEST_AUDIO !== "0") {
+  let playback;
+  try {
+    if (spawnSync("ffmpeg", ["-version"]).status === 0) {
+      const tone = path.join(testRoot, "tone.wav");
+      execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4", "-af", "volume=0.25", tone]);
+      const literal = tone.replaceAll("'", "''");
+      playback = spawn("powershell.exe", ["-NoProfile", "-Command", `$tone = New-Object System.Media.SoundPlayer '${literal}'; $tone.PlayLooping(); Start-Sleep -Seconds 20`], { windowsHide: true, stdio: "ignore" });
+      await delay(500);
+    }
+    const systemAudio = await record(display, "SystemAudio", [
+      { afterMs: 800, value: "pause" }, { afterMs: 500, value: "recording" }, { afterMs: 800, value: "stop" },
+    ], ["--system-audio"]);
+    checkAudio(systemAudio);
+    if (playback) {
+      const pcm = execFileSync("ffmpeg", ["-v", "error", "-i", systemAudio.videoPath, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], { maxBuffer: 2_000_000, windowsHide: true });
+      let energy = 0, count = 0;
+      for (let offset = 48000; offset + 4 <= Math.min(pcm.length, 240000); offset += 4) { const x = pcm.readFloatLE(offset); energy += x*x; count++; }
+      const rms = Math.sqrt(energy / Math.max(1, count));
+      assert(rms > 0.0001, `System loopback track must contain the played tone, not silence (RMS ${rms}).`);
+      console.log(`  Loopback tone RMS: ${rms.toFixed(5)}`);
+    }
+  } finally { playback?.kill(); }
+  if (microphones.length && process.env.SCREENSWAY_TEST_MICROPHONE !== "0") {
+    const mic = microphones.find(device => device.isDefault) ?? microphones[0];
+    const mixedAudio = await record(display, "MixedAudio", [{ afterMs: 1500, value: "stop" }], ["--system-audio", "--microphone", mic.id]);
+    checkAudio(mixedAudio);
+  }
 }
 
 console.log(`Windows capture integration tests passed. Artifacts: ${testRoot}`);

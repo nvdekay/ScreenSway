@@ -20,6 +20,10 @@
     ]
   },
   "bundle": {
+    "resources": {
+      "resources/models/ggml-large-v3-turbo-q5_0.bin": "models/ggml-large-v3-turbo-q5_0.bin",
+      "resources/models/LICENSE.txt": "models/LICENSE.txt"
+    },
     "targets": ["nsis"],
     "externalBin": [
       "binaries/screensway-capture"

@@ -22,7 +22,7 @@ docs               Product and architecture documentation
 - pnpm 11 or newer
 - Rust stable
 - macOS: Xcode Command Line Tools
-- Windows: Microsoft C++ Build Tools and WebView2
+- Windows: Microsoft C++ Build Tools with Windows SDK, WebView2, CMake and LLVM/libclang
 
 ## Development
 
@@ -54,12 +54,14 @@ pnpm build:macos
 
 `test:capture:macos` performs real display and window recordings (with system audio and the default microphone; set `SCREENSWAY_TEST_MICROPHONE=0` to skip it), a trimmed export with a caption, and with `SCREENSWAY_TEST_CAPTIONS=1` on-device captions in Vietnamese and English (needs Speech Recognition permission), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
 
-### Windows (in progress)
+### Windows
 
-The Windows helper (`native/windows-capture`, Rust) records displays and windows with the pointer log, pause/resume and stop. Audio, export and captions are not ported yet, so the app hides the audio switches on Windows. On a Windows PC (Rust, Node, pnpm, WebView2):
+The Windows helper (`native/windows-capture`, Rust) implements display/window capture, system audio and microphone processing, pause/resume, Studio MP4 export through 4K/60 fps, and editable offline English/Vietnamese captions with SRT. See [Windows validation and build requirements](docs/windows-validation.md). Captions use a bundled 574 MB Whisper model and require AVX2; CPU transcription can be slow.
 
 ```bash
-pnpm test:capture:windows   # real display/window recordings; video checks need ffprobe on PATH
+pnpm setup:windows-speech  # download and verify the bundled offline model
+pnpm test:capture:windows   # real capture/audio checks; FFmpeg on PATH
+pnpm test:export:windows
 pnpm dev:desktop
 pnpm build:windows          # NSIS installer in apps/desktop/src-tauri/target/release/bundle/nsis
 ```

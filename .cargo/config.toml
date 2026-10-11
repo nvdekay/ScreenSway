@@ -1,0 +1,13 @@
+[env]
+# Explicit AVX2 speech backend, checked at runtime before loading Whisper.
+# Do not enable GGML_NATIVE: that would silently require the build machine's CPU.
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+# MSVC's AVX2 backend uses these instructions as well; check all at runtime.
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+GGML_BMI2 = "ON"
+# cmake-rs strips /O flags and overwrites MSVC's Release defaults. Restore
+# optimized native speech kernels with a target-specific CMake toolchain.
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = ".cargo/windows-speech.cmake", relative = true }

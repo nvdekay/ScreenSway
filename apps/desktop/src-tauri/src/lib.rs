@@ -1516,6 +1516,11 @@ fn open_screen_recording_settings() -> Result<(), String> {
 
 #[tauri::command]
 fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:privacy-microphone")
+        .spawn()
+        .map_err(|error| format!("Could not open microphone settings: {error}"))?;
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")

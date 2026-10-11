@@ -5,15 +5,18 @@
 //! - `--output <project> --control <file> --source-kind display|window --source-id <id>`:
 //!   records until the control file says `stop`, prints `SCREENSWAY_READY` on stderr once
 //!   frames flow and a JSON summary on stdout when done.
-//! - `--export <job.json>`, `--transcribe <video>`: not available on Windows yet.
+//! - `--export <job.json>`: renders the Studio's frame plan to H.264/AAC MP4.
+//! - `--transcribe <video> --locale en-US|vi-VN --output <json>`: offline timed words.
 
 // Only the platform-independent parts (and their tests) build elsewhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+mod audio;
 mod model;
-mod timeline;
 #[cfg(windows)]
 mod platform;
+mod render;
+mod timeline;
 
 use std::process::ExitCode;
 
@@ -38,19 +41,28 @@ pub fn argument<'a>(arguments: &'a [String], name: &str) -> Option<&'a str> {
 
 #[cfg(windows)]
 fn run(arguments: &[String]) -> Result<String, String> {
-    if argument(arguments, "--export").is_some() {
-        return Err("ScreenSway capture failed: Export is not available on Windows yet.".into());
+    platform::initialize().map_err(failure)?;
+    if let Some(job) = argument(arguments, "--export") {
+        return Ok(json(
+            &platform::export::run(std::path::Path::new(job)).map_err(failure)?,
+        ));
     }
     if argument(arguments, "--transcribe").is_some() {
-        return Err("ScreenSway capture failed: Captions are not available on Windows yet.".into());
+        return Ok(json(
+            &platform::transcribe::run(arguments).map_err(failure)?,
+        ));
     }
-    platform::initialize().map_err(failure)?;
-    if arguments.iter().any(|argument| argument == "--list-sources") {
+    if arguments
+        .iter()
+        .any(|argument| argument == "--list-sources")
+    {
         return Ok(json(&platform::sources::list().map_err(failure)?));
     }
-    if arguments.iter().any(|argument| argument == "--list-microphones") {
-        // Microphones arrive with audio capture; an empty list hides the picker.
-        return Ok(json(&Vec::<model::Microphone>::new()));
+    if arguments
+        .iter()
+        .any(|argument| argument == "--list-microphones")
+    {
+        return Ok(json(&platform::audio::microphones().map_err(failure)?));
     }
     let summary = platform::recorder::run(arguments).map_err(failure)?;
     Ok(json(&summary))

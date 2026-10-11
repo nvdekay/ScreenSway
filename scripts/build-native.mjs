@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -17,13 +17,34 @@ const targetTriple = requestedTarget ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? h
 
 // Windows: the Rust helper in native/windows-capture, with the same command line as the Swift one.
 if (process.platform === "win32") {
+  const { verifyModel } = await import("./setup-windows-speech.mjs");
+  if (!await verifyModel()) {
+    throw new Error("Windows speech model is missing or damaged. Run pnpm setup:windows-speech before building.");
+  }
   const manifest = path.join(repositoryRoot, "native/windows-capture/Cargo.toml");
   const crossTarget = targetTriple === hostTriple ? [] : ["--target", targetTriple];
-  const result = spawnSync("cargo", ["build", "--release", "--manifest-path", manifest, ...crossTarget], {
-    stdio: "inherit",
+  const result = spawnSync("cargo", ["build", "--release", "--message-format=json-render-diagnostics", "--manifest-path", manifest, ...crossTarget], {
+    cwd: repositoryRoot,
+    stdio: ["inherit", "pipe", "inherit"],
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
+  // Inspect the exact dependency build used by Cargo, including cache hits.
+  // A nominal Release build is insufficient: cmake-rs can omit native /O2.
+  if (targetTriple === "x86_64-pc-windows-msvc") {
+    const speechBuild = result.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line))
+      .find(message => message.reason === "build-script-executed" && message.package_id.includes("whisper-rs-sys"));
+    if (!speechBuild) throw new Error("Cannot verify the native speech compiler settings.");
+    const cache = readFileSync(path.join(speechBuild.out_dir, "build/CMakeCache.txt"), "utf8");
+    for (const language of ["C", "CXX"]) {
+      const flags = cache.match(new RegExp(`^CMAKE_${language}_FLAGS_RELEASE:STRING=(.*)$`, "m"))?.[1] ?? "";
+      if (!/(?:^|\s)\/O2(?:\s|$)/.test(flags)) {
+        throw new Error("Native speech optimization is missing. Clear whisper-rs-sys build artifacts and rebuild with .cargo/windows-speech.cmake.");
+      }
+    }
+  }
   const built = path.join(
     repositoryRoot,
     "native/windows-capture/target",
@@ -32,7 +53,11 @@ if (process.platform === "win32") {
   );
   mkdirSync(binariesPath, { recursive: true });
   const destination = path.join(binariesPath, `screensway-capture-${targetTriple}.exe`);
-  copyFileSync(built, destination);
+  // Windows locks a running sidecar. An unchanged build can still prepare the app
+  // while an export/transcription finishes; do not overwrite an identical executable.
+  if (!existsSync(destination) || !readFileSync(built).equals(readFileSync(destination))) {
+    copyFileSync(built, destination);
+  }
   console.log(`Prepared ScreenSway capture sidecar: ${destination}`);
   process.exit(0);
 }
