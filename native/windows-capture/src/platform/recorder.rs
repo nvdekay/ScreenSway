@@ -29,7 +29,7 @@ use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetSystemMetrics, SM_SWAPBUTTON};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetSystemMetrics, IsWindow, IsIconic, SM_SWAPBUTTON};
 
 /// Where in the recording the library thumbnail is taken, like on macOS.
 const THUMBNAIL_TIME: i64 = TICKS_PER_SECOND / 2;
@@ -80,6 +80,10 @@ impl Frames {
     ) -> windows::core::Result<()> {
         let time = frame.SystemRelativeTime()?.Duration;
         let content = frame.ContentSize()?;
+        if content.Width <= 0 || content.Height <= 0 {
+            frame.Close()?;
+            return Ok(());
+        }
         let surface: ID3D11Texture2D = unsafe {
             frame
                 .Surface()?
@@ -161,6 +165,7 @@ impl Frames {
 /// What is being recorded and where it sits on the screen.
 struct Target {
     item: GraphicsCaptureItem,
+    window: Option<usize>,
     /// Top-left in physical screen pixels, for the pointer log.
     origin: (f64, f64),
     size: (u32, u32),
@@ -180,6 +185,7 @@ fn target(arguments: &[String]) -> Result<Target, Error> {
             .step("Starting capture of the window")?;
         return Ok(Target {
             item,
+            window: Some(handle),
             origin: (f64::from(window.bounds.left), f64::from(window.bounds.top)),
             size: size(&window.bounds),
         });
@@ -190,6 +196,7 @@ fn target(arguments: &[String]) -> Result<Target, Error> {
         .step("Starting capture of the display")?;
     Ok(Target {
         item,
+        window: None,
         origin: (
             f64::from(display.bounds.left),
             f64::from(display.bounds.top),
@@ -342,7 +349,8 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     let pointer_thread = {
         let pointer = pointer.clone();
         let running = pointer_running.clone();
-        std::thread::spawn(move || poll_pointer(&pointer, &running))
+        let window = target.window;
+        std::thread::spawn(move || poll_pointer(&pointer, &running, window, (width, height)))
     };
     // Tells the desktop shell that frames are being recorded, so its timer starts in sync.
     eprintln!("SCREENSWAY_READY");
@@ -351,7 +359,9 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     let mut paused = false;
     let mut failure = None;
     while started.elapsed().as_secs_f64() < duration {
-        if closed.load(Ordering::SeqCst) {
+        // Some apps terminate without delivering GraphicsCaptureItem.Closed.
+        let window_gone = target.window.is_some_and(|handle| !unsafe { IsWindow(Some(HWND(handle as *mut _))) }.as_bool());
+        if closed.load(Ordering::SeqCst) || window_gone {
             eprintln!("Capture stopped by Windows: the recorded window or display went away.");
             break;
         }
@@ -502,7 +512,7 @@ fn set_paused(
 }
 
 /// Polls the pointer every few milliseconds; clicks last far longer than that.
-fn poll_pointer(pointer: &Mutex<PointerLog>, running: &AtomicBool) {
+fn poll_pointer(pointer: &Mutex<PointerLog>, running: &AtomicBool, window: Option<usize>, canvas: (u32, u32)) {
     unsafe { timeBeginPeriod(1) };
     while running.load(Ordering::SeqCst) {
         let mut point = POINT::default();
@@ -519,6 +529,19 @@ fn poll_pointer(pointer: &Mutex<PointerLog>, running: &AtomicBool) {
             let left = pressed(primary.0);
             let right = pressed(secondary.0);
             if let Ok(mut pointer) = pointer.lock() {
+                if let Some(handle) = window {
+                    let hwnd = HWND(handle as *mut _);
+                    // Minimized windows have off-screen coordinates; keep the last mapping.
+                    if !unsafe { IsIconic(hwnd) }.as_bool() {
+                        if let Some(bounds) = sources::window_bounds(hwnd) {
+                            let (width, height) = size(&bounds);
+                            pointer.set_capture_area(
+                                (f64::from(bounds.left), f64::from(bounds.top)),
+                                (f64::from(canvas.0) / f64::from(width), f64::from(canvas.1) / f64::from(height)),
+                            );
+                        }
+                    }
+                }
                 pointer.observe(now(), (f64::from(point.x), f64::from(point.y)), left, right);
             }
         }

@@ -1,5 +1,11 @@
 # Windows implementation and validation
 
+Release acceptance scenarios, priorities and hardware coverage are tracked in
+[Windows release test plan](windows-release-test-plan.md). Passing the local
+checks below does not certify the unexecuted cases in that plan.
+See [latest local QA evidence](windows-qa-latest.md) for the final installer hash,
+installed-app E2E results and remaining gaps.
+
 Windows now implements display/window recording, pointer metadata, pause/resume,
 system audio, microphone selection and voice processing, Studio editing, framed
 MP4 export through 4K/60 fps, editable captions and SRT export.

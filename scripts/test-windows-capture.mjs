@@ -31,7 +31,7 @@ console.log(`Sources: ${sources.length} (${sources.filter((source) => source.kin
 const hasFfprobe = spawnSync("ffprobe", ["-version"]).status === 0;
 if (!hasFfprobe) console.log("ffprobe not found; video stream checks skipped.");
 
-const testRoot = mkdtempSync(path.join(tmpdir(), "screensway-capture-test-"));
+const testRoot = mkdtempSync(path.join(tmpdir(), "screensway-quay thử-"));
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -48,7 +48,7 @@ async function record(source, name, commands, audioArguments = []) {
     "--control", controlPath,
     "--source-kind", source.kind,
     "--source-id", source.id,
-    "--duration", "30",
+    "--duration", String(Math.max(30, Number(process.env.SCREENSWAY_TEST_SOAK_SECONDS ?? 0) + 10)),
     ...audioArguments,
   ], { windowsHide: true });
   let stdout = "";
@@ -181,6 +181,25 @@ if (process.env.SCREENSWAY_TEST_AUDIO !== "0") {
     const mixedAudio = await record(display, "MixedAudio", [{ afterMs: 1500, value: "stop" }], ["--system-audio", "--microphone", mic.id]);
     checkAudio(mixedAudio);
   }
+}
+
+
+// User edge cases: stopping immediately, stopping while paused and microphone alone.
+const immediate = await record(display, "ImmediateStop", [{ afterMs: 80, value: "stop" }]);
+assert(immediate.result.durationMs > 0 && immediate.result.durationMs < 1000);
+const pausedStop = await record(display, "StopWhilePaused", [
+  { afterMs: 800, value: "pause" }, { afterMs: 900, value: "stop" },
+]);
+assert(pausedStop.result.durationMs >= 650 && pausedStop.result.durationMs < 1200);
+if (microphones.length && process.env.SCREENSWAY_TEST_MICROPHONE !== "0") {
+  const microphoneOnly = await record(display, "MicrophoneOnly", [{ afterMs: 1000, value: "stop" }], ["--microphone", "default"]);
+  checkAudio(microphoneOnly);
+}
+const soakSeconds = Number(process.env.SCREENSWAY_TEST_SOAK_SECONDS ?? 0);
+if (Number.isFinite(soakSeconds) && soakSeconds > 0) {
+  const soak = await record(display, "Soak", [{ afterMs: soakSeconds * 1000, value: "stop" }], ["--system-audio"]);
+  assert(Math.abs(soak.result.durationMs - soakSeconds * 1000) < 750);
+  checkAudio(soak);
 }
 
 console.log(`Windows capture integration tests passed. Artifacts: ${testRoot}`);

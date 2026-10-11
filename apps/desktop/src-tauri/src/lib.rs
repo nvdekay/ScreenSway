@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
-#[cfg(capture)]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(capture)]
 use std::time::{Duration, Instant};
@@ -67,6 +66,7 @@ struct RecordingState {
 #[cfg(capture)]
 struct ActiveRecording {
     child: std::process::Child,
+    stdout_reader: std::thread::JoinHandle<Vec<u8>>,
     stderr_log: Arc<Mutex<String>>,
     control_path: std::path::PathBuf,
     project_path: std::path::PathBuf,
@@ -173,6 +173,7 @@ async fn start_recording(
             let result =
                 start_recording_blocking(&app, &source_kind, &source_id, system_audio, microphone.as_deref());
             if result.is_err() {
+                hide_hud(&app);
                 publish_state(&app, RecordingState { status: "idle", ..Default::default() });
                 restore_main_window(&app);
             }
@@ -327,7 +328,7 @@ fn start_recording_blocking(
     system_audio: bool,
     microphone: Option<&str>,
 ) -> Result<RecordingStarted, String> {
-    use std::io::BufRead;
+    use std::io::{BufRead, Read};
     use std::process::Stdio;
 
     let manager = app.state::<CaptureManager>();
@@ -383,6 +384,15 @@ fn start_recording_blocking(
         .spawn()
         .map_err(|error| format!("Could not start the native capture helper: {error}"))?;
 
+    // Auto-finished recordings can contain a pointer log larger than a pipe buffer.
+    // Drain it immediately, otherwise the helper cannot exit and the monitor cannot save it.
+    let mut stdout = child.stdout.take().ok_or("Could not read the capture helper output.")?;
+    let stdout_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.read_to_end(&mut bytes);
+        bytes
+    });
+
     // Wait until ScreenCaptureKit is actually delivering frames before the timer starts.
     let stderr = child.stderr.take().ok_or("Could not read the capture helper output.")?;
     let stderr_log = Arc::new(Mutex::new(String::new()));
@@ -402,7 +412,7 @@ fn start_recording_blocking(
     }
     if ready_receiver.recv_timeout(Duration::from_secs(30)).is_err() {
         let _ = child.kill();
-        let message = finish_helper(child, &stderr_log)
+        let message = finish_helper(child, &stderr_log, stdout_reader)
             .err()
             .unwrap_or_else(|| "Screen recording did not start in time.".into());
         let _ = std::fs::remove_dir_all(&project_path);
@@ -412,6 +422,7 @@ fn start_recording_blocking(
 
     let recording = ActiveRecording {
         child,
+        stdout_reader,
         stderr_log,
         control_path,
         project_path: project_path.clone(),
@@ -469,7 +480,7 @@ fn set_recording_paused_blocking(app: &tauri::AppHandle, paused: bool) -> Result
 #[cfg(capture)]
 fn stop_recording_blocking(app: &tauri::AppHandle) -> Result<CaptureSummary, String> {
     let manager = app.state::<CaptureManager>();
-    let recording = manager
+    let mut recording = manager
         .active
         .lock()
         .map_err(|_| "The capture state lock is unavailable.".to_string())?
@@ -480,9 +491,13 @@ fn stop_recording_blocking(app: &tauri::AppHandle) -> Result<CaptureSummary, Str
     publish_state(app, RecordingState { status: "finishing", countdown: None, elapsed_ms });
     update_tray(app);
 
-    let result = std::fs::write(&recording.control_path, "stop")
-        .map_err(|error| format!("Could not send the stop command: {error}"))
-        .and_then(|_| finish_helper(recording.child, &recording.stderr_log));
+    let stop_error = std::fs::write(&recording.control_path, "stop").err();
+    if stop_error.is_some() { let _ = recording.child.kill(); }
+    let finished = finish_helper(recording.child, &recording.stderr_log, recording.stdout_reader);
+    let result = match stop_error {
+        Some(error) => Err(format!("Could not send the stop command: {error}")),
+        None => finished,
+    };
     let _ = std::fs::remove_file(&recording.control_path);
     if let Ok(summary) = &result {
         debug_assert_eq!(summary.project_path, recording.project_path.to_string_lossy());
@@ -508,9 +523,8 @@ fn start_recording_monitor(app: tauri::AppHandle) {
         match crashed {
             Some(recording) => {
                 let _ = std::fs::remove_file(&recording.control_path);
-                let result = finish_helper(recording.child, &recording.stderr_log).and_then(|_| {
-                    Err::<CaptureSummary, String>("The capture helper stopped unexpectedly.".into())
-                });
+                // Closing the captured window is a normal, successfully saved recording.
+                let result = finish_helper(recording.child, &recording.stderr_log, recording.stdout_reader);
                 finish_session(&app, &result);
                 return;
             }
@@ -539,14 +553,9 @@ fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String
 fn finish_helper(
     mut child: std::process::Child,
     stderr_log: &Arc<Mutex<String>>,
+    stdout_reader: std::thread::JoinHandle<Vec<u8>>,
 ) -> Result<CaptureSummary, String> {
-    use std::io::Read;
-
-    // Drain stdout before waiting so a large pointer log cannot fill the pipe and block the helper.
-    let mut stdout = Vec::new();
-    if let Some(mut pipe) = child.stdout.take() {
-        let _ = pipe.read_to_end(&mut stdout);
-    }
+    let stdout = stdout_reader.join().unwrap_or_default();
     let status = child
         .wait()
         .map_err(|error| format!("Could not finalize the recording: {error}"))?;
@@ -971,6 +980,24 @@ fn save_captions(project_path: String, captions: serde_json::Value) -> Result<()
 #[derive(Default)]
 struct TranscriptionManager {
     child: Arc<Mutex<Option<std::process::Child>>>,
+    busy: AtomicBool,
+    cancelled: AtomicBool,
+}
+
+/// Hold the reservation through preparation, process exit and file cleanup.
+/// A child slot alone leaves races before spawn and immediately after cancellation.
+struct OperationReservation<'a>(&'a AtomicBool);
+
+impl Drop for OperationReservation<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn reserve_operation<'a>(busy: &'a AtomicBool, cancelled: &AtomicBool, message: &str) -> Result<OperationReservation<'a>, String> {
+    busy.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).map_err(|_| message.to_string())?;
+    cancelled.store(false, Ordering::SeqCst);
+    Ok(OperationReservation(busy))
 }
 
 const TRANSCRIBE_PROGRESS_EVENT: &str = "transcribe-progress";
@@ -999,9 +1026,10 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
             return Err("The caption language is invalid.".into());
         }
         let manager = app.state::<TranscriptionManager>();
-        if manager.child.lock().map(|child| child.is_some()).unwrap_or(true) {
-            return Err("Captions are already being created.".into());
-        }
+        let _operation = {
+            let _child = manager.child.lock().map_err(|_| "The recognizer state is unavailable.")?;
+            reserve_operation(&manager.busy, &manager.cancelled, "Captions are already being created.")?
+        };
         let project = resolve_project(project_path)?;
         let manifest = read_manifest(&project)?;
         let mut child = helper_command()?
@@ -1018,6 +1046,7 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
         let stderr = child.stderr.take().ok_or("Could not read the recognizer output.")?;
         let mut stdout = child.stdout.take().ok_or("Could not read the recognizer output.")?;
         if let Ok(mut current) = manager.child.lock() {
+            if manager.cancelled.load(Ordering::SeqCst) { let _ = child.kill(); }
             *current = Some(child);
         }
 
@@ -1041,12 +1070,12 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
         let mut result_json = Vec::new();
         let _ = stdout.read_to_end(&mut result_json);
         let child = manager.child.lock().ok().and_then(|mut child| child.take());
-        let cancelled = child.is_none();
+        let cancelled = manager.cancelled.load(Ordering::SeqCst);
         let status = child.map(|mut child| child.wait());
         let message = errors.join().unwrap_or_default();
 
         match status {
-            Some(Ok(status)) if status.success() => serde_json::from_slice(&result_json)
+            Some(Ok(status)) if status.success() && !cancelled => serde_json::from_slice(&result_json)
                 .map_err(|error| format!("Could not read the captions: {error}")),
             _ => Err(if cancelled {
                 "Captions cancelled.".into()
@@ -1061,9 +1090,9 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
 
 #[tauri::command]
 fn cancel_transcription(state: tauri::State<'_, TranscriptionManager>) {
-    if let Some(mut child) = state.child.lock().ok().and_then(|mut child| child.take()) {
-        let _ = child.kill();
-        let _ = child.wait();
+    if let Ok(mut current) = state.child.lock() {
+        state.cancelled.store(true, Ordering::SeqCst);
+        if let Some(child) = current.as_mut() { let _ = child.kill(); }
     }
 }
 
@@ -1082,6 +1111,8 @@ fn open_speech_settings() -> Result<(), String> {
 struct ExportManager {
     child: Arc<Mutex<Option<std::process::Child>>>,
     output: Arc<Mutex<Option<std::path::PathBuf>>>,
+    busy: AtomicBool,
+    cancelled: AtomicBool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1140,12 +1171,17 @@ fn decode_png(data: &str) -> Result<Vec<u8>, String> {
 fn unique_export_path(directory: &std::path::Path, name: &str) -> std::path::PathBuf {
     let cleaned: String = name
         .chars()
-        .map(|character| if matches!(character, '/' | ':' | '\\' | '\0') { '-' } else { character })
+        .take(120)
+        .map(|character| if character.is_control() || matches!(character, '/' | ':' | '\\' | '<' | '>' | '"' | '|' | '?' | '*') { '-' } else { character })
         .collect();
-    let base = if cleaned.trim().is_empty() { "ScreenSway".to_string() } else { cleaned.trim().to_string() };
+    let cleaned = cleaned.trim().trim_end_matches(['.', ' ']);
+    let stem = cleaned.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+    let base = if cleaned.is_empty() { "ScreenSway".to_string() } else if reserved { format!("ScreenSway-{cleaned}") } else { cleaned.to_string() };
     let mut candidate = directory.join(format!("{base}.mp4"));
     let mut counter = 2;
-    while candidate.exists() {
+    while candidate.exists() || candidate.with_extension("srt").exists() {
         candidate = directory.join(format!("{base} {counter}.mp4"));
         counter += 1;
     }
@@ -1195,9 +1231,10 @@ fn export_recording_blocking(
         use std::process::Stdio;
 
         let manager = app.state::<ExportManager>();
-        if manager.child.lock().map(|child| child.is_some()).unwrap_or(true) {
-            return Err("An export is already running.".into());
-        }
+        let _operation = {
+            let _child = manager.child.lock().map_err(|_| "The exporter state is unavailable.")?;
+            reserve_operation(&manager.busy, &manager.cancelled, "An export is already running.")?
+        };
 
         let project = resolve_project(project_path)?;
         let manifest = read_manifest(&project)?;
@@ -1253,6 +1290,7 @@ fn export_recording_blocking(
             *current = Some(output.clone());
         }
         if let Ok(mut current) = manager.child.lock() {
+            if manager.cancelled.load(Ordering::SeqCst) { let _ = child.kill(); }
             *current = Some(child);
         }
 
@@ -1276,7 +1314,7 @@ fn export_recording_blocking(
         let mut result_json = Vec::new();
         let _ = stdout.read_to_end(&mut result_json);
         let child = manager.child.lock().ok().and_then(|mut child| child.take());
-        let cancelled = child.is_none();
+        let cancelled = manager.cancelled.load(Ordering::SeqCst);
         let status = child.map(|mut child| child.wait());
         let message = errors.join().unwrap_or_default();
         let _ = std::fs::remove_dir_all(&work);
@@ -1285,7 +1323,7 @@ fn export_recording_blocking(
         }
 
         match status {
-            Some(Ok(status)) if status.success() => {
+            Some(Ok(status)) if status.success() && !cancelled => {
                 let mut result: ExportResult = serde_json::from_slice(&result_json)
                     .map_err(|error| format!("Could not read the export result: {error}"))?;
                 if let Some(subtitles) = subtitles.filter(|text| !text.trim().is_empty()) {
@@ -1464,9 +1502,9 @@ fn read_thumbnail(project_path: String) -> Result<Option<String>, String> {
 
 #[tauri::command]
 fn cancel_export(state: tauri::State<'_, ExportManager>) {
-    if let Some(mut child) = state.child.lock().ok().and_then(|mut child| child.take()) {
-        let _ = child.kill();
-        let _ = child.wait();
+    if let Ok(mut current) = state.child.lock() {
+        state.cancelled.store(true, Ordering::SeqCst);
+        if let Some(child) = current.as_mut() { let _ = child.kill(); }
     }
 }
 
@@ -1568,6 +1606,35 @@ pub fn run() {
             #[cfg(not(capture))]
             let _ = app;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            if window.label() == "main" {
+                let app = window.app_handle();
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let capture = app.state::<CaptureManager>();
+                    let recording = capture.state.lock().map(|state| state.status != "idle").unwrap_or(true);
+                    // Keep the recording controls available until the user stops
+                    // or cancels. Destroying main here would lose the saved preview.
+                    if recording {
+                        api.prevent_close();
+                        return;
+                    }
+                    for manager in [app.state::<ExportManager>().child.clone(), app.state::<TranscriptionManager>().child.clone()] {
+                        if let Ok(mut current) = manager.lock() {
+                            if let Some(child) = current.as_mut() { let _ = child.kill(); }
+                        }
+                    }
+                }
+                if let tauri::WindowEvent::Destroyed = event {
+                    // A reused hidden HUD otherwise keeps Windows running forever
+                    // after the last visible window has been closed.
+                    if let Some(hud) = app.get_webview_window(HUD_LABEL) { let _ = hud.close(); }
+                    app.exit(0);
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             get_recording_state,
@@ -1682,7 +1749,29 @@ mod tests {
         std::fs::write(&first, b"").unwrap();
         assert_eq!(unique_export_path(&directory, "Demo: take/1").file_name().unwrap(), "Demo- take-1 2.mp4");
         assert_eq!(unique_export_path(&directory, "   ").file_name().unwrap(), "ScreenSway.mp4");
+        assert_eq!(unique_export_path(&directory, "CON").file_name().unwrap(), "ScreenSway-CON.mp4");
+        assert_eq!(unique_export_path(&directory, "nul.demo").file_name().unwrap(), "ScreenSway-nul.demo.mp4");
+        assert_eq!(unique_export_path(&directory, "demo?. ").file_name().unwrap(), "demo-.mp4");
+        assert_eq!(unique_export_path(&directory, "...").file_name().unwrap(), "ScreenSway.mp4");
+        let subtitles = directory.join("Captions.srt");
+        std::fs::write(subtitles, b"keep me").unwrap();
+        assert_eq!(unique_export_path(&directory, "Captions").file_name().unwrap(), "Captions 2.mp4");
 
         std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn operation_stays_reserved_until_cleanup_and_recovers_after_failure() {
+        let busy = AtomicBool::new(false);
+        let cancelled = AtomicBool::new(false);
+        let first = reserve_operation(&busy, &cancelled, "busy").unwrap();
+        cancelled.store(true, Ordering::SeqCst);
+        assert!(reserve_operation(&busy, &cancelled, "busy").is_err());
+        assert!(cancelled.load(Ordering::SeqCst), "a rejected retry must not erase cancellation");
+        drop(first);
+        let second = reserve_operation(&busy, &cancelled, "busy").unwrap();
+        assert!(!cancelled.load(Ordering::SeqCst));
+        drop(second);
+        assert!(!busy.load(Ordering::SeqCst));
     }
 }
