@@ -58,6 +58,16 @@ const CAPTIONS: [number, MessageKey][] = [
   [9_200, "demo.caption3"],
 ];
 
+/** Sample narration follows the same clock as the camera and pauses with playback. */
+const SAMPLE_CAPTIONS: [number, MessageKey][] = [
+  [0, "demo.sub0"],
+  [2_000, "demo.sub1"],
+  [4_000, "demo.sub2"],
+  [6_000, "demo.sub3"],
+  [8_000, "demo.sub4"],
+  [10_000, "demo.sub5"],
+];
+
 const BARS = [42, 58, 49, 88, 71, 63, 54];
 
 function MockApp() {
@@ -104,7 +114,7 @@ function MockApp() {
   );
 }
 
-export function Demo() {
+export function Demo({ showCaptions = false }: { showCaptions?: boolean }) {
   const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLDivElement>(null);
@@ -120,6 +130,7 @@ export function Demo() {
   );
   const [visible, setVisible] = useState(true);
   const [caption, setCaption] = useState<MessageKey>("demo.caption0");
+  const [sampleCaption, setSampleCaption] = useState<MessageKey>("demo.sub0");
 
   const events = useMemo(buildScript, []);
   const clicks = useMemo(() => events.filter((event) => event.type !== "move"), [events]);
@@ -155,6 +166,7 @@ export function Demo() {
     let last = performance.now();
     let lastStep = -1;
     let lastCaption: MessageKey | null = null;
+    let lastSampleCaption: MessageKey | null = null;
 
     const render = (now: number) => {
       if (playing && visible) timeRef.current = (timeRef.current + (now - last)) % LOOP_MS;
@@ -207,6 +219,12 @@ export function Demo() {
         setCaption(nextCaption);
       }
 
+      const nextSample = SAMPLE_CAPTIONS.filter(([start]) => time >= start).at(-1)?.[1] ?? "demo.sub0";
+      if (nextSample !== lastSampleCaption) {
+        lastSampleCaption = nextSample;
+        setSampleCaption(nextSample);
+      }
+
       frame = requestAnimationFrame(render);
     };
     frame = requestAnimationFrame(render);
@@ -253,6 +271,7 @@ export function Demo() {
             </div>
           </div>
           <span className="demo-badge" ref={badgeRef} data-visible="false" aria-hidden="true" />
+          {showCaptions && <p className="sample-caption">{t(sampleCaption)}</p>}
         </div>
         <div className="demo-footer">
           <p className="demo-caption" key={caption}>{t(caption)}</p>

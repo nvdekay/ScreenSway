@@ -25,7 +25,7 @@ const CONTENT = {
     label: "Minh họa Studio tương tác", project: "Video giới thiệu sản phẩm tiếp theo", studio: "ScreenSway Studio",
     styles: "Mang dấu ấn của bạn", stylesCopy: "Một bản quay. Nhiều diện mạo.", tryStyle: "Thử một phong cách", caption: "Hiện phụ đề mẫu",
     sample: "Tập trung đúng chỗ. Khác biệt rõ ràng.", note: "Minh họa tương tác · thử style và tự zoom", export: "MP4 · đến 4K · 60 fps",
-    kicker: "Làm quen với Studio", title: "Chỉnh chu từng chi tiết.\nNgay trong một ứng dụng.",
+    kicker: "Làm quen với Studio", title: "Chỉn chu từng chi tiết.\nNgay trong một ứng dụng.",
     copy: "Để máy quay tự bám theo thao tác. Sau đó, thêm diện mạo, nhịp điệu và lời dẫn của riêng bạn.",
     cards: [
       { title: "Một diện mạo thật riêng", copy: "Bắt đầu với Studio, Clean, MacBook, Website hoặc Social. Thêm nền mesh, sóng màu, gradient tùy chỉnh hay ảnh của bạn. Lưu phong cách yêu thích để dùng lại lần sau.", tags: ["Style có sẵn", "Nền tùy chỉnh", "Lưu phong cách"] },
@@ -42,6 +42,8 @@ const CONTENT = {
 
 const LOOKS = ["Studio", "Clean", "MacBook", "Website", "Social"] as const;
 const ICONS = [Palette, Scissors, Mic, Captions];
+// Content changes with the locale; component identity must stay the same.
+const FEATURE_IDS = ["styles", "timeline", "audio", "captions"] as const;
 
 export function StudioShowcase() {
   const { language } = useI18n();
@@ -57,8 +59,7 @@ export function StudioShowcase() {
       </div>
       <div className="studio-workspace">
         <div className="studio-live-preview">
-          <Demo />
-          {captions && <div className="sample-caption" aria-hidden="true">{c.sample}</div>}
+          <Demo showCaptions={captions} />
         </div>
         <aside className="studio-style-panel">
           <span className="studio-panel-label"><SlidersHorizontal size={16} aria-hidden="true" /> {c.styles}</span>
@@ -95,7 +96,7 @@ export function StudioFeatures() {
           {c.cards.map((card, index) => {
             const Icon = ICONS[index];
             return (
-              <article className={`studio-feature feature-${index}`} key={card.title} data-reveal>
+              <article className={`studio-feature feature-${index}`} key={FEATURE_IDS[index]} data-reveal>
                 <div className="studio-feature-art" aria-hidden="true">
                   {index === 0 && <div className="frame-stack"><span /><span /><span /><Palette size={26} /></div>}
                   {index === 1 && <div className="timeline-art"><div className="timeline-ticks"><span>0:00</span><span>0:15</span><span>0:30</span></div><div className="timeline-film" /><div className="timeline-zooms"><i /><i /><i /></div><b /></div>}
