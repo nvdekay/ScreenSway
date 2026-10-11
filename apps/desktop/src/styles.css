@@ -77,6 +77,8 @@ html:not(.glass) .app-shell { background-color: var(--bg); }
 
 /* Title bar overlays the traffic lights. */
 .titlebar { position: sticky; top: 0; z-index: 10; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 88px; }
+/* Windows keeps its own title bar, so nothing sits under the header's left edge. */
+html.windows .titlebar { padding-left: 18px; }
 html.glass .titlebar { -webkit-backdrop-filter: blur(20px) saturate(150%); backdrop-filter: blur(20px) saturate(150%); }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--font-heading); font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
 .brand svg { flex: none; border-radius: 9px; box-shadow: 0 8px 20px #4338ca55; }
@@ -392,6 +394,8 @@ html.hud, html.hud body, html.hud #root { min-width: 0; min-height: 0; height: 1
 .hud-stop { height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 16px; border: 0; border-radius: 20px; background: linear-gradient(180deg, var(--danger), var(--danger-strong)); color: #fff; font-size: 14px; font-weight: 650; box-shadow: inset 0 1px 0 #ffffff59; }
 .hud-stop:hover { filter: brightness(1.08); }
 .hud-button:disabled, .hud-stop:disabled { opacity: .6; }
+/* Windows has no Liquid Glass behind the transparent controls window, so they paint their own. */
+html.windows .hud-bar, html.windows .hud-countdown { border: 1px solid #ffffff24; background: #16141ef0; box-sizing: border-box; }
 .hud-countdown { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border-radius: 44px; }
 .countdown-ring { width: 104px; height: 104px; display: grid; place-items: center; border-radius: 50%; border: 3px solid var(--danger); box-shadow: 0 0 30px #ff4d6755; animation: countdown-pop 1s var(--ease-out); }
 .countdown-ring span { font-family: var(--font-heading); font-size: 54px; font-weight: 600; font-variant-numeric: tabular-nums; }
