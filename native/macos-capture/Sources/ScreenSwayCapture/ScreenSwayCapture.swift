@@ -396,6 +396,11 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
         return shifted
     }
 
+    /// Set when the encoder gave up, for example because the disk is full.
+    var failure: Error? {
+        writer.status == .failed ? writer.error ?? CaptureError.outputMissing : nil
+    }
+
     static let audioSampleRate = 48_000
     private static let audioTolerance = CMTime(value: 1, timescale: 1_000)
     private static let frameDuration = CMTime(value: 1, timescale: 60)
@@ -424,6 +429,21 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
               let rawStatus = attachments.first?[.status] as? Int,
               let status = SCFrameStatus(rawValue: rawStatus) else { return false }
         return status == .complete
+    }
+}
+
+/// Remembers why ScreenCaptureKit ended a stream on its own (a captured window closed, a
+/// display was disconnected), so the recording can still be saved up to that point.
+final class StreamMonitor: NSObject, SCStreamDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopError: Error?
+
+    var error: Error? {
+        lock.withLock { stopError }
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        lock.withLock { stopError = error }
     }
 }
 
@@ -582,7 +602,8 @@ struct ScreenSwayCapture {
         streamConfiguration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         streamConfiguration.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
 
-        let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: nil)
+        let streamMonitor = StreamMonitor()
+        let stream = SCStream(filter: filter, configuration: streamConfiguration, delegate: streamMonitor)
 
         let pointerRecorder = PointerRecorder(captureBounds: captureBounds, pixelScale: pixelScale)
         let videoWriter = try VideoWriter(
@@ -609,7 +630,20 @@ struct ScreenSwayCapture {
         // Tells the desktop shell that frames are being recorded, so its timer starts in sync.
         FileHandle.standardError.write(Data("SCREENSWAY_READY\n".utf8))
         var isPaused = false
+        let parentProcessID = getppid()
         while Date().timeIntervalSince(startedAt) < duration {
+            // Save what was recorded if macOS ended the stream or the encoder failed.
+            if let error = streamMonitor.error {
+                FileHandle.standardError.write(Data("Capture stopped by macOS: \(error.localizedDescription)\n".utf8))
+                break
+            }
+            if let failure = videoWriter.failure {
+                throw failure
+            }
+            // If ScreenSway itself quits, finish the file instead of recording on unattended.
+            if getppid() != parentProcessID {
+                break
+            }
             if let controlURL,
                let command = try? String(contentsOf: controlURL, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -632,7 +666,9 @@ struct ScreenSwayCapture {
         }
         let recordingEnd = DispatchTime.now().uptimeNanoseconds
         pointerRecorder.stop(at: recordingEnd)
-        try await stream.stopCapture()
+        if streamMonitor.error == nil {
+            try? await stream.stopCapture()
+        }
         try await videoWriter.finish(at: recordingEnd)
         await pointerTask.value
 
