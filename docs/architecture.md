@@ -35,7 +35,7 @@ The pointer is stored as metadata instead of being burned into the video, so the
 - `--system-audio` adds a 48 kHz stereo AAC track (ScreenSway's own audio excluded) on the same clock.
 - `--list-sources` returns displays and windows with their point size and `pixelScale` (2 on Retina). The UI warns when a non-Retina source is selected, since zoomed-in moments look softer.
 - ScreenCaptureKit can drop a shareable-content query when two processes ask at once, so queries time out and retry, and the shell serializes helper launches. A missing Screen Recording permission is reported as `SCREENSWAY_SCREEN_RECORDING_DENIED`; the UI then shows how to grant it.
-- Starting a recording runs a 3-second countdown, hides the main window, and shows floating Liquid Glass controls plus a menu bar timer. ScreenSway's windows are excluded from the capture and from audio. Clicks on Pause/Stop are dropped from the pointer log.
+- Starting a recording runs a 3-second countdown, hides the main window, and shows floating Liquid Glass controls plus a menu bar timer. ScreenSway's windows are excluded from the capture and from audio. Clicks on Pause/Stop are dropped from the pointer log. The controls window is hidden, never closed, when a recording ends: its own Stop request is still waiting for a reply, and answering a request from a destroyed webview raises an exception in WebKit. Release builds keep `panic = "unwind"` so wry can catch such exceptions instead of aborting.
 
 ## Camera, preview and export
 

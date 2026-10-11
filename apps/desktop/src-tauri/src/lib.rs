@@ -290,7 +290,7 @@ fn start_recording_macos(
         for _ in 0..10 {
             std::thread::sleep(Duration::from_millis(100));
             if manager.cancel_countdown.load(Ordering::SeqCst) {
-                close_hud(app);
+                hide_hud(app);
                 return Err("Recording cancelled.".into());
             }
         }
@@ -347,7 +347,7 @@ fn start_recording_macos(
             .err()
             .unwrap_or_else(|| "Screen recording did not start in time.".into());
         let _ = std::fs::remove_dir_all(&project_path);
-        close_hud(app);
+        hide_hud(app);
         return Err(message);
     }
 
@@ -462,7 +462,7 @@ fn start_recording_monitor(app: tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String>) {
-    close_hud(app);
+    hide_hud(app);
     update_tray(app);
     publish_state(app, RecordingState { status: "idle", ..Default::default() });
     match result {
@@ -570,10 +570,14 @@ fn liquid_glass(radius: f64) -> tauri::utils::config::WindowEffectsConfig {
         .build()
 }
 
+/// Hides the recording controls instead of closing them. The HUD's own Stop and Cancel
+/// requests are still waiting for their replies at this point, and answering a request
+/// from a destroyed webview raises an exception inside WebKit that aborts the app.
+/// The hidden HUD is reused by the next recording.
 #[cfg(target_os = "macos")]
-fn close_hud(app: &tauri::AppHandle) {
+fn hide_hud(app: &tauri::AppHandle) {
     if let Some(hud) = app.get_webview_window(HUD_LABEL) {
-        let _ = hud.close();
+        let _ = hud.hide();
     }
 }
 
