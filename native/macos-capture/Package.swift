@@ -9,6 +9,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "ScreenSwayCapture"),
+        .testTarget(name: "ScreenSwayCaptureTests", dependencies: ["ScreenSwayCapture"]),
     ]
 )
 

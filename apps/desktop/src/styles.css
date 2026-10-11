@@ -147,6 +147,11 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .audio-toggle input:checked + .switch { background: var(--primary-strong); }
 .audio-toggle input:checked + .switch::after { transform: translateX(16px); }
 .audio-toggle input:focus-visible + .switch { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mic-options { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.mic-select { width: 100%; min-height: 36px; padding: 0 32px 0 12px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); background: #ffffff06 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a09cb0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--text); font: inherit; font-size: 13px; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.mic-select:disabled { cursor: default; opacity: .6; }
+.mic-select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mic-tip { padding: 0 4px; color: var(--text-subtle); font-size: 12px; line-height: 1.4; }
 .recorder-status { display: flex; align-items: center; gap: 8px; padding: 14px 4px 12px; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px #34d39926; }
 .status-dot.recording, .status-dot.countdown { background: var(--danger); box-shadow: 0 0 0 3px #f2586f33; animation: pulse 1.2s ease-in-out infinite; }

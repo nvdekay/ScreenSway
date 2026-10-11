@@ -4,5 +4,7 @@
 <dict>
   <key>NSScreenCaptureUsageDescription</key>
   <string>ScreenSway records the display you choose to create a local screen recording.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>ScreenSway records your voice with the screen when you turn on the microphone.</string>
 </dict>
 </plist>

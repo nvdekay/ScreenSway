@@ -62,7 +62,8 @@
         "appPosition": { "x": 170, "y": 170 },
         "applicationFolderPosition": { "x": 490, "y": 170 }
       },
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "entitlements": "Entitlements.plist"
     },
     "windows": {
       "nsis": {

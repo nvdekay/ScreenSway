@@ -17,6 +17,13 @@ struct CaptureSource: Codable {
     let pixelScale: Double
 }
 
+struct Microphone: Codable {
+    /// The `AVCaptureDevice` unique ID, passed back as `--microphone`.
+    let id: String
+    let name: String
+    let isDefault: Bool
+}
+
 struct PointerSample: Codable, Sendable {
     let timeMs: Int
     let type: String
@@ -193,9 +200,10 @@ final class PointerRecorder: @unchecked Sendable {
 final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
-    /// System audio, when requested. Shares the video's clock, so pauses cut both alike.
+    /// System audio and/or the microphone, mixed into one track. Shares the video's clock,
+    /// so pauses cut both alike.
     private let audioInput: AVAssetWriterInput?
-    private var nextAudioTime = CMTime.zero
+    private let audioMixer: AudioMixer?
     private let lock = NSLock()
     private var sessionStart: CMTime?
     private var pausedAt: CMTime?
@@ -236,7 +244,7 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
         if captureAudio {
             let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: Self.audioSampleRate,
+                AVSampleRateKey: AudioMixer.sampleRate,
                 AVNumberOfChannelsKey: 2,
                 AVEncoderBitRateKey: 192_000,
             ])
@@ -246,8 +254,13 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
             }
             writer.add(audioInput)
             self.audioInput = audioInput
+            audioMixer = try AudioMixer(
+                isReady: { audioInput.isReadyForMoreMediaData },
+                append: { audioInput.append($0) }
+            )
         } else {
             audioInput = nil
+            audioMixer = nil
         }
         super.init()
     }
@@ -299,6 +312,14 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
                 waitUntilInputIsReady()
                 append(latestFrame, at: closingFrameTime)
             }
+            if let audioMixer, let audioInput {
+                audioMixer.finish(at: end) {
+                    for _ in 0..<500 where !audioInput.isReadyForMoreMediaData {
+                        Thread.sleep(forTimeInterval: 0.002)
+                    }
+                    return audioInput.isReadyForMoreMediaData
+                }
+            }
             input.markAsFinished()
             audioInput?.markAsFinished()
             return lastAppended.isValid ? CMTimeMaximum(end, lastAppended + Self.frameDuration) : end
@@ -317,7 +338,11 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard sampleBuffer.isValid else { return }
         if type == .audio {
-            appendAudio(sampleBuffer)
+            appendAudio(sampleBuffer, from: .system)
+            return
+        }
+        if type == .microphone {
+            appendAudio(sampleBuffer, from: .microphone)
             return
         }
         guard type == .screen, Self.isCompleteFrame(sampleBuffer) else { return }
@@ -355,45 +380,12 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
         lastAppended = time
     }
 
-    private func appendAudio(_ sampleBuffer: CMSampleBuffer) {
+    private func appendAudio(_ sampleBuffer: CMSampleBuffer, from source: AudioMixer.Source) {
         lock.withLock {
-            guard !finished, sessionStart != nil, pausedAt == nil, let audioInput,
-                  audioInput.isReadyForMoreMediaData else { return }
-            let start = mediaTime(sampleBuffer.presentationTimeStamp)
-            // Drop audio from before the recording started, and anything that would overlap
-            // audio already written (the writer requires strictly increasing timestamps).
-            guard start >= .zero, start >= nextAudioTime - Self.audioTolerance,
-                  let retimed = Self.shifted(sampleBuffer, by: start - sampleBuffer.presentationTimeStamp),
-                  audioInput.append(retimed) else { return }
-            nextAudioTime = start + sampleBuffer.duration
+            // Audio from before the recording started or while paused is not part of the video.
+            guard !finished, sessionStart != nil, pausedAt == nil, let audioMixer else { return }
+            audioMixer.add(sampleBuffer, from: source, at: mediaTime(sampleBuffer.presentationTimeStamp))
         }
-    }
-
-    /// Moves every timing entry of a (possibly multi-sample) buffer by the same offset.
-    private static func shifted(_ sampleBuffer: CMSampleBuffer, by offset: CMTime) -> CMSampleBuffer? {
-        var count: CMItemCount = 0
-        guard CMSampleBufferGetSampleTimingInfoArray(
-            sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count
-        ) == noErr, count > 0 else { return nil }
-        var timing = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
-        guard CMSampleBufferGetSampleTimingInfoArray(
-            sampleBuffer, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count
-        ) == noErr else { return nil }
-        for index in timing.indices {
-            timing[index].presentationTimeStamp = timing[index].presentationTimeStamp + offset
-            if timing[index].decodeTimeStamp.isValid {
-                timing[index].decodeTimeStamp = timing[index].decodeTimeStamp + offset
-            }
-        }
-        var shifted: CMSampleBuffer?
-        guard CMSampleBufferCreateCopyWithNewTiming(
-            allocator: kCFAllocatorDefault,
-            sampleBuffer: sampleBuffer,
-            sampleTimingEntryCount: count,
-            sampleTimingArray: &timing,
-            sampleBufferOut: &shifted
-        ) == noErr else { return nil }
-        return shifted
     }
 
     /// Set when the encoder gave up, for example because the disk is full.
@@ -401,8 +393,6 @@ final class VideoWriter: NSObject, SCStreamOutput, @unchecked Sendable {
         writer.status == .failed ? writer.error ?? CaptureError.outputMissing : nil
     }
 
-    static let audioSampleRate = 48_000
-    private static let audioTolerance = CMTime(value: 1, timescale: 1_000)
     private static let frameDuration = CMTime(value: 1, timescale: 60)
 
     /// Must be called with the lock held. The encoder can be briefly busy; give it a moment
@@ -470,6 +460,7 @@ enum CaptureError: LocalizedError {
     case sourcesUnavailable
     case unsupportedOS
     case outputMissing
+    case microphoneDenied
     case exportFailed(String)
 
     var errorDescription: String? {
@@ -478,6 +469,7 @@ enum CaptureError: LocalizedError {
         case .sourcesUnavailable: "macOS did not return the list of screens and windows. Please try again."
         case .unsupportedOS: "This capture prototype requires macOS 15 or newer."
         case .outputMissing: "Screen recording finished without creating a video file."
+        case .microphoneDenied: "ScreenSway is not allowed to use the microphone."
         case .exportFailed(let message): "ScreenSway could not assemble the recording: \(message)"
         }
     }
@@ -485,6 +477,7 @@ enum CaptureError: LocalizedError {
 
 private let maximumEncodedDimension = 3_840.0
 private let screenRecordingDeniedMarker = "SCREENSWAY_SCREEN_RECORDING_DENIED"
+private let microphoneDeniedMarker = "SCREENSWAY_MICROPHONE_DENIED"
 
 private func isPermissionDenied(_ error: Error) -> Bool {
     let error = error as NSError
@@ -508,9 +501,13 @@ struct ScreenSwayCapture {
             FileHandle.standardOutput.write(Data("\n".utf8))
         } catch {
             // The desktop shell recognizes this marker and guides the user to System Settings.
-            let message = isPermissionDenied(error)
-                ? screenRecordingDeniedMarker
-                : "ScreenSway capture failed: \(error.localizedDescription)"
+            let message = if isPermissionDenied(error) {
+                screenRecordingDeniedMarker
+            } else if case CaptureError.microphoneDenied = error {
+                microphoneDeniedMarker
+            } else {
+                "ScreenSway capture failed: \(error.localizedDescription)"
+            }
             FileHandle.standardError.write(Data("\(message)\n".utf8))
             Foundation.exit(1)
         }
@@ -527,6 +524,12 @@ struct ScreenSwayCapture {
             FileHandle.standardOutput.write(Data("\n".utf8))
             Foundation.exit(0)
         }
+        if arguments.contains("--list-microphones") {
+            let data = try JSONEncoder.screenSway.encode(listMicrophones())
+            FileHandle.standardOutput.write(data)
+            FileHandle.standardOutput.write(Data("\n".utf8))
+            Foundation.exit(0)
+        }
 
         guard let outputIndex = arguments.firstIndex(of: "--output"), outputIndex + 1 < arguments.count else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "Missing --output directory."])
@@ -535,7 +538,12 @@ struct ScreenSwayCapture {
         let duration = arguments.firstIndex(of: "--duration")
             .flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
             .flatMap { $0 } ?? 14_400
-        let captureAudio = arguments.contains("--system-audio")
+        let captureSystemAudio = arguments.contains("--system-audio")
+        // A device ID from --list-microphones, or "default" for the system's input device.
+        let microphoneID = argument(named: "--microphone", in: arguments)
+        if microphoneID != nil {
+            try await requireMicrophoneAccess()
+        }
         let controlURL = argument(named: "--control", in: arguments)
             .map { URL(fileURLWithPath: $0) }
 
@@ -589,12 +597,19 @@ struct ScreenSwayCapture {
         streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         streamConfiguration.queueDepth = 8
         streamConfiguration.showsCursor = false
-        streamConfiguration.capturesAudio = captureAudio
-        if captureAudio {
-            streamConfiguration.sampleRate = VideoWriter.audioSampleRate
+        streamConfiguration.capturesAudio = captureSystemAudio
+        if captureSystemAudio {
+            streamConfiguration.sampleRate = AudioMixer.sampleRate
             streamConfiguration.channelCount = 2
             // ScreenSway's own UI makes no sound worth recording.
             streamConfiguration.excludesCurrentProcessAudio = true
+        }
+        if let microphoneID {
+            streamConfiguration.captureMicrophone = true
+            // An unplugged device falls back to the default input instead of failing.
+            if microphoneID != "default", AVCaptureDevice(uniqueID: microphoneID) != nil {
+                streamConfiguration.microphoneCaptureDeviceID = microphoneID
+            }
         }
         streamConfiguration.scalesToFit = true
         streamConfiguration.colorSpaceName = CGColorSpace.sRGB
@@ -607,7 +622,8 @@ struct ScreenSwayCapture {
 
         let pointerRecorder = PointerRecorder(captureBounds: captureBounds, pixelScale: pixelScale)
         let videoWriter = try VideoWriter(
-            url: videoURL, width: captureWidth, height: captureHeight, captureAudio: captureAudio
+            url: videoURL, width: captureWidth, height: captureHeight,
+            captureAudio: captureSystemAudio || microphoneID != nil
         )
         let startedAt = Date()
         try stream.addStreamOutput(
@@ -615,11 +631,18 @@ struct ScreenSwayCapture {
             type: .screen,
             sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.video", qos: .userInteractive)
         )
-        if captureAudio {
+        if captureSystemAudio {
             try stream.addStreamOutput(
                 videoWriter,
                 type: .audio,
                 sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.audio", qos: .userInteractive)
+            )
+        }
+        if microphoneID != nil {
+            try stream.addStreamOutput(
+                videoWriter,
+                type: .microphone,
+                sampleHandlerQueue: DispatchQueue(label: "app.screensway.capture.microphone", qos: .userInteractive)
             )
         }
 
@@ -720,6 +743,28 @@ struct ScreenSwayCapture {
             destination, image, [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary
         )
         CGImageDestinationFinalize(destination)
+    }
+
+    static func listMicrophones() -> [Microphone] {
+        let defaultID = AVCaptureDevice.default(for: .audio)?.uniqueID
+        return AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified
+        ).devices.map { device in
+            Microphone(id: device.uniqueID, name: device.localizedName, isDefault: device.uniqueID == defaultID)
+        }
+    }
+
+    /// Asks once (the prompt names ScreenSway, which launched this helper), then remembers.
+    static func requireMicrophoneAccess() async throws {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return
+        case .notDetermined:
+            if await AVCaptureDevice.requestAccess(for: .audio) { return }
+        default:
+            break
+        }
+        throw CaptureError.microphoneDenied
     }
 
     static func listSources() async throws -> [CaptureSource] {

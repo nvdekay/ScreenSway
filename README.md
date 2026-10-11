@@ -32,7 +32,7 @@ pnpm dev:web
 pnpm dev:desktop
 ```
 
-On macOS, ScreenSway records a display or application window (optionally with system audio), pauses and resumes without keeping the paused interval, previews automatic cursor-aware zooms in a studio with a customizable frame, and exports MP4 up to 4K at 60 fps. Recordings are local `.screensway` projects under `~/Movies/ScreenSway`; exports go to `~/Movies/ScreenSway/Exports`. See [docs/architecture.md](docs/architecture.md).
+On macOS, ScreenSway records a display or application window (optionally with system audio and the microphone), pauses and resumes without keeping the paused interval, previews automatic cursor-aware zooms in a studio with a customizable frame, and exports MP4 up to 4K at 60 fps. Recordings are local `.screensway` projects under `~/Movies/ScreenSway`; exports go to `~/Movies/ScreenSway/Exports`. See [docs/architecture.md](docs/architecture.md).
 
 The capture helper currently requires macOS 15 or newer. On first use, macOS asks for Screen Recording permission. Build the helper before starting the desktop application:
 
@@ -52,7 +52,7 @@ pnpm test:capture:macos
 pnpm build:macos
 ```
 
-`test:capture:macos` performs real display and window recordings (with system audio), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
+`test:capture:macos` performs real display and window recordings (with system audio and the default microphone; set `SCREENSWAY_TEST_MICROPHONE=0` to skip it), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
 
 Windows capture is part of the product plan but is not implemented yet.
 

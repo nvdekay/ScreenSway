@@ -39,6 +39,14 @@ struct CaptureSource {
     pixel_scale: Option<f64>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Microphone {
+    id: String,
+    name: String,
+    is_default: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RecordingStarted {
@@ -149,8 +157,11 @@ async fn start_recording(
     source_kind: String,
     source_id: String,
     system_audio: Option<bool>,
+    microphone: Option<String>,
 ) -> Result<RecordingStarted, String> {
     let system_audio = system_audio.unwrap_or(false);
+    // A device ID from `list_microphones`, or "default" for the system input.
+    let microphone = microphone.filter(|id| !id.trim().is_empty());
     if source_kind != "display" && source_kind != "window" {
         return Err("Capture source must be a display or window.".into());
     }
@@ -159,7 +170,8 @@ async fn start_recording(
     {
         reserve_recording(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
-            let result = start_recording_macos(&app, &source_kind, &source_id, system_audio);
+            let result =
+                start_recording_macos(&app, &source_kind, &source_id, system_audio, microphone.as_deref());
             if result.is_err() {
                 publish_state(&app, RecordingState { status: "idle", ..Default::default() });
                 restore_main_window(&app);
@@ -172,8 +184,29 @@ async fn start_recording(
 
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, source_id, system_audio);
+        let _ = (app, source_id, system_audio, microphone);
         Err("The first ScreenSway capture prototype currently supports macOS only.".into())
+    }
+}
+
+#[tauri::command]
+async fn list_microphones() -> Result<Vec<Microphone>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            let output = std::process::Command::new(capture_binary()?)
+                .arg("--list-microphones")
+                .output()
+                .map_err(|error| format!("Could not list microphones: {error}"))?;
+            parse_helper_output(output, "Microphone discovery")
+        })
+        .await
+        .map_err(|error| format!("Microphone discovery task failed: {error}"))?
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(Vec::new())
     }
 }
 
@@ -270,6 +303,7 @@ fn start_recording_macos(
     source_kind: &str,
     source_id: &str,
     system_audio: bool,
+    microphone: Option<&str>,
 ) -> Result<RecordingStarted, String> {
     use std::io::BufRead;
     use std::process::{Command, Stdio};
@@ -307,6 +341,9 @@ fn start_recording_macos(
     let mut command = Command::new(capture_binary()?);
     if system_audio {
         command.arg("--system-audio");
+    }
+    if let Some(microphone) = microphone {
+        command.arg("--microphone").arg(microphone);
     }
     let mut child = command
         .arg("--output")
@@ -1077,6 +1114,16 @@ fn open_screen_recording_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        .spawn()
+        .map_err(|error| format!("Could not open System Settings: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn reveal_recording(project_path: String) -> Result<(), String> {
     let project = resolve_project(&project_path)?;
     #[cfg(target_os = "macos")]
@@ -1126,6 +1173,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_recording_state,
             list_capture_sources,
+            list_microphones,
             start_recording,
             cancel_countdown,
             set_recording_paused,
@@ -1135,6 +1183,7 @@ pub fn run() {
             load_recording,
             reveal_recording,
             open_screen_recording_settings,
+            open_microphone_settings,
             export_recording,
             cancel_export,
             open_export,

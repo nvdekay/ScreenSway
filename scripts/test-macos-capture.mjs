@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -26,6 +26,10 @@ const binaryPath = path.join(
 assert(existsSync(binaryPath), `Capture sidecar is missing: ${binaryPath}`);
 
 const sources = JSON.parse(execFileSync(binaryPath, ["--list-sources"], { encoding: "utf8" }));
+const microphones = JSON.parse(execFileSync(binaryPath, ["--list-microphones"], { encoding: "utf8" }));
+assert(Array.isArray(microphones), "Microphones must be listed as an array.");
+assert(microphones.every((microphone) => microphone.id && microphone.name), "Each microphone needs an id and a name.");
+assert(microphones.filter((microphone) => microphone.isDefault).length <= 1, "Only one microphone can be the default.");
 const display = sources.find((source) => source.kind === "display");
 const windowSource = sources.find((source) => source.kind === "window");
 assert(display, "At least one display capture source is required.");
@@ -36,7 +40,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function record(source, name, commands, { systemAudio = false } = {}) {
+async function record(source, name, commands, { systemAudio = false, microphone = false } = {}) {
   const projectPath = path.join(testRoot, `${name}.screensway`);
   const controlPath = path.join(projectPath, ".capture-control");
   mkdirSync(projectPath, { recursive: true });
@@ -48,6 +52,7 @@ async function record(source, name, commands, { systemAudio = false } = {}) {
     "--source-kind", source.kind,
     "--source-id", source.id,
     ...(systemAudio ? ["--system-audio"] : []),
+    ...(microphone ? ["--microphone", "default"] : []),
   ]);
   let stdout = "";
   let stderr = "";
@@ -112,8 +117,9 @@ async function record(source, name, commands, { systemAudio = false } = {}) {
     ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name,sample_rate,channels,duration", "-of", "json", videoPath],
     { encoding: "utf8" },
   )).streams;
-  if (systemAudio) {
-    assert.equal(audioStreams.length, 1, `${name} should contain a system audio track.`);
+  if (systemAudio || microphone) {
+    // System audio and the microphone are mixed into one track that every player can play.
+    assert.equal(audioStreams.length, 1, `${name} should contain exactly one audio track.`);
     assert.equal(audioStreams[0].codec_name, "aac");
     assert.equal(Number(audioStreams[0].sample_rate), 48_000);
     assert.equal(audioStreams[0].channels, 2);
@@ -122,18 +128,39 @@ async function record(source, name, commands, { systemAudio = false } = {}) {
   } else {
     assert.equal(audioStreams.length, 0, `${name} should not contain audio unless requested.`);
   }
+  if (microphone) {
+    // A live microphone always hears some room noise; an all-zero track means it was not captured.
+    const levels = spawnSync(
+      "ffmpeg",
+      ["-v", "info", "-i", videoPath, "-map", "0:a", "-af", "astats", "-f", "null", "-"],
+      { encoding: "utf8" },
+    ).stderr;
+    const peak = Number(/Overall[\s\S]*?Peak level dB: (-?[\d.]+|-inf)/.exec(levels)?.[1] ?? "-inf");
+    assert(peak > -90, `${name} microphone audio is silent.`);
+    assert(peak <= 0.5, `${name} microphone audio clips at ${peak} dB.`);
+  }
 
   return { result, videoDurationMs: Number(probe.format.duration) * 1_000 };
 }
+
+const hasMicrophone = microphones.length > 0 && process.env.SCREENSWAY_TEST_MICROPHONE !== "0";
+if (!hasMicrophone) console.log("Microphone capture tests skipped.");
 
 const displayCapture = await record(display, "Display", [
   { afterMs: 1_200, value: "pause" },
   { afterMs: 900, value: "recording" },
   { afterMs: 1_200, value: "stop" },
-], { systemAudio: true });
+], { systemAudio: true, microphone: hasMicrophone });
 assert(displayCapture.result.durationMs >= 1_900 && displayCapture.result.durationMs <= 2_900);
 // The video is extended to the stop time, so it matches the pointer timeline closely.
 assert(Math.abs(displayCapture.videoDurationMs - displayCapture.result.durationMs) <= 60);
+
+if (hasMicrophone) {
+  const microphoneCapture = await record(display, "Microphone", [
+    { afterMs: 1_500, value: "stop" },
+  ], { microphone: true });
+  assert(Math.abs(microphoneCapture.videoDurationMs - microphoneCapture.result.durationMs) <= 60);
+}
 
 if (windowSource) {
   const windowCapture = await record(windowSource, "Window", [
