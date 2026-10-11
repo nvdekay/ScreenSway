@@ -471,7 +471,7 @@ main:focus { outline: none; }
 .guide-lead a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .guide-steps { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; }
 .guide-steps li { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: center; padding: 18px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--tint-1); }
-.guide-steps li:last-child { grid-template-columns: 1fr; }
+.guide-steps li:last-child:not(:has(.guide-visual)) { grid-template-columns: 1fr; }
 .guide-text { display: flex; gap: 14px; }
 .guide-number { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(180deg, var(--primary), var(--primary-strong)); color: #fff; font-size: 14px; font-weight: 800; }
 .guide-text h3 { margin-bottom: 4px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
@@ -719,3 +719,24 @@ main:focus { outline: none; }
 .guide-platforms button { padding:8px 18px; border:1px solid #8886; border-radius:999px; background:transparent; color:inherit; cursor:pointer; }
 .guide-platforms button[aria-pressed="true"] { background:#7258ef; color:white; border-color:#7258ef; }
 .hero { overflow: clip; }
+
+/* Windows installation illustrations share the guide's theme and responsive layout. */
+.mock-windows-window, .mock-smartscreen { width: 250px; max-width: 100%; min-width: 0; padding: 14px; border: 1px solid var(--tint-4); border-radius: 10px; background: var(--mock-dialog-bg); box-shadow: var(--shadow-float); font-size: 12px; }
+.mock-windows-title { display: flex; align-items: center; gap: 7px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); color: var(--text-muted); font-weight: 600; }
+.mock-windows-file { display: flex; align-items: center; gap: 10px; margin: 14px 0; padding: 8px; border-radius: 6px; background: var(--tint-3); }
+.mock-windows-file > svg { flex: none; }
+.mock-windows-file > span { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.mock-windows-file small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10px; font-weight: 400; }
+.mock-windows-action { display: flex; width: fit-content; align-items: center; gap: 8px; margin-left: auto; padding: 6px 12px; border-radius: 4px; background: var(--primary); color: #fff; font-weight: 600; outline: 2px solid var(--success); outline-offset: 2px; }
+.mock-smartscreen { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; background: #0755a6; color: #fff; border-color: #ffffff40; }
+.mock-smartscreen strong { font-size: 15px; line-height: 1.35; }
+.mock-smartscreen-more { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.mock-smartscreen-app { max-width: 100%; overflow-wrap: anywhere; font-size: 10px; opacity: .85; }
+.mock-smartscreen .mock-windows-action { background: #fff; color: #074580; outline-color: #a5efbd; }
+.mock-windows-permission { display: flex; align-items: center; gap: 12px; margin: 14px 0; line-height: 1.45; }
+.mock-windows-toggle { display: flex; flex: none; flex-direction: column; align-items: center; gap: 4px; }
+.mock-windows-toggle > span { width: 34px; height: 18px; padding: 3px; border-radius: 999px; background: var(--primary); }
+.mock-windows-toggle > span::after { content: ''; display: block; width: 12px; height: 12px; margin-left: auto; border-radius: 50%; background: #fff; }
+.mock-windows-toggle small { color: var(--text-muted); font-size: 10px; }
+.mock-windows-launch { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hairline); }
+.mock-windows-launch > svg:last-child { margin-left: auto; color: var(--success); }
