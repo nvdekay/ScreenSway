@@ -99,3 +99,10 @@ shell tests passed, along with workspace TypeScript checks. A regression test
 also covers canonical Windows paths (`\\?\`), Unicode and UNC shares; the
 native export test uses canonical source and destination paths, matching the
 actual shell's recording paths.
+
+GitHub's hosted Windows runner exposes D3D11 but returned `E_NOINTERFACE`
+(`0x80004002`) for `ID3D11VideoDevice`. CI explicitly permits skipping native
+export checks for this exact capability failure. Every other export failure
+still fails CI; local export tests remain strict by default. Capture on hosted
+runners is also best-effort. Real capture/export validation requires a Windows
+PC with a usable interactive desktop and D3D11 video-processing support.

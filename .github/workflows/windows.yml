@@ -59,7 +59,9 @@ jobs:
       - run: pnpm setup:windows-speech
       - run: pnpm test && pnpm typecheck
       - run: pnpm build:capture:windows
-      - name: Verify native export
+      - name: Verify native export when a video device is available
+        env:
+          SCREENSWAY_ALLOW_MISSING_VIDEO_DEVICE: "1"
         run: |
           choco install ffmpeg -y --no-progress
           node scripts/test-windows-export.mjs

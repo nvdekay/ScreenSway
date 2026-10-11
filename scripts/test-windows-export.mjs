@@ -48,7 +48,22 @@ const job = {
   captions: [{ startMs: 500, endMs: 1000, image: caption, x: 270, y: 370 }],
 };
 const jobPath = path.join(work, "job.json"); writeFileSync(jobPath, JSON.stringify(job));
-const result = JSON.parse(run(helper, ["--export", jobPath]));
+let result;
+try {
+  result = JSON.parse(run(helper, ["--export", jobPath]));
+} catch (error) {
+  // Hosted Windows runners can expose D3D11 without its video interface. Only
+  // this observed capability failure may be skipped, and only when requested
+  // by CI. Pixel, codec, timing and other export errors must still fail.
+  const message = String(error.stderr ?? "");
+  if (process.env.SCREENSWAY_ALLOW_MISSING_VIDEO_DEVICE === "1"
+    && message.includes("Opening the GPU video processor (ID3D11VideoDevice) failed:")
+    && message.includes("(0x80004002)")) {
+    console.log("::notice::Native GPU export checks skipped: this runner has no ID3D11VideoDevice. Run the strict test on a Windows PC with video-processing support.");
+    process.exit(0);
+  }
+  throw error;
+}
 assert.equal(result.durationMs, 1000); assert.equal(result.width, 640); assert.equal(result.height, 400);
 const metadata = probe(output);
 const video = metadata.streams.find(s => s.codec_type === "video"), audio = metadata.streams.find(s => s.codec_type === "audio");
