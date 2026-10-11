@@ -1,0 +1,63 @@
+name: Windows build
+
+# Builds and tests the Windows app on every relevant change to main and uploads the
+# installer as a workflow artifact, so it can be tried on a real Windows PC before the
+# Windows version is part of a release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native/windows-capture/**"
+      - "apps/desktop/**"
+      - "packages/core/**"
+      - "scripts/build-native.mjs"
+      - "scripts/test-windows-capture.mjs"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/windows-capture -> target
+            apps/desktop/src-tauri -> target
+
+      - name: Test the capture helper
+        run: cargo test --manifest-path native/windows-capture/Cargo.toml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test && pnpm typecheck
+      - run: pnpm build:capture:windows
+      - name: Test the desktop shell
+        run: cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      # Hosted runners may not allow screen capture; the real test runs on a Windows PC.
+      - name: Try a real capture
+        continue-on-error: true
+        run: node scripts/test-windows-capture.mjs
+
+      - run: pnpm build:windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ScreenSway-windows-x64-setup
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
