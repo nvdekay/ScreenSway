@@ -9,7 +9,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/web.yml"
-  # Re-deploy when a release is published so the site serves the new DMG.
+  # Re-deploy when a release is published so the site serves the new downloads.
   release:
     types: [published]
   workflow_dispatch:
@@ -41,15 +41,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @screensway/web build
       # The repository is private, so release assets are not publicly downloadable.
-      # Serve the latest macOS build from the landing page itself instead.
-      - name: Bundle the latest macOS download
+      # Serve the latest desktop builds from the landing page itself instead.
+      - name: Bundle the latest desktop downloads
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p apps/web/dist/download
           gh release download --repo "$GITHUB_REPOSITORY" \
             --pattern ScreenSway-macos-universal.dmg \
+            --pattern ScreenSway-windows-x64-setup.exe \
+            --pattern ScreenSway-windows-x64-setup.exe.sha256 \
             --dir apps/web/dist/download
+          (cd apps/web/dist/download && sha256sum -c ScreenSway-windows-x64-setup.exe.sha256)
           ls -l apps/web/dist/download
       - uses: actions/configure-pages@v6
         with:

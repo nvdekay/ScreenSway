@@ -1,6 +1,6 @@
 # Landing page
 
-The marketing site lives in `apps/web` and deploys through the existing GitHub Pages workflow. Keep download links relative: the workflow copies the latest DMG into `dist/download` because the source repository is private. Windows capture remains coming soon.
+The marketing site lives in `apps/web` and deploys through the existing GitHub Pages workflow. Keep download links relative: the workflow copies the latest DMG, Windows x64 installer and its SHA-256 checksum into `dist/download` because the source repository is private. Both platform downloads are active; keep English and Vietnamese installation guides synchronized.
 
 ## Product story
 

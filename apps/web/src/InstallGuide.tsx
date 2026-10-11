@@ -1,27 +1,29 @@
 import { ArrowRight, Check, Copy, Folder, Lock, ShieldAlert, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
+import { DOWNLOADS, preferredPlatform, type DownloadPlatform } from "./downloads";
 import { LogoMark } from "./LogoMark";
 
 export const INSTALL_GUIDE_EVENT = "screensway:install-guide";
 const QUARANTINE_COMMAND = "xattr -dr com.apple.quarantine /Applications/ScreenSway.app";
 
 /** Opens the install guide from anywhere on the page. */
-export function openInstallGuide() {
-  window.dispatchEvent(new Event(INSTALL_GUIDE_EVENT));
+export function openInstallGuide(platform: DownloadPlatform = preferredPlatform()) {
+  window.dispatchEvent(new CustomEvent(INSTALL_GUIDE_EVENT, { detail: platform }));
 }
 
-/**
- * Shown right after the download starts. The build is not notarized yet, so macOS
- * blocks the first launch; this walks people through it before they hit the wall.
- */
-export function InstallGuide({ downloadUrl }: { downloadUrl: string }) {
+/** Platform-specific setup and first-launch permissions, also available before downloading. */
+export function InstallGuide() {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [copied, setCopied] = useState(false);
+  const [platform, setPlatform] = useState<DownloadPlatform>(preferredPlatform);
+  const downloadUrl = DOWNLOADS[platform];
 
   useEffect(() => {
-    const open = () => {
+    const open = (event: Event) => {
+      const target = (event as CustomEvent).detail;
+      setPlatform(target === "windows" ? "windows" : "macos");
       setCopied(false);
       dialogRef.current?.showModal();
     };
@@ -53,10 +55,19 @@ export function InstallGuide({ downloadUrl }: { downloadUrl: string }) {
         </button>
         <span className="kicker">{t("guide.kicker")}</span>
         <h2 id="install-guide-title">{t("guide.title")}</h2>
+        <div className="guide-platforms">
+          {(["macos", "windows"] as const).map((option) => <button key={option} aria-pressed={platform === option} onClick={() => setPlatform(option)}>{option === "macos" ? "macOS" : "Windows"}</button>)}
+        </div>
         <p className="guide-lead">
-          {t("guide.downloading")} <a href={downloadUrl} download>{t("guide.retry")}</a>
+          {t(platform === "windows" ? "guide.windowsDownload" : "guide.downloading")} <a href={downloadUrl} download>{t("guide.retry")}</a>
         </p>
 
+        {platform === "windows" ? <>
+          <ol className="guide-steps">
+            {([1, 2, 3] as const).map((step) => <li key={step}><div className="guide-text"><span className="guide-number">{step}</span><div><h3>{t(`guide.win${step}Title`)}</h3><p>{t(`guide.win${step}`)}</p></div></div></li>)}
+          </ol>
+          <p className="guide-why">{t("guide.windowsRequirements")}</p>
+        </> : <>
         <ol className="guide-steps">
           <li>
             <div className="guide-text">
@@ -119,6 +130,7 @@ export function InstallGuide({ downloadUrl }: { downloadUrl: string }) {
         </details>
 
         <p className="guide-why">{t("guide.why")}</p>
+        </>}
         <button className="guide-confirm" onClick={() => dialogRef.current?.close()}>{t("guide.gotIt")}</button>
       </div>
     </dialog>
