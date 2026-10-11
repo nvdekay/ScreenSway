@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Copy, Folder, Lock, ShieldAlert, Terminal, X } from "lucide-react";
+import { ArrowRight, Check, Copy, Download, Folder, Lock, Mic, ShieldAlert, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { DOWNLOADS, preferredPlatform, type DownloadPlatform } from "./downloads";
@@ -64,7 +64,45 @@ export function InstallGuide() {
 
         {platform === "windows" ? <>
           <ol className="guide-steps">
-            {([1, 2, 3] as const).map((step) => <li key={step}><div className="guide-text"><span className="guide-number">{step}</span><div><h3>{t(`guide.win${step}Title`)}</h3><p>{t(`guide.win${step}`)}</p></div></div></li>)}
+            {([1, 2, 3] as const).map((step) => (
+              <li key={step}>
+                <div className="guide-text">
+                  <span className="guide-number">{step}</span>
+                  <div><h3>{t(`guide.win${step}Title`)}</h3><p>{t(`guide.win${step}`)}</p></div>
+                </div>
+                <div className="guide-visual" aria-hidden="true">
+                  {step === 1 && (
+                    <div className="mock-windows-window">
+                      <span className="mock-windows-title"><Download size={14} /> {t("guide.winDownloads")}</span>
+                      <div className="mock-windows-file">
+                        <LogoMark size={32} />
+                        <span>ScreenSway-windows-<wbr />x64-setup.exe<small>{t("guide.winInstaller")}</small></span>
+                      </div>
+                      <span className="mock-windows-action">{t("guide.winOpen")} <ArrowRight size={13} /></span>
+                    </div>
+                  )}
+                  {step === 2 && (
+                    <div className="mock-smartscreen">
+                      <ShieldAlert size={24} />
+                      <strong>{t("guide.winProtected")}</strong>
+                      <span className="mock-smartscreen-more">{t("guide.winMoreInfo")}</span>
+                      <span className="mock-smartscreen-app">ScreenSway-windows-x64-setup.exe</span>
+                      <span className="mock-windows-action">{t("guide.winRunAnyway")}</span>
+                    </div>
+                  )}
+                  {step === 3 && (
+                    <div className="mock-windows-window">
+                      <span className="mock-windows-title"><Mic size={14} /> {t("guide.winMicrophone")}</span>
+                      <div className="mock-windows-permission">
+                        <span>{t("guide.winDesktopAccess")}</span>
+                        <span className="mock-windows-toggle"><span /> <small>{t("guide.winOn")}</small></span>
+                      </div>
+                      <div className="mock-windows-launch"><LogoMark size={26} /><strong>ScreenSway</strong><Check size={16} /></div>
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
           </ol>
           <p className="guide-why">{t("guide.windowsRequirements")}</p>
         </> : <>

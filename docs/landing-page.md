@@ -14,7 +14,7 @@ The Studio section describes styles and reusable backgrounds, start/end trim and
 
 ## Design decisions
 
-UI UX Pro Max informed the product-demo-first hierarchy, visible play/pause controls, keyboard access, responsive layouts, contrast and reduced-motion behavior. The existing indigo identity, locally bundled Plus Jakarta Sans, theme switch, translations and install guide are retained. Product illustrations use CSS and Lucide rather than downloading decorative image assets.
+UI UX Pro Max informed the product-demo-first hierarchy, visible play/pause controls, keyboard access, responsive layouts, contrast and reduced-motion behavior. The existing indigo identity, locally bundled Plus Jakarta Sans, theme switch, translations and install guide are retained. Product illustrations use CSS and Lucide rather than downloading decorative image assets. Both installation tabs include theme-aware visual mockups. Windows shows the downloaded installer, SmartScreen’s More info → Run anyway flow, and desktop microphone access; keep their labels bilingual and all three cards responsive.
 
 ## Validation
 
