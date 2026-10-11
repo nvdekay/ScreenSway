@@ -20,9 +20,20 @@ export type BackgroundSpec =
   | { kind: "solid"; color: string }
   | { kind: "linear"; angle: number; stops: { offset: number; color: string }[] }
   | { kind: "mesh"; base: string; blobs: MeshBlob[] }
-  | { kind: "image"; blur: number };
+  /** Layered rolling hills of color, back to front, over a sky gradient. */
+  | { kind: "waves"; sky: [string, string]; layers: string[] }
+  /** `path` points to a copy kept in the ScreenSway folder, so the image survives restarts. */
+  | { kind: "image"; blur: number; path?: string };
 
-export type FrameStyle = "none" | "macos-light" | "macos-dark" | "glass" | "outline";
+export type FrameStyle =
+  | "none"
+  | "macos-light"
+  | "macos-dark"
+  | "browser-light"
+  | "browser-dark"
+  | "macbook"
+  | "glass"
+  | "outline";
 export type AspectPreset = "auto" | "16:9" | "4:3" | "1:1" | "9:16";
 export type QualityPreset = "1080p" | "1440p" | "4k";
 
@@ -52,13 +63,22 @@ export interface Rect {
 export interface FrameLayout {
   width: number;
   height: number;
-  /** The window: video plus the title bar, if any. */
+  /** The window, or a device's lid: the video plus its title bar or bezel. */
   window: Rect;
   /** Where the recording is drawn. */
   video: Rect;
-  /** Title bar height (0 when the frame has none). */
+  /** Height of the bar above the video for window and browser frames (0 otherwise). */
   titleBar: number;
+  /** Bezel around the video for device frames (0 otherwise). */
+  bezel: number;
+  /** The laptop base under a device frame, or null. */
+  base: Rect | null;
+  /** Corner radius of the window or lid. */
   radius: number;
+  /** Corner radius of the video itself. */
+  videoRadius: number;
+  /** False when a title bar sits on the video's top edge, so only its bottom corners are round. */
+  roundVideoTop: boolean;
 }
 
 export const MESH_PRESETS: { id: string; background: BackgroundSpec }[] = [
@@ -111,6 +131,53 @@ export const MESH_PRESETS: { id: string; background: BackgroundSpec }[] = [
   { id: "graphite", background: { kind: "linear", angle: 180, stops: [
     { offset: 0, color: "#3f3f46" }, { offset: 1, color: "#09090b" },
   ] } },
+  { id: "iris", background: { kind: "mesh", base: "#312e81", blobs: [
+    { x: 0.1, y: 0.9, radius: 0.7, color: "#a855f7" },
+    { x: 0.9, y: 0.1, radius: 0.7, color: "#3b82f6" },
+    { x: 0.6, y: 0.6, radius: 0.4, color: "#f0abfc" },
+  ] } },
+  { id: "citrus", background: { kind: "mesh", base: "#fef9c3", blobs: [
+    { x: 0.15, y: 0.2, radius: 0.6, color: "#fde047" },
+    { x: 0.85, y: 0.85, radius: 0.7, color: "#fb923c" },
+    { x: 0.8, y: 0.15, radius: 0.5, color: "#bef264" },
+  ] } },
+  { id: "bloom", background: { kind: "mesh", base: "#fdf2f8", blobs: [
+    { x: 0.2, y: 0.8, radius: 0.7, color: "#f9a8d4" },
+    { x: 0.85, y: 0.2, radius: 0.6, color: "#c4b5fd" },
+    { x: 0.6, y: 0.95, radius: 0.5, color: "#fecdd3" },
+  ] } },
+  { id: "glacier", background: { kind: "mesh", base: "#f0f9ff", blobs: [
+    { x: 0.1, y: 0.1, radius: 0.7, color: "#a5f3fc" },
+    { x: 0.9, y: 0.9, radius: 0.7, color: "#c7d2fe" },
+    { x: 0.7, y: 0.2, radius: 0.4, color: "#e0f2fe" },
+  ] } },
+  { id: "nebula", background: { kind: "mesh", base: "#0b0618", blobs: [
+    { x: 0.25, y: 0.3, radius: 0.55, color: "#7e22ce" },
+    { x: 0.8, y: 0.7, radius: 0.6, color: "#db2777" },
+    { x: 0.5, y: 1, radius: 0.5, color: "#1d4ed8" },
+  ] } },
+  { id: "coral", background: { kind: "mesh", base: "#fff7ed", blobs: [
+    { x: 0.85, y: 0.15, radius: 0.7, color: "#fb7185" },
+    { x: 0.15, y: 0.85, radius: 0.7, color: "#fdba74" },
+  ] } },
+  { id: "matcha", background: { kind: "mesh", base: "#f7fee7", blobs: [
+    { x: 0.2, y: 0.2, radius: 0.7, color: "#bef264" },
+    { x: 0.85, y: 0.8, radius: 0.7, color: "#6ee7b7" },
+  ] } },
+  { id: "slate", background: { kind: "mesh", base: "#0f172a", blobs: [
+    { x: 0.8, y: 0.1, radius: 0.7, color: "#334155" },
+    { x: 0.2, y: 0.95, radius: 0.6, color: "#1e3a8a" },
+  ] } },
+];
+
+/** Rolling hills, drawn in code so they stay sharp at 4K and cost nothing to ship. */
+export const WAVE_PRESETS: { id: string; background: BackgroundSpec }[] = [
+  { id: "dune", background: { kind: "waves", sky: ["#fde68a", "#fb923c"], layers: ["#f59e0b", "#ea580c", "#c2410c", "#7c2d12"] } },
+  { id: "ocean", background: { kind: "waves", sky: ["#bae6fd", "#38bdf8"], layers: ["#0ea5e9", "#0284c7", "#0369a1", "#0c4a6e"] } },
+  { id: "meadow", background: { kind: "waves", sky: ["#ecfccb", "#a7f3d0"], layers: ["#4ade80", "#22c55e", "#15803d", "#14532d"] } },
+  { id: "dusk", background: { kind: "waves", sky: ["#fbcfe8", "#a78bfa"], layers: ["#c084fc", "#9333ea", "#6b21a8", "#3b0764"] } },
+  { id: "rose", background: { kind: "waves", sky: ["#ffe4e6", "#fda4af"], layers: ["#fb7185", "#e11d48", "#be123c", "#881337"] } },
+  { id: "night", background: { kind: "waves", sky: ["#1e1b4b", "#312e81"], layers: ["#4338ca", "#3730a3", "#1e1b4b", "#0f0a2e"] } },
 ];
 
 export const SOLID_PRESETS = [
@@ -129,9 +196,43 @@ export const DEFAULT_FRAME_SETTINGS: FrameSettings = {
   quality: "1080p",
 };
 
+/** Ready-made looks; applying one keeps the export quality. */
+export const BUILT_IN_STYLES: { id: string; settings: Omit<FrameSettings, "quality"> }[] = [
+  { id: "studio", settings: { ...omitQuality(DEFAULT_FRAME_SETTINGS) } },
+  { id: "clean", settings: { background: { kind: "solid", color: "#f4f4f5" }, grain: false, frame: "macos-light", aspect: "auto", padding: 0.06, radius: 0.012, shadow: 0.35 } },
+  { id: "product", settings: { background: MESH_PRESETS[3].background, grain: false, frame: "macbook", aspect: "auto", padding: 0.07, radius: 0.02, shadow: 0.5 } },
+  { id: "web", settings: { background: MESH_PRESETS[8].background, grain: false, frame: "browser-light", aspect: "16:9", padding: 0.07, radius: 0.014, shadow: 0.5 } },
+  { id: "social", settings: { background: WAVE_PRESETS[3].background, grain: true, frame: "glass", aspect: "1:1", padding: 0.07, radius: 0.02, shadow: 0.6 } },
+];
+
+export function omitQuality(settings: FrameSettings): Omit<FrameSettings, "quality"> {
+  const { quality: _quality, ...rest } = settings;
+  return rest;
+}
+
 const QUALITY_SHORT_SIDE: Record<QualityPreset, number> = { "1080p": 1080, "1440p": 1440, "4k": 2160 };
-/** Title bar height as a fraction of the window width, like a macOS window. */
-const TITLE_BAR_RATIO = 0.032;
+
+/**
+ * What surrounds the video, as fractions of the video width: a bar above it (window and
+ * browser frames), a bezel (devices), and a laptop base below that sticks out at the sides.
+ */
+interface Chrome {
+  titleBar: number;
+  bezel: number;
+  base: number;
+  overhang: number;
+}
+const NO_CHROME: Chrome = { titleBar: 0, bezel: 0, base: 0, overhang: 0 };
+const CHROME: Record<FrameStyle, Chrome> = {
+  none: NO_CHROME,
+  glass: NO_CHROME,
+  outline: NO_CHROME,
+  "macos-light": { ...NO_CHROME, titleBar: 0.032 },
+  "macos-dark": { ...NO_CHROME, titleBar: 0.032 },
+  "browser-light": { ...NO_CHROME, titleBar: 0.056 },
+  "browser-dark": { ...NO_CHROME, titleBar: 0.056 },
+  macbook: { titleBar: 0, bezel: 0.026, base: 0.03, overhang: 0.07 },
+};
 
 const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
 
@@ -142,12 +243,16 @@ export function aspectRatio(aspect: AspectPreset, source: Canvas): number {
 }
 
 export function hasTitleBar(frame: FrameStyle): boolean {
-  return frame === "macos-light" || frame === "macos-dark";
+  return CHROME[frame].titleBar > 0;
+}
+
+export function isBrowserFrame(frame: FrameStyle): boolean {
+  return frame === "browser-light" || frame === "browser-dark";
 }
 
 /**
- * Places the window inside the canvas: inset by the padding, fitted to the recording's
- * aspect ratio (plus the title bar), and centered.
+ * Places the window (or device) inside the canvas: inset by the padding, fitted to the
+ * recording's aspect ratio plus its frame, and centered.
  */
 export function computeLayout(settings: FrameSettings, source: Canvas, shortSide = QUALITY_SHORT_SIDE[settings.quality]): FrameLayout {
   const ratio = aspectRatio(settings.aspect, source);
@@ -156,26 +261,39 @@ export function computeLayout(settings: FrameSettings, source: Canvas, shortSide
 
   const inset = Math.min(width, height) * Math.min(Math.max(settings.padding, 0), 0.25);
   const available = { width: width - inset * 2, height: height - inset * 2 };
-  const titleBarRatio = hasTitleBar(settings.frame) ? TITLE_BAR_RATIO : 0;
-  // Window height = video height + title bar, where the title bar scales with the width.
-  const windowAspect = source.width / (source.height + titleBarRatio * source.width);
-  const windowWidth = Math.min(available.width, available.height * windowAspect);
-  const windowHeight = windowWidth / windowAspect;
-  const titleBar = windowWidth * titleBarRatio;
+  const chrome = CHROME[settings.frame];
+  // Everything is measured in video widths: the whole footprint is `units` wide and tall.
+  const videoAspect = source.height / source.width;
+  const units = {
+    width: 1 + chrome.bezel * 2 + chrome.overhang * 2,
+    height: videoAspect + chrome.titleBar + chrome.bezel * 2 + chrome.base,
+  };
+  const videoWidth = Math.min(available.width / units.width, available.height / units.height);
+  const origin = { x: (width - units.width * videoWidth) / 2, y: (height - units.height * videoWidth) / 2 };
 
   const window = {
-    x: (width - windowWidth) / 2,
-    y: (height - windowHeight) / 2,
-    width: windowWidth,
-    height: windowHeight,
+    x: origin.x + chrome.overhang * videoWidth,
+    y: origin.y,
+    width: (1 + chrome.bezel * 2) * videoWidth,
+    height: (videoAspect + chrome.titleBar + chrome.bezel * 2) * videoWidth,
   };
+  const titleBar = chrome.titleBar * videoWidth;
+  const bezel = chrome.bezel * videoWidth;
+  const radius = window.width * Math.min(Math.max(settings.radius, 0), 0.06);
   return {
     width,
     height,
     window,
-    video: { x: window.x, y: window.y + titleBar, width: windowWidth, height: windowHeight - titleBar },
+    video: { x: window.x + bezel, y: window.y + titleBar + bezel, width: videoWidth, height: videoAspect * videoWidth },
     titleBar,
-    radius: windowWidth * Math.min(Math.max(settings.radius, 0), 0.06),
+    bezel,
+    base: chrome.base > 0
+      ? { x: origin.x, y: window.y + window.height, width: units.width * videoWidth, height: chrome.base * videoWidth }
+      : null,
+    radius,
+    // A device screen has small, even corners inside the bezel.
+    videoRadius: bezel > 0 ? Math.max(0, radius - bezel) * 0.5 : radius,
+    roundVideoTop: titleBar === 0,
   };
 }
 
