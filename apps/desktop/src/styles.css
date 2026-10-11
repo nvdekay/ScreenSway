@@ -178,7 +178,8 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .permission-primary:hover { background: #fff; }
 .secondary-button.compact { min-height: 40px; padding: 0 14px; font-size: 13px; }
 .capture-message { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-md); font-size: 13px; animation: rise var(--dur-slow) var(--ease-out); }
-.capture-message.success { color: var(--success); background: var(--success-soft); border: 1px solid #34d39933; }
+.capture-message.success { background: #ffffff0a; border: 1px solid var(--glass-border); }
+.capture-message.success svg { color: var(--success); }
 .capture-message.error { color: #ff9aab; background: var(--danger-soft); border: 1px solid #f2586f40; }
 .capture-message span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .capture-message small { overflow: hidden; color: var(--text-subtle); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -247,9 +248,11 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .zoom-edge.end { right: 0; }
 .zoom-block.selected .zoom-edge { background: #ffffff33; }
 .trim-shade { position: absolute; top: 0; bottom: 0; background: #0b0a10b8; pointer-events: none; }
-.trim-window { position: absolute; top: 0; bottom: 0; border: 2px solid var(--warning); border-radius: 10px; pointer-events: none; }
-.trim-handle { position: absolute; top: -2px; bottom: -2px; width: 12px; background: var(--warning); cursor: ew-resize; pointer-events: auto; }
-.trim-handle::after { content: ""; position: absolute; top: 50%; left: 50%; width: 2px; height: 18px; border-radius: 1px; background: #00000080; transform: translate(-50%, -50%); }
+/* Calm, neutral trim frame: it should frame the clip, not compete with the preview. */
+.trim-window { position: absolute; top: 0; bottom: 0; border: 1.5px solid #ffffff42; border-radius: 10px; pointer-events: none; }
+.trim-handle { position: absolute; top: -1.5px; bottom: -1.5px; width: 11px; background: linear-gradient(180deg, #e4e2ee, #bdbacb); box-shadow: 0 2px 8px #0006; cursor: ew-resize; pointer-events: auto; transition: background var(--dur-fast) ease; }
+.trim-handle:hover { background: linear-gradient(180deg, #fff, #d6d4e2); }
+.trim-handle::after { content: ""; position: absolute; top: 50%; left: 50%; width: 2px; height: 16px; border-radius: 1px; background: #16141d66; transform: translate(-50%, -50%); }
 .trim-handle.start { left: -2px; border-radius: 10px 0 0 10px; }
 .trim-handle.end { right: -2px; border-radius: 0 10px 10px 0; }
 .trim-handle:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
@@ -320,13 +323,22 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .editor-slider output { color: var(--text-subtle); font-variant-numeric: tabular-nums; }
 .editor-slider input { width: 100%; accent-color: var(--primary-strong); }
 .export-box { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; border-top: 1px solid var(--hairline); }
-.export-button { flex: none; }
+.record-button.export-button { flex: none; min-height: 46px; background: linear-gradient(180deg, #7c83f5, #5b5ee4); color: #fff; box-shadow: inset 0 1px 0 #ffffff47, inset 0 -1px 0 #0000001f, 0 10px 26px #4f46e540; }
+.record-button.export-button:not(:disabled):hover { box-shadow: inset 0 1px 0 #ffffff59, 0 14px 32px #4f46e559; }
+.export-done { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--glass-border); border-radius: var(--radius-md); background: #ffffff0a; animation: rise var(--dur-slow) var(--ease-out); }
+.export-done-head { display: flex; align-items: center; gap: 10px; }
+.export-done-head div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.export-done-head strong { font-size: 14px; font-weight: 650; }
+.export-done-head small { color: var(--text-subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
+.export-done-icon { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #34d3991f; color: var(--success); box-shadow: inset 0 0 0 1px #34d39940; }
+.export-done-note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-subtle); font-size: 12px; line-height: 1.4; }
+.export-done-note svg { flex: none; }
+.export-done-actions { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+.export-done-actions .editor-button { min-height: 34px; padding: 0 14px; font-size: 12px; white-space: nowrap; }
 .export-progress { height: 8px; overflow: hidden; border-radius: 8px; background: #ffffff14; }
 .export-progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--primary-strong), var(--primary)); transform-origin: 0 0; transition: transform 200ms linear; }
 .export-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .export-status { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.export-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.export-actions .editor-button { min-height: 30px; padding: 0 10px; font-size: 12px; }
 .export-box .capture-message { margin-top: 0; }
 
 /* Library */
