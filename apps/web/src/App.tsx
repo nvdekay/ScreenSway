@@ -129,6 +129,7 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
 
 /** Fades sections in as they scroll into view; content stays visible without JavaScript. */
 function useScrollReveal() {
+  const { language } = useI18n();
   useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>("[data-reveal]");
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -148,7 +149,7 @@ function useScrollReveal() {
     );
     elements.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
-  }, []);
+  }, [language]);
 }
 
 function SectionIntro({ kicker, title, children }: { kicker: MessageKey; title: MessageKey; children?: ReactNode }) {
