@@ -110,7 +110,10 @@ async function record(source, name, commands) {
     assert.equal(probe.streams[0].height, result.height);
     videoDurationMs = Number(probe.format.duration) * 1_000;
   }
+  const stats = JSON.parse(readFileSync(path.join(projectPath, "metadata/capture-stats.json"), "utf8"));
+  assert(stats.framesWritten > 0, `${name} wrote no frames.`);
   console.log(`${name}: ${result.width}×${result.height}, ${result.durationMs} ms, video ${videoDurationMs ?? "?"} ms, ${result.pointerEvents.length} pointer events`);
+  console.log(`  ${stats.encoder}; ${stats.framesReceived} frames received, ${stats.framesWritten} written; ${stats.averageFrameMs.toFixed(2)} ms per frame, slowest ${stats.slowestFrameMs.toFixed(1)} ms, ${stats.slowFrames} slow`);
   return { result, videoDurationMs };
 }
 

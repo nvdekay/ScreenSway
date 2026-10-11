@@ -17,6 +17,18 @@ use windows::Win32::System::Threading::{GetCurrentProcessId, OpenProcess, WaitFo
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
 
+/// Names the step that failed, so an error from the field says where it happened, for
+/// example "Creating the video processor failed: No such interface supported (0x80004002)".
+pub trait Step<T> {
+    fn step(self, what: &str) -> std::result::Result<T, String>;
+}
+
+impl<T> Step<T> for Result<T> {
+    fn step(self, what: &str) -> std::result::Result<T, String> {
+        self.map_err(|error| format!("{what} failed: {} (0x{:08X})", error.message(), error.code().0 as u32))
+    }
+}
+
 /// Physical pixels everywhere (cursor, monitors, windows), and COM/WinRT for the capture APIs.
 pub fn initialize() -> Result<()> {
     unsafe {

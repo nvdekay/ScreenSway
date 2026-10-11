@@ -69,6 +69,27 @@ pub struct Media {
     pub screen: String,
 }
 
+/// Written next to the pointer log, so a choppy or soft recording can be diagnosed from
+/// the project folder alone.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureStats {
+    pub encoder: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
+    /// Frames Windows delivered; it only sends one when the screen changes.
+    pub frames_received: u64,
+    pub frames_written: u64,
+    /// Time spent in the frame callback (copy, convert, encode).
+    pub average_frame_ms: f64,
+    pub slowest_frame_ms: f64,
+    /// Frames that took longer than one 60 fps interval to handle.
+    pub slow_frames: u64,
+}
+
 /// The H.264 encoders on Windows, like VideoToolbox, top out around 4K.
 pub const MAXIMUM_ENCODED_DIMENSION: f64 = 3_840.0;
 
