@@ -872,6 +872,8 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
 }
 
 const EDITS_FILE: &str = "edits.json";
+const CAPTIONS_FILE: &str = "captions.json";
+const TRANSCRIPT_FILE: &str = "transcript.json";
 
 /// Trim and zoom edits made in the studio, or null when the recording is untouched.
 #[tauri::command]
@@ -887,19 +889,149 @@ fn save_edits(project_path: String, edits: serde_json::Value) -> Result<(), Stri
 }
 
 fn read_edits(project: &std::path::Path) -> Option<serde_json::Value> {
-    let data = std::fs::read(project.join(EDITS_FILE)).ok()?;
-    serde_json::from_slice::<serde_json::Value>(&data).ok().filter(serde_json::Value::is_object)
+    read_project_json(project, EDITS_FILE)
 }
 
 fn write_edits(project: &std::path::Path, edits: &serde_json::Value) -> Result<(), String> {
-    if !edits.is_object() {
-        return Err("The edits are invalid.".into());
+    write_project_json(project, EDITS_FILE, edits)
+}
+
+/// A JSON object stored in the project, or None when it is missing or damaged.
+fn read_project_json(project: &std::path::Path, name: &str) -> Option<serde_json::Value> {
+    let data = std::fs::read(project.join(name)).ok()?;
+    serde_json::from_slice::<serde_json::Value>(&data).ok().filter(serde_json::Value::is_object)
+}
+
+fn write_project_json(project: &std::path::Path, name: &str, value: &serde_json::Value) -> Result<(), String> {
+    if !value.is_object() {
+        return Err("The data to save is invalid.".into());
     }
-    let data = serde_json::to_vec_pretty(edits).map_err(|error| error.to_string())?;
+    let data = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     // Write next to the file and rename, so a crash never leaves half a file behind.
-    let temporary = project.join(format!("{EDITS_FILE}.tmp"));
-    std::fs::write(&temporary, data).map_err(|error| format!("Could not save the edits: {error}"))?;
-    std::fs::rename(&temporary, project.join(EDITS_FILE)).map_err(|error| format!("Could not save the edits: {error}"))
+    let temporary = project.join(format!("{name}.tmp"));
+    std::fs::write(&temporary, data).map_err(|error| format!("Could not save {name}: {error}"))?;
+    std::fs::rename(&temporary, project.join(name)).map_err(|error| format!("Could not save {name}: {error}"))
+}
+
+/// Captions edited in the studio, or null before any were made.
+#[tauri::command]
+fn load_captions(project_path: String) -> Result<Option<serde_json::Value>, String> {
+    Ok(read_project_json(&resolve_project(&project_path)?, CAPTIONS_FILE))
+}
+
+#[tauri::command]
+fn save_captions(project_path: String, captions: serde_json::Value) -> Result<(), String> {
+    write_project_json(&resolve_project(&project_path)?, CAPTIONS_FILE, &captions)
+}
+
+/// The running transcription, so it can be cancelled.
+#[derive(Default)]
+struct TranscriptionManager {
+    child: Arc<Mutex<Option<std::process::Child>>>,
+}
+
+const TRANSCRIBE_PROGRESS_EVENT: &str = "transcribe-progress";
+
+/// Recognizes the speech in a recording on this Mac and returns its timed words.
+#[tauri::command]
+async fn transcribe_recording(app: tauri::AppHandle, project_path: String, locale: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || transcribe_blocking(&app, &project_path, &locale))
+        .await
+        .map_err(|error| format!("Caption task failed: {error}"))?
+}
+
+fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str) -> Result<serde_json::Value, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, project_path, locale);
+        return Err("Captions currently support macOS only.".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::{BufRead, Read};
+        use std::process::{Command, Stdio};
+
+        if !locale.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_') {
+            return Err("The caption language is invalid.".into());
+        }
+        let manager = app.state::<TranscriptionManager>();
+        if manager.child.lock().map(|child| child.is_some()).unwrap_or(true) {
+            return Err("Captions are already being created.".into());
+        }
+        let project = resolve_project(project_path)?;
+        let manifest = read_manifest(&project)?;
+        let mut child = Command::new(capture_binary()?)
+            .arg("--transcribe")
+            .arg(project.join(&manifest.media.screen))
+            .arg("--locale")
+            .arg(locale)
+            .arg("--output")
+            .arg(project.join(TRANSCRIPT_FILE))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Could not start speech recognition: {error}"))?;
+        let stderr = child.stderr.take().ok_or("Could not read the recognizer output.")?;
+        let mut stdout = child.stdout.take().ok_or("Could not read the recognizer output.")?;
+        if let Ok(mut current) = manager.child.lock() {
+            *current = Some(child);
+        }
+
+        let progress_app = app.clone();
+        let errors = std::thread::spawn(move || {
+            let mut message = String::new();
+            for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+                match line.strip_prefix(EXPORT_PROGRESS_PREFIX).and_then(|value| value.trim().parse::<u32>().ok()) {
+                    Some(percent) => {
+                        let _ = progress_app.emit(TRANSCRIBE_PROGRESS_EVENT, percent);
+                    }
+                    None => {
+                        message.push_str(&line);
+                        message.push('\n');
+                    }
+                }
+            }
+            message
+        });
+
+        let mut result_json = Vec::new();
+        let _ = stdout.read_to_end(&mut result_json);
+        let child = manager.child.lock().ok().and_then(|mut child| child.take());
+        let cancelled = child.is_none();
+        let status = child.map(|mut child| child.wait());
+        let message = errors.join().unwrap_or_default();
+
+        match status {
+            Some(Ok(status)) if status.success() => serde_json::from_slice(&result_json)
+                .map_err(|error| format!("Could not read the captions: {error}")),
+            _ => Err(if cancelled {
+                "Captions cancelled.".into()
+            } else if message.trim().is_empty() {
+                "Speech recognition stopped unexpectedly.".into()
+            } else {
+                message.trim().to_string()
+            }),
+        }
+    }
+}
+
+#[tauri::command]
+fn cancel_transcription(state: tauri::State<'_, TranscriptionManager>) {
+    if let Some(mut child) = state.child.lock().ok().and_then(|mut child| child.take()) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+#[tauri::command]
+fn open_speech_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
+        .spawn()
+        .map_err(|error| format!("Could not open System Settings: {error}"))?;
+    Ok(())
 }
 
 /// The running export, so it can be cancelled.
@@ -916,6 +1048,20 @@ struct ExportResult {
     duration_ms: u64,
     width: u32,
     height: u32,
+    /// The .srt written next to the video when it has captions.
+    #[serde(default)]
+    subtitles_path: Option<String>,
+}
+
+/// A caption rendered by the UI, timed on the exported video.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptionImage {
+    start_ms: f64,
+    end_ms: f64,
+    image: String,
+    x: f64,
+    y: f64,
 }
 
 const EXPORT_PROGRESS_EVENT: &str = "export-progress";
@@ -973,9 +1119,12 @@ async fn export_recording(
     job: serde_json::Value,
     base_layer: String,
     cursor: String,
+    captions: Option<Vec<CaptionImage>>,
+    subtitles: Option<String>,
 ) -> Result<ExportResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        export_recording_blocking(&app, &project_path, &file_name, job, &base_layer, &cursor)
+        let captions = captions.unwrap_or_default();
+        export_recording_blocking(&app, &project_path, &file_name, job, &base_layer, &cursor, &captions, subtitles.as_deref())
     })
     .await
     .map_err(|error| format!("Export task failed: {error}"))?
@@ -988,10 +1137,12 @@ fn export_recording_blocking(
     mut job: serde_json::Value,
     base_layer: &str,
     cursor: &str,
+    captions: &[CaptionImage],
+    subtitles: Option<&str>,
 ) -> Result<ExportResult, String> {
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, project_path, file_name, &mut job, base_layer, cursor);
+        let _ = (app, project_path, file_name, &mut job, base_layer, cursor, captions, subtitles);
         return Err("Export currently supports macOS only.".into());
     }
 
@@ -1028,6 +1179,20 @@ fn export_recording_blocking(
         fields.insert("output".into(), path(&output));
         fields.insert("baseLayer".into(), path(&base_path));
         fields.insert("cursor".into(), path(&cursor_path));
+        let mut caption_jobs = Vec::with_capacity(captions.len());
+        for (index, caption) in captions.iter().enumerate() {
+            let image_path = work.join(format!("caption-{index}.png"));
+            std::fs::write(&image_path, decode_png(&caption.image)?)
+                .map_err(|error| format!("Could not prepare the export: {error}"))?;
+            caption_jobs.push(serde_json::json!({
+                "startMs": caption.start_ms,
+                "endMs": caption.end_ms,
+                "image": image_path.to_string_lossy(),
+                "x": caption.x,
+                "y": caption.y,
+            }));
+        }
+        fields.insert("captions".into(), serde_json::Value::Array(caption_jobs));
         let job_path = work.join("job.json");
         std::fs::write(&job_path, serde_json::to_vec(&job).map_err(|error| error.to_string())?)
             .map_err(|error| format!("Could not prepare the export: {error}"))?;
@@ -1077,8 +1242,17 @@ fn export_recording_blocking(
         }
 
         match status {
-            Some(Ok(status)) if status.success() => serde_json::from_slice(&result_json)
-                .map_err(|error| format!("Could not read the export result: {error}")),
+            Some(Ok(status)) if status.success() => {
+                let mut result: ExportResult = serde_json::from_slice(&result_json)
+                    .map_err(|error| format!("Could not read the export result: {error}"))?;
+                if let Some(subtitles) = subtitles.filter(|text| !text.trim().is_empty()) {
+                    let subtitles_path = output.with_extension("srt");
+                    if std::fs::write(&subtitles_path, subtitles).is_ok() {
+                        result.subtitles_path = Some(subtitles_path.to_string_lossy().into_owned());
+                    }
+                }
+                Ok(result)
+            }
             _ => {
                 let _ = std::fs::remove_file(&output);
                 let _ = std::fs::remove_file(output.with_extension("video.mp4"));
@@ -1324,6 +1498,7 @@ fn parse_helper_output<T: serde::de::DeserializeOwned>(
 pub fn run() {
     tauri::Builder::default()
         .manage(ExportManager::default())
+        .manage(TranscriptionManager::default())
         .manage(CaptureManager {
             state: Arc::new(Mutex::new(RecordingState { status: "idle", ..Default::default() })),
             ..Default::default()
@@ -1355,6 +1530,11 @@ pub fn run() {
             read_thumbnail,
             load_edits,
             save_edits,
+            load_captions,
+            save_captions,
+            transcribe_recording,
+            cancel_transcription,
+            open_speech_settings,
             save_background_image,
             list_background_images,
             read_background_image,
@@ -1395,6 +1575,9 @@ mod tests {
         assert_eq!(read_edits(&project), Some(edits));
         assert!(!project.join("edits.json.tmp").exists());
         assert!(write_edits(&project, &serde_json::json!([1, 2])).is_err());
+        let captions = serde_json::json!({ "locale": "vi-VN", "enabled": true, "lines": [] });
+        write_project_json(&project, CAPTIONS_FILE, &captions).unwrap();
+        assert_eq!(read_project_json(&project, CAPTIONS_FILE), Some(captions));
 
         std::fs::write(project.join(EDITS_FILE), b"{ broken").unwrap();
         assert_eq!(read_edits(&project), None);

@@ -1,5 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -189,6 +191,7 @@ if (windowSource) {
   ]);
   execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=640x400", "-frames:v", "1", path.join(exportRoot, "base.png")]);
   execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=16x16", "-frames:v", "1", path.join(exportRoot, "cursor.png")]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=white:s=100x40", "-frames:v", "1", path.join(exportRoot, "caption.png")]);
   const output = path.join(exportRoot, "out.mp4");
   const job = {
     source, output,
@@ -197,6 +200,8 @@ if (windowSource) {
     cursorHotspotX: 0, cursorHotspotY: 0,
     video: { x: 0, y: 0, width: 640, height: 400 }, radius: 0, roundTopCorners: true,
     startMs: 3_000,
+    // A caption on the exported timeline, from 1.0 to 2.0 s, top-left at (20, 300).
+    captions: [{ startMs: 1_000, endMs: 2_000, image: path.join(exportRoot, "caption.png"), x: 20, y: 300 }],
     frames: Array.from({ length: 180 }, () => [0, 0, 640, 400, 0, 0, 0, 0, 0, 0, 0]),
   };
   writeFileSync(path.join(exportRoot, "job.json"), JSON.stringify(job));
@@ -204,9 +209,13 @@ if (windowSource) {
 
   const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", output], { encoding: "utf8" }));
   assert(Math.abs(duration - 3) < 0.05, `Trimmed export should last 3 s, got ${duration}`);
-  const pixel = (seconds) => [...execFileSync("ffmpeg", [
-    "-v", "error", "-ss", String(seconds), "-i", output, "-frames:v", "1", "-vf", "crop=2:2:320:200,scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+  const pixel = (seconds, x = 320, y = 200) => [...execFileSync("ffmpeg", [
+    "-v", "error", "-ss", String(seconds), "-i", output, "-frames:v", "1", "-vf", `crop=2:2:${x}:${y},scale=1:1`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
   ])];
+  const isWhite = ([r, g, b]) => r > 230 && g > 230 && b > 230;
+  assert(isWhite(pixel(1.5, 70, 320)), "The caption is missing while it should be shown.");
+  assert(!isWhite(pixel(0.8, 70, 320)) && !isWhite(pixel(2.3, 70, 320)), "The caption shows outside its time.");
+  assert(!isWhite(pixel(1.5, 70, 260)), "The caption is drawn in the wrong place.");
   // Output 0.5 s is source 3.5 s (red on, green 75); output 1.5 s is source 4.5 s (red off,
   // green 100). Colors shift a little between color spaces, so the neighbors are told apart
   // by the red parity and the green order: 2.5 s has green 50, 5.5 s has green 125.
@@ -222,6 +231,64 @@ if (windowSource) {
   };
   assert(loudness(1.1, 1.4) > -20, "The beep is missing from the trimmed export.");
   assert(loudness(0.2, 0.8) < -60 && loudness(1.7, 2.8) < -60, "The trimmed export's audio is misaligned.");
+}
+
+// Captions: on-device speech recognition in Vietnamese and English. macOS asks the
+// *responsible* app for its usage description, which a terminal does not have, so the
+// helper runs inside a small temporary app launched through LaunchServices, as it does
+// inside ScreenSway.app. Needs the Speech Recognition permission, so it only runs when asked.
+if (process.env.SCREENSWAY_TEST_CAPTIONS === "1") {
+  const captionRoot = path.join(testRoot, "Captions");
+  const app = path.join(captionRoot, "ScreenSway Caption Test.app");
+  mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
+  copyFileSync(binaryPath, path.join(app, "Contents/MacOS/screensway-capture"));
+  writeFileSync(path.join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>app.screensway.captiontest</string>
+<key>CFBundleName</key><string>ScreenSway Caption Test</string>
+<key>CFBundleExecutable</key><string>run</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSUIElement</key><true/>
+<key>NSSpeechRecognitionUsageDescription</key><string>ScreenSway test: checks on-device captions.</string>
+</dict></plist>`);
+  const cases = [
+    { locale: "vi-VN", voice: "Linh", text: "Xin chào các bạn. Hôm nay mình sẽ hướng dẫn cách quay màn hình.", expect: ["chào", "màn hình"] },
+    { locale: "en-US", voice: "Samantha", text: "Hello everyone. Today I will show you how to record your screen.", expect: ["hello", "screen"] },
+  ];
+  const runner = ["#!/bin/zsh", 'helper="$(dirname "$0")/screensway-capture"'];
+  for (const { locale, voice, text } of cases) {
+    const speech = path.join(captionRoot, `${locale}.aiff`);
+    const video = path.join(captionRoot, `${locale}.mp4`);
+    execFileSync("say", ["-v", voice, "-o", speech, text]);
+    // Two seconds of silence first, so the timings must be offset correctly.
+    execFileSync("ffmpeg", [
+      "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=320x200:r=30:d=12",
+      "-i", speech, "-filter_complex", "[1:a]adelay=2000|2000,apad[a]", "-map", "0:v", "-map", "[a]",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", video,
+    ]);
+    const base = path.join(captionRoot, locale);
+    runner.push(`"$helper" --transcribe '${video}' --locale ${locale} --output '${base}.json' > '${base}.out' 2> '${base}.err'; echo $? > '${base}.status'`);
+  }
+  writeFileSync(path.join(app, "Contents/MacOS/run"), `${runner.join("\n")}\n`);
+  chmodSync(path.join(app, "Contents/MacOS/run"), 0o755);
+  execFileSync("codesign", ["--force", "--deep", "--sign", "-", app]);
+  execFileSync("open", ["-W", "-n", app]);
+
+  for (const { locale, expect } of cases) {
+    const base = path.join(captionRoot, locale);
+    const status = readFileSync(`${base}.status`, "utf8").trim();
+    assert.equal(status, "0", `${locale} captions failed: ${readFileSync(`${base}.err`, "utf8").replace(/SCREENSWAY_PROGRESS \d+\n/g, "")}`);
+    const result = JSON.parse(readFileSync(`${base}.out`, "utf8"));
+    const transcript = result.words.map((word) => word.text).join(" ").toLowerCase();
+    for (const fragment of expect) assert(transcript.includes(fragment), `${locale} captions miss "${fragment}": ${transcript}`);
+    assert(result.words[0].startMs >= 1_500, `${locale} captions start before the speech does.`);
+    assert(result.words.every((word, index) => word.endMs >= word.startMs && (index === 0 || word.startMs >= result.words[index - 1].startMs)));
+    assert(result.words.at(-1).endMs <= 12_000);
+    assert.deepEqual(JSON.parse(readFileSync(`${base}.json`, "utf8")), result);
+  }
+} else {
+  console.log("Caption tests skipped (set SCREENSWAY_TEST_CAPTIONS=1 after allowing Speech Recognition).");
 }
 
 console.log(`macOS capture integration tests passed. Artifacts: ${testRoot}`);

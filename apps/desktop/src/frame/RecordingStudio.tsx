@@ -1,12 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  buildCaptionLines,
   buildRenderFrames,
   computeLayout,
   DEFAULT_FRAME_SETTINGS,
   NO_EDITS,
   resolveZooms,
+  toSrt,
+  trimCaptions,
   trimRange,
+  type CaptionWord,
   type BackgroundSpec,
   type FrameSettings,
   type RecordingEdits,
@@ -16,9 +20,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
 import { FrameEditor, type RecentImage } from "./FrameEditor";
+import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
+import { DEFAULT_CAPTION_STYLE, loadCaptionFont, paintCaption, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
 
 const SETTINGS_KEY = "screensway.frame";
+const CAPTION_STYLE_KEY = "screensway.captionStyle";
 const EXPORT_FPS = 60;
 
 interface ExportResult {
@@ -26,6 +33,26 @@ interface ExportResult {
   durationMs: number;
   width: number;
   height: number;
+  subtitlesPath?: string | null;
+}
+
+function loadCaptionStyle(): CaptionStyle {
+  try {
+    return { ...DEFAULT_CAPTION_STYLE, ...(JSON.parse(localStorage.getItem(CAPTION_STYLE_KEY) ?? "null") as Partial<CaptionStyle> | null) };
+  } catch {
+    return DEFAULT_CAPTION_STYLE;
+  }
+}
+
+function parseCaptions(value: unknown): RecordingCaptions | null {
+  if (!value || typeof value !== "object") return null;
+  const captions = value as Partial<RecordingCaptions>;
+  if (!Array.isArray(captions.lines)) return null;
+  return {
+    locale: typeof captions.locale === "string" ? captions.locale : "en-US",
+    enabled: captions.enabled !== false,
+    lines: captions.lines.filter((line) => line && typeof line.text === "string" && Number.isFinite(line.startMs) && Number.isFinite(line.endMs)),
+  };
 }
 
 type ExportState =
@@ -94,7 +121,7 @@ function exportFileName(): string {
 
 /** Preview, frame customization and export for one recording. */
 export function RecordingStudio({ recording }: { recording: RecordingResult }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [settings, setSettings] = useState<FrameSettings>(loadSettings);
   const [autoZoom, setAutoZoom] = useState(true);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -123,6 +150,68 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       cancelled = true;
     };
   }, [recording.projectPath]);
+
+  const [captions, setCaptions] = useState<RecordingCaptions | null>(null);
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(loadCaptionStyle);
+  const [transcription, setTranscription] = useState<TranscriptionState>({ status: "idle" });
+  const captionsTimer = useRef<number | undefined>(undefined);
+  const seekRef = useRef<((timeMs: number) => void) | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCaptions(null);
+    setTranscription({ status: "idle" });
+    invoke<unknown>("load_captions", { projectPath: recording.projectPath })
+      .then((stored) => {
+        if (!cancelled) setCaptions(parseCaptions(stored));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [recording.projectPath]);
+
+  useEffect(() => {
+    const unlisten = listen<number>("transcribe-progress", (event) => {
+      setTranscription((current) => (current.status === "running" ? { status: "running", progress: event.payload } : current));
+    });
+    return () => void unlisten.then((dispose) => dispose());
+  }, []);
+
+  const updateCaptions = useCallback((next: RecordingCaptions) => {
+    setCaptions(next);
+    window.clearTimeout(captionsTimer.current);
+    captionsTimer.current = window.setTimeout(() => {
+      void invoke("save_captions", { projectPath: recording.projectPath, captions: next }).catch(() => {});
+    }, 400);
+  }, [recording.projectPath]);
+
+  const updateCaptionStyle = (patch: Partial<CaptionStyle>) => {
+    setCaptionStyle((current) => {
+      const next = { ...current, ...patch };
+      try {
+        localStorage.setItem(CAPTION_STYLE_KEY, JSON.stringify(next));
+      } catch {
+        // The style still applies for this session.
+      }
+      return next;
+    });
+  };
+
+  async function generateCaptions(locale: string) {
+    setTranscription({ status: "running", progress: 0 });
+    try {
+      const result = await invoke<{ locale: string; words: CaptionWord[] }>("transcribe_recording", {
+        projectPath: recording.projectPath,
+        locale,
+      });
+      updateCaptions({ locale: result.locale, enabled: true, lines: buildCaptionLines(result.words) });
+      setTranscription({ status: "idle" });
+    } catch (error) {
+      const message = String(error);
+      setTranscription(message === "Captions cancelled." ? { status: "idle" } : { status: "failed", message });
+    }
+  }
 
   const editsRef = useRef(edits);
   editsRef.current = edits;
@@ -247,8 +336,20 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       canvas.height = layout.height;
       paintFrameBase(canvas.getContext("2d")!, layout, effective, image);
 
+      // Captions on the exported timeline, each painted at output size like the preview.
+      const keptCaptions = captions?.enabled ? trimCaptions(captions.lines, range.startMs, range.endMs) : [];
+      if (keptCaptions.length > 0) await loadCaptionFont();
+      const captionImages = keptCaptions.flatMap((line) => {
+        const painted = paintCaption(line.text, layout, captionStyle);
+        return painted
+          ? [{ startMs: line.startMs, endMs: line.endMs, image: painted.canvas.toDataURL("image/png"), x: painted.x, y: painted.y }]
+          : [];
+      });
+
       const result = await invoke<ExportResult>("export_recording", {
         projectPath: recording.projectPath,
+        captions: captionImages,
+        subtitles: keptCaptions.length > 0 ? toSrt(keptCaptions) : null,
         fileName: exportFileName(),
         baseLayer: canvas.toDataURL("image/png"),
         cursor: renderCursorPng(),
@@ -290,6 +391,8 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
         onEditsChange={updateEdits}
         zooms={zooms}
         range={range}
+        captions={captions?.enabled ? { lines: captions.lines, style: captionStyle } : null}
+        seekRef={seekRef}
       />
 
       <aside className="editor-panel glass">
@@ -303,7 +406,20 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           recentImages={recentImages}
           onRecentImage={chooseRecentImage}
           onDeleteRecentImage={(path) => void deleteRecentImage(path)}
-        />
+        >
+          <CaptionsPanel
+            captions={captions}
+            transcription={transcription}
+            style={captionStyle}
+            defaultLocale={language === "vi" ? "vi-VN" : "en-US"}
+            onGenerate={(locale) => void generateCaptions(locale)}
+            onCancel={() => void invoke("cancel_transcription")}
+            onChange={updateCaptions}
+            onStyleChange={updateCaptionStyle}
+            onSeek={(timeMs) => seekRef.current?.(timeMs)}
+            onOpenSettings={() => void invoke("open_speech_settings").catch(() => {})}
+          />
+        </FrameEditor>
 
         <div className="export-box">
           {running ? (
@@ -330,6 +446,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
               <span>
                 <strong>{t("export.done")}</strong>
                 <small>{exportState.result.width} × {exportState.result.height} · 60 fps</small>
+                {exportState.result.subtitlesPath && <small>{t("captions.srtSaved")}</small>}
                 <span className="export-actions">
                   <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
                     <Play size={14} aria-hidden="true" /> {t("export.open")}
