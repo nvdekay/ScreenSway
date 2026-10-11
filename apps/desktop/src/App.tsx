@@ -274,14 +274,17 @@ export default function App() {
       const availableSources = await invoke<CaptureSource[]>("list_capture_sources");
       if (isCancelled()) return;
       setSources(availableSources);
-      const first = availableSources[0];
-      if (first) setSelectedSourceKey((current) => current || `${first.kind}:${first.id}`);
+      setSelectedSourceKey((current) => {
+        if (availableSources.some((source) => `${source.kind}:${source.id}` === current && source.kind === sourceKind)) return current;
+        const first = availableSources.find((source) => source.kind === sourceKind);
+        return first ? `${first.kind}:${first.id}` : "";
+      });
     } catch (sourceError) {
       if (!isCancelled()) setError(String(sourceError));
     } finally {
       if (!isCancelled()) setLoadingSources(false);
     }
-  }, []);
+  }, [sourceKind]);
 
   useEffect(() => {
     let cancelled = false;
@@ -414,6 +417,9 @@ export default function App() {
         <div className={`recorder glass reveal${recording ? " is-recording" : ""}`}>
           <div className="recorder-head">
             <span className="recorder-label">{t("source.label")}</span>
+            <button className="icon-button small" aria-label={t("source.refresh")} title={t("source.refresh")} disabled={recording || busy || loadingSources} onClick={() => void loadSources()}>
+              <RotateCw size={15} aria-hidden="true" />
+            </button>
             <div className="segmented" role="tablist" aria-label={t("source.label")}>
               {(["display", "window"] as const).map((kind) => (
                 <button

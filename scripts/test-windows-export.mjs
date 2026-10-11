@@ -13,7 +13,8 @@ const triple = execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf
 const helper = path.join(root, "apps/desktop/src-tauri/binaries", `screensway-capture-${triple}.exe`);
 assert(existsSync(helper), "Build the native helper first.");
 assert.equal(spawnSync("ffmpeg", ["-version"]).status, 0, "ffmpeg is required for export verification.");
-const work = mkdtempSync(path.join(tmpdir(), "screensway-export-test-"));
+// Exercise real Unicode paths, not only the Windows path conversion unit test.
+const work = mkdtempSync(path.join(tmpdir(), "screensway-xuất video-"));
 const run = (exe, args) => execFileSync(exe, args, { encoding: "utf8", timeout: 180_000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
 const probe = (p) => JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", p]));
 

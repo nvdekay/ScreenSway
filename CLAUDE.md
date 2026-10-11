@@ -45,6 +45,15 @@ pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the
 
 ## Verification notes
 
+- Windows release acceptance matrix: `docs/windows-release-test-plan.md` (61 cases).
+  Latest installer hash and scoped results: `docs/windows-qa-latest.md`.
+  `scripts/test-windows-installer.ps1` verifies same-version install, installed UI
+  E2E, uninstall/reinstall and byte-for-byte preservation of the recording library.
+  `scripts/test-windows-ui.ps1` exercises real WebView2 UI and full MP4 decoding;
+  preserve the capture timebase with `-fps_mode passthrough -enc_time_base demux`.
+  Windows closes the reused hidden recording HUD when main is destroyed, so an
+  idle app exits normally; closing main during an active capture is prevented.
+
 - `test:capture:macos` and any real capture fail with "could not find the main display" while the Mac's screen is locked; check `CGSessionCopyCurrentDictionary()["CGSSessionScreenIsLocked"]` before assuming a bug.
 - `screensway-capture --export job.json` can be tested without the UI using a synthetic source (`ffmpeg -f lavfi -i testsrc2=...`) and a job built from `buildRenderFrames`.
 - UI changes can be checked in a browser: Vite plus `@tauri-apps/api/mocks` (`mockIPC`) render the React components without the Tauri runtime. Remove any temporary harness files afterwards.

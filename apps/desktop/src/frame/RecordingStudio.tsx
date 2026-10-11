@@ -131,6 +131,9 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
   const [edits, setEdits] = useState<RecordingEdits>(NO_EDITS);
   const saveTimer = useRef<number | undefined>(undefined);
+  const pendingEdits = useRef<RecordingEdits | null>(null);
+  const mounted = useRef(true);
+  const activeJobs = useRef({ export: false, transcription: false });
   const range = useMemo(() => trimRange(edits, recording.durationMs), [edits, recording.durationMs]);
   const zooms = useMemo(
     () => resolveZooms(edits, recording.pointerEvents, recording.durationMs),
@@ -155,7 +158,21 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(loadCaptionStyle);
   const [transcription, setTranscription] = useState<TranscriptionState>({ status: "idle" });
   const captionsTimer = useRef<number | undefined>(undefined);
+  const pendingCaptions = useRef<RecordingCaptions | null>(null);
   const seekRef = useRef<((timeMs: number) => void) | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      window.clearTimeout(saveTimer.current);
+      window.clearTimeout(captionsTimer.current);
+      if (pendingEdits.current) void invoke("save_edits", { projectPath: recording.projectPath, edits: pendingEdits.current }).catch(() => {});
+      if (pendingCaptions.current) void invoke("save_captions", { projectPath: recording.projectPath, captions: pendingCaptions.current }).catch(() => {});
+      if (activeJobs.current.export) void invoke("cancel_export").catch(() => {});
+      if (activeJobs.current.transcription) void invoke("cancel_transcription").catch(() => {});
+    };
+  }, [recording.projectPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,9 +196,12 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   }, []);
 
   const updateCaptions = useCallback((next: RecordingCaptions) => {
+    if (!mounted.current) return;
     setCaptions(next);
+    pendingCaptions.current = next;
     window.clearTimeout(captionsTimer.current);
     captionsTimer.current = window.setTimeout(() => {
+      pendingCaptions.current = null;
       void invoke("save_captions", { projectPath: recording.projectPath, captions: next }).catch(() => {});
     }, 400);
   }, [recording.projectPath]);
@@ -199,17 +219,22 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   };
 
   async function generateCaptions(locale: string) {
+    if (activeJobs.current.transcription) return;
+    activeJobs.current.transcription = true;
     setTranscription({ status: "running", progress: 0 });
     try {
       const result = await invoke<{ locale: string; words: CaptionWord[] }>("transcribe_recording", {
         projectPath: recording.projectPath,
         locale,
       });
+      if (!mounted.current) return;
       updateCaptions({ locale: result.locale, enabled: true, lines: buildCaptionLines(result.words) });
       setTranscription({ status: "idle" });
     } catch (error) {
       const message = String(error);
       setTranscription(message === "Captions cancelled." ? { status: "idle" } : { status: "failed", message });
+    } finally {
+      activeJobs.current.transcription = false;
     }
   }
 
@@ -219,8 +244,10 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
     const next = update(editsRef.current);
     editsRef.current = next;
     setEdits(next);
+    pendingEdits.current = next;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
+      pendingEdits.current = null;
       void invoke("save_edits", { projectPath: recording.projectPath, edits: next }).catch(() => {});
     }, 300);
   }, [recording.projectPath]);
@@ -326,6 +353,8 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   }
 
   async function exportVideo() {
+    if (activeJobs.current.export) return;
+    activeJobs.current.export = true;
     setExportState({ status: "running", progress: 0 });
     try {
       const source = { width: recording.width, height: recording.height };
@@ -346,6 +375,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           : [];
       });
 
+      if (!mounted.current) return;
       const result = await invoke<ExportResult>("export_recording", {
         projectPath: recording.projectPath,
         captions: captionImages,
@@ -374,6 +404,8 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
     } catch (error) {
       const message = String(error);
       setExportState(message === "Export cancelled." ? { status: "idle" } : { status: "failed", message });
+    } finally {
+      activeJobs.current.export = false;
     }
   }
 

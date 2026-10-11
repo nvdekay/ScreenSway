@@ -26,7 +26,7 @@ pub struct PointerLog {
     /// Top-left of the captured area, in physical screen pixels.
     origin: (f64, f64),
     /// Video pixels per physical screen pixel (below 1 when the capture is scaled down).
-    scale: f64,
+    scale: (f64, f64),
     previous_point: Option<(f64, f64)>,
     previous_left: bool,
     previous_right: bool,
@@ -42,11 +42,20 @@ impl PointerLog {
             paused_total: 0,
             stopped_at: None,
             origin,
-            scale,
+            scale: (scale, scale),
             previous_point: None,
             previous_left: false,
             previous_right: false,
             last_move_ms: None,
+        }
+    }
+
+    /// A window may move or resize while the encoded canvas keeps its initial size.
+    pub fn set_capture_area(&mut self, origin: (f64, f64), scale: (f64, f64)) {
+        if self.origin != origin || self.scale != scale {
+            self.origin = origin;
+            self.scale = scale;
+            self.previous_point = None;
         }
     }
 
@@ -56,8 +65,8 @@ impl PointerLog {
             return;
         }
         let time_ms = self.elapsed_ms(now);
-        let x = (point.0 - self.origin.0) * self.scale;
-        let y = (point.1 - self.origin.1) * self.scale;
+        let x = (point.0 - self.origin.0) * self.scale.0;
+        let y = (point.1 - self.origin.1) * self.scale.1;
         if left && !self.previous_left {
             self.samples.push(PointerSample { time_ms, r#type: "leftClick", x, y });
         } else if right && !self.previous_right {
@@ -278,6 +287,21 @@ mod tests {
         assert_eq!(timeline.start(10 * MS, true), Some(0));
         assert_eq!(timeline.frame(30 * MS), Some(20 * MS));
         assert_eq!(timeline.frame(30 * MS), Some(21 * MS), "times keep moving forward");
+    }
+
+    #[test]
+    fn pointer_follows_a_moved_and_resized_window() {
+        let mut log = PointerLog::new(0, (100.0, 200.0), 1.0);
+        log.observe(100 * MS, (300.0, 300.0), false, false);
+        log.set_capture_area((200.0, 250.0), (0.5, 2.0));
+        // The screen cursor did not move, but its position in the captured video did.
+        log.observe(200 * MS, (300.0, 300.0), false, false);
+        log.observe(300 * MS, (400.0, 350.0), true, false);
+        let samples = log.samples();
+        assert_eq!((samples[0].x, samples[0].y), (200.0, 100.0));
+        assert_eq!((samples[1].x, samples[1].y), (50.0, 100.0));
+        assert_eq!((samples[2].x, samples[2].y), (100.0, 200.0));
+        assert_eq!(samples[2].r#type, "leftClick");
     }
 
     #[test]

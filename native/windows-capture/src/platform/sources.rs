@@ -93,9 +93,13 @@ pub fn displays() -> Result<Vec<Display>> {
 
 pub fn find_display(id: Option<&str>) -> Result<Option<Display>> {
     let mut displays = displays()?;
-    let index = id
-        .and_then(|id| displays.iter().position(|display| display.id == id))
-        .unwrap_or(0);
+    let index = match id {
+        Some(id) => match displays.iter().position(|display| display.id == id) {
+            Some(index) => index,
+            None => return Ok(None),
+        },
+        None => 0,
+    };
     Ok((index < displays.len()).then(|| displays.swap_remove(index)))
 }
 
@@ -117,6 +121,14 @@ pub fn windows() -> Vec<Window> {
 
 pub fn window(hwnd: HWND) -> Option<Window> {
     recordable_window(hwnd, None)
+}
+
+pub fn window_bounds(hwnd: HWND) -> Option<RECT> {
+    let mut bounds = RECT::default();
+    unsafe {
+        DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &mut bounds as *mut _ as _, size_of::<RECT>() as u32).ok()?;
+    }
+    (bounds.right > bounds.left && bounds.bottom > bounds.top).then_some(bounds)
 }
 
 fn recordable_window(hwnd: HWND, excluded_process: Option<u32>) -> Option<Window> {
