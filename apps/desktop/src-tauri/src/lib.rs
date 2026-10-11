@@ -1063,6 +1063,140 @@ fn export_recording_blocking(
     }
 }
 
+fn backgrounds_directory() -> Result<std::path::PathBuf, String> {
+    Ok(recordings_directory()?.join("Backgrounds"))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackgroundImage {
+    path: String,
+    thumbnail: String,
+}
+
+/// Splits a data URL into its file extension and bytes; only common image types are accepted.
+fn decode_image_data_url(data: &str) -> Result<(&'static str, Vec<u8>), String> {
+    let (header, _) = data.split_once(',').ok_or("The image is invalid.")?;
+    let extension = match header.trim_start_matches("data:").split(';').next() {
+        Some("image/png") => "png",
+        Some("image/jpeg") => "jpg",
+        Some("image/webp") => "webp",
+        Some("image/heic") => "heic",
+        Some("image/gif") => "gif",
+        _ => return Err("Only PNG, JPEG, WebP, HEIC and GIF images can be used.".into()),
+    };
+    Ok((extension, decode_png(data)?))
+}
+
+/// A stable name from the content, so choosing the same image twice keeps one copy.
+fn content_name(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn data_url(path: &std::path::Path) -> Result<String, String> {
+    use base64::Engine;
+    let mime = match path.extension().and_then(|extension| extension.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("heic") => "image/heic",
+        Some("gif") => "image/gif",
+        _ => return Err("This is not a background image.".into()),
+    };
+    let bytes = std::fs::read(path).map_err(|error| format!("Could not read the image: {error}"))?;
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// Accepts only files directly inside the Backgrounds folder.
+fn resolve_background(path: &str) -> Result<std::path::PathBuf, String> {
+    let root = backgrounds_directory()?
+        .canonicalize()
+        .map_err(|_| "No background images are saved yet.".to_string())?;
+    let file = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|_| "This background image no longer exists.".to_string())?;
+    if file.parent() != Some(root.as_path()) {
+        return Err("This image is outside the ScreenSway backgrounds folder.".into());
+    }
+    Ok(file)
+}
+
+fn save_background_image_in(
+    directory: &std::path::Path,
+    image: &str,
+    thumbnail: &str,
+) -> Result<std::path::PathBuf, String> {
+    let (extension, bytes) = decode_image_data_url(image)?;
+    let (_, thumbnail_bytes) = decode_image_data_url(thumbnail)?;
+    std::fs::create_dir_all(directory).map_err(|error| format!("Could not save the image: {error}"))?;
+    let name = content_name(&bytes);
+    let path = directory.join(format!("{name}.{extension}"));
+    if path.is_file() {
+        // Choosing it again moves it to the front of the recent list.
+        if let Ok(file) = std::fs::File::options().append(true).open(&path) {
+            let _ = file.set_modified(std::time::SystemTime::now());
+        }
+    } else {
+        std::fs::write(&path, &bytes).map_err(|error| format!("Could not save the image: {error}"))?;
+    }
+    std::fs::write(directory.join(format!("{name}.thumb.jpg")), thumbnail_bytes)
+        .map_err(|error| format!("Could not save the image: {error}"))?;
+    Ok(path)
+}
+
+fn list_background_images_in(directory: &std::path::Path) -> Vec<BackgroundImage> {
+    let Ok(entries) = std::fs::read_dir(directory) else { return Vec::new() };
+    let mut images: Vec<(std::time::SystemTime, std::path::PathBuf)> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| !path.to_string_lossy().ends_with(".thumb.jpg"))
+        .filter_map(|path| Some((path.metadata().ok()?.modified().ok()?, path)))
+        .collect();
+    images.sort_by(|a, b| b.0.cmp(&a.0));
+    images
+        .into_iter()
+        .filter_map(|(_, path)| {
+            let stem = path.file_stem()?.to_string_lossy().into_owned();
+            let thumbnail = data_url(&directory.join(format!("{stem}.thumb.jpg"))).ok()?;
+            Some(BackgroundImage { path: path.to_string_lossy().into_owned(), thumbnail })
+        })
+        .take(12)
+        .collect()
+}
+
+/// Keeps a copy of an uploaded background (plus a small preview) in Movies/ScreenSway/Backgrounds,
+/// so styles that use it still work after a restart.
+#[tauri::command]
+fn save_background_image(image: String, thumbnail: String) -> Result<String, String> {
+    let path = save_background_image_in(&backgrounds_directory()?, &image, &thumbnail)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn list_background_images() -> Result<Vec<BackgroundImage>, String> {
+    Ok(list_background_images_in(&backgrounds_directory()?))
+}
+
+/// A saved background as a data URL, so it can be painted into the export without tainting the canvas.
+#[tauri::command]
+fn read_background_image(path: String) -> Result<String, String> {
+    data_url(&resolve_background(&path)?)
+}
+
+#[tauri::command]
+fn delete_background_image(path: String) -> Result<(), String> {
+    let file = resolve_background(&path)?;
+    if let Some(stem) = file.file_stem() {
+        let _ = std::fs::remove_file(file.with_file_name(format!("{}.thumb.jpg", stem.to_string_lossy())));
+    }
+    std::fs::remove_file(&file).map_err(|error| format!("Could not delete the image: {error}"))
+}
+
 /// The recording's thumbnail as a data URL, for sampling colors in the UI without
 /// tainting a canvas with a cross-origin image.
 #[tauri::command]
@@ -1187,7 +1321,11 @@ pub fn run() {
             export_recording,
             cancel_export,
             open_export,
-            read_thumbnail
+            read_thumbnail,
+            save_background_image,
+            list_background_images,
+            read_background_image,
+            delete_background_image
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")
@@ -1210,6 +1348,35 @@ mod tests {
         assert_eq!(decode_png("data:image/png;base64,aGk=").unwrap(), b"hi");
         assert_eq!(decode_png("aGk=").unwrap(), b"hi");
         assert!(decode_png("data:image/png;base64,***").is_err());
+    }
+
+    #[test]
+    fn background_images_are_saved_once_and_listed_newest_first() {
+        let directory = std::env::temp_dir().join(format!("screensway-backgrounds-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let thumbnail = "data:image/jpeg;base64,/9j/";
+
+        let first = save_background_image_in(&directory, "data:image/png;base64,aGk=", thumbnail).unwrap();
+        assert_eq!(first.extension().unwrap(), "png");
+        assert_eq!(std::fs::read(&first).unwrap(), b"hi");
+        // The same image again reuses the existing copy.
+        assert_eq!(save_background_image_in(&directory, "data:image/png;base64,aGk=", thumbnail).unwrap(), first);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let second = save_background_image_in(&directory, "data:image/jpeg;base64,b2s=", thumbnail).unwrap();
+        assert_eq!(second.extension().unwrap(), "jpg");
+
+        let listed = list_background_images_in(&directory);
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].path, second.to_string_lossy());
+        assert_eq!(listed[1].path, first.to_string_lossy());
+        assert!(listed[0].thumbnail.starts_with("data:image/jpeg;base64,"));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        save_background_image_in(&directory, "data:image/png;base64,aGk=", thumbnail).unwrap();
+        assert_eq!(list_background_images_in(&directory)[0].path, first.to_string_lossy());
+
+        assert!(save_background_image_in(&directory, "data:text/html;base64,aGk=", thumbnail).is_err());
+        assert!(save_background_image_in(&directory, "not a data url", thumbnail).is_err());
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

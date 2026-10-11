@@ -17,7 +17,8 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 - Record a display or an application window, with optional system audio and microphone (pick the device; the voice is leveled and background noise is lowered between phrases). Pause and resume without keeping the paused interval.
 - 3-second countdown, floating Liquid Glass controls and a menu bar timer; ScreenSway stays out of the video.
 - Studio preview with automatic, spring-based zoom and pan that follows clicks, a smooth re-rendered cursor and click ripples.
-- Frame customization: mesh and linear gradients, solid or custom colors, your own image with blur, a Magic background built from the recording's colors, film grain, macOS light/dark, glass and outline frames, aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
+- Styles: built-in looks (Studio, Clean, MacBook, Website, Social) and your own saved styles, applied in one click.
+- Frame customization: a library of mesh, linear and wave backgrounds, solid colors and a custom two-color gradient, your own images (kept in Movies › ScreenSway › Backgrounds for reuse) with blur, a Magic background built from the recording's colors, film grain; macOS light/dark, browser light/dark (with address bar), MacBook, glass and outline frames; aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
 - Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
 - A local library of recordings, Vietnamese and English UI, Retina/standard display hints.
 

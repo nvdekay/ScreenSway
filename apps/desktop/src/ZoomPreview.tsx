@@ -97,7 +97,7 @@ export function ZoomPreview({
   }, [backgroundImage, height, settings, stageSize, width]);
 
   const percent = (value: number, total: number) => `${(value / total) * 100}%`;
-  const cornerRadius = (layout.radius / layout.width) * stageSize.width;
+  const cornerRadius = (layout.videoRadius / layout.width) * stageSize.width;
 
   // Camera, cursor and progress are written straight to the DOM on every display frame,
   // so motion stays at the screen's refresh rate instead of React's render cadence.
@@ -196,7 +196,7 @@ export function ZoomPreview({
               top: percent(layout.video.y, layout.height),
               width: percent(layout.video.width, layout.width),
               height: percent(layout.video.height, layout.height),
-              borderRadius: layout.titleBar > 0 ? `0 0 ${cornerRadius}px ${cornerRadius}px` : `${cornerRadius}px`,
+              borderRadius: layout.roundVideoTop ? `${cornerRadius}px` : `0 0 ${cornerRadius}px ${cornerRadius}px`,
             }}
           >
           <div className="player-content" ref={contentRef}>

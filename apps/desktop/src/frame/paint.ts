@@ -1,4 +1,4 @@
-import type { BackgroundSpec, FrameLayout, FrameSettings, Rect } from "@screensway/core";
+import { isBrowserFrame, type BackgroundSpec, type FrameLayout, type FrameSettings, type Rect } from "@screensway/core";
 
 /**
  * Draws everything except the recording itself: background, shadow and window frame.
@@ -26,8 +26,14 @@ export function paintFrameBase(
     roundedRect(context, frame, radius);
     context.fillStyle = "#000";
     context.fill();
+    if (layout.base) {
+      laptopBase(context, layout.base);
+      context.fill();
+    }
     context.restore();
   }
+
+  if (settings.frame === "macbook") paintLaptop(context, layout);
 
   if (settings.frame === "glass") {
     const ring = Math.max(2, frame.width * 0.012);
@@ -41,7 +47,7 @@ export function paintFrameBase(
   }
 
   if (layout.titleBar > 0) {
-    const dark = settings.frame === "macos-dark";
+    const dark = settings.frame === "macos-dark" || settings.frame === "browser-dark";
     roundedRect(context, frame, radius);
     context.fillStyle = dark ? "#26252d" : "#ececf0";
     context.fill();
@@ -54,6 +60,7 @@ export function paintFrameBase(
       context.fillStyle = color;
       context.fill();
     });
+    if (isBrowserFrame(settings.frame)) paintAddressBar(context, layout, dark);
     context.fillStyle = dark ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.08)";
     context.fillRect(frame.x, frame.y + layout.titleBar - Math.max(1, layout.titleBar * 0.03), frame.width, Math.max(1, layout.titleBar * 0.03));
   }
@@ -66,6 +73,86 @@ export function paintFrameBase(
     context.stroke();
   }
   context.restore();
+}
+
+/** A centered address pill with a lock, like Safari's compact tab bar. */
+function paintAddressBar(context: CanvasRenderingContext2D, layout: FrameLayout, dark: boolean) {
+  const { window: frame, titleBar } = layout;
+  const height = titleBar * 0.52;
+  const width = Math.min(frame.width * 0.46, frame.width - titleBar * 5);
+  const pill = { x: frame.x + (frame.width - width) / 2, y: frame.y + (titleBar - height) / 2, width, height };
+  roundedRect(context, pill, height / 2);
+  context.fillStyle = dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)";
+  context.fill();
+
+  // A padlock and a few soft bars standing in for the address.
+  const ink = dark ? "rgba(255, 255, 255, 0.38)" : "rgba(0, 0, 0, 0.3)";
+  const lock = height * 0.36;
+  const lockX = pill.x + height * 0.6;
+  const lockY = pill.y + (height - lock) / 2 + lock * 0.18;
+  context.fillStyle = ink;
+  context.fillRect(lockX, lockY + lock * 0.35, lock * 0.8, lock * 0.65);
+  context.beginPath();
+  context.lineWidth = Math.max(1, lock * 0.14);
+  context.strokeStyle = ink;
+  context.arc(lockX + lock * 0.4, lockY + lock * 0.35, lock * 0.26, Math.PI, 0);
+  context.stroke();
+  roundedRect(context, { x: lockX + lock * 1.4, y: pill.y + height * 0.38, width: width * 0.32, height: height * 0.24 }, height * 0.12);
+  context.fill();
+
+  // Tab and toolbar hints at the right edge.
+  const dot = titleBar * 0.09;
+  for (let index = 0; index < 3; index++) {
+    roundedRect(context, { x: frame.x + frame.width - titleBar * (0.9 + index * 0.55), y: frame.y + titleBar / 2 - dot, width: dot * 2.4, height: dot * 2 }, dot * 0.5);
+    context.fill();
+  }
+}
+
+/** Space-gray lid with a camera, drawn around the video; the base sits underneath. */
+function paintLaptop(context: CanvasRenderingContext2D, layout: FrameLayout) {
+  const { window: lid, video, radius, bezel } = layout;
+  context.save();
+  roundedRect(context, lid, radius);
+  context.fillStyle = "#0d0d10";
+  context.fill();
+  // A thin aluminum edge around the lid.
+  context.lineWidth = Math.max(1, bezel * 0.12);
+  context.strokeStyle = "#5b5b63";
+  roundedRect(context, { x: lid.x + context.lineWidth / 2, y: lid.y + context.lineWidth / 2, width: lid.width - context.lineWidth, height: lid.height - context.lineWidth }, radius);
+  context.stroke();
+  // Camera in the top bezel.
+  context.beginPath();
+  context.arc(lid.x + lid.width / 2, lid.y + bezel / 2, Math.max(1, bezel * 0.14), 0, Math.PI * 2);
+  context.fillStyle = "#1f2430";
+  context.fill();
+  // The screen behind the video, visible at its rounded corners.
+  roundedRect(context, video, layout.videoRadius);
+  context.fillStyle = "#000";
+  context.fill();
+
+  if (layout.base) {
+    const base = layout.base;
+    laptopBase(context, base);
+    const metal = context.createLinearGradient(0, base.y, 0, base.y + base.height);
+    metal.addColorStop(0, "#d4d4da");
+    metal.addColorStop(0.45, "#a1a1aa");
+    metal.addColorStop(1, "#52525b");
+    context.fillStyle = metal;
+    context.fill();
+    // The opening notch at the front of the base.
+    const notch = { x: base.x + base.width / 2 - base.width * 0.08, y: base.y, width: base.width * 0.16, height: base.height * 0.32 };
+    context.beginPath();
+    context.roundRect(notch.x, notch.y, notch.width, notch.height, [0, 0, notch.height * 0.9, notch.height * 0.9]);
+    context.fillStyle = "#71717a";
+    context.fill();
+  }
+  context.restore();
+}
+
+/** The base's outline: flat on top, rounded toward the front edge. */
+function laptopBase(context: CanvasRenderingContext2D, base: Rect) {
+  context.beginPath();
+  context.roundRect(base.x, base.y, base.width, base.height, [base.height * 0.15, base.height * 0.15, base.height * 0.9, base.height * 0.9]);
 }
 
 export function paintBackground(
@@ -108,12 +195,59 @@ export function paintBackground(
         context.restore();
       }
       return;
+    case "waves":
+      paintWaves(context, background.sky, background.layers, width, height);
+      return;
     case "image":
       context.fillStyle = "#18181b";
       context.fillRect(0, 0, width, height);
       if (image) drawCover(context, image, width, height, background.blur);
       return;
   }
+}
+
+/**
+ * Layered hills from back (lighter, higher) to front (darker, lower). The curves depend
+ * only on the layer index, so every size draws the same picture.
+ */
+function paintWaves(context: CanvasRenderingContext2D, sky: [string, string], layers: string[], width: number, height: number) {
+  const skyGradient = context.createLinearGradient(0, 0, 0, height);
+  skyGradient.addColorStop(0, sky[0]);
+  skyGradient.addColorStop(1, sky[1]);
+  context.fillStyle = skyGradient;
+  context.fillRect(0, 0, width, height);
+
+  const count = layers.length;
+  layers.forEach((color, index) => {
+    const level = 0.38 + (index / Math.max(1, count - 1)) * 0.42;
+    const amplitude = height * (0.07 - index * 0.008);
+    const phase = index * 1.7 + 0.6;
+    const frequency = 1.1 + index * 0.35;
+    context.beginPath();
+    context.moveTo(0, height);
+    const steps = 48;
+    for (let step = 0; step <= steps; step++) {
+      const x = (step / steps) * width;
+      const t = step / steps;
+      const y = height * level
+        + Math.sin(t * Math.PI * frequency + phase) * amplitude
+        + Math.sin(t * Math.PI * frequency * 2.3 + phase * 1.9) * amplitude * 0.35;
+      context.lineTo(x, y);
+    }
+    context.lineTo(width, height);
+    context.closePath();
+    const fill = context.createLinearGradient(0, height * (level - 0.1), 0, height);
+    fill.addColorStop(0, color);
+    fill.addColorStop(1, shade(color, 0.72));
+    context.fillStyle = fill;
+    context.fill();
+  });
+}
+
+function shade(color: string, factor: number): string {
+  const hex = color.replace("#", "");
+  const channels = [0, 2, 4].map((offset) => Math.round(parseInt(hex.slice(offset, offset + 2), 16) * factor));
+  return `#${channels.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function drawCover(context: CanvasRenderingContext2D, image: CanvasImageSource, width: number, height: number, blur: number) {

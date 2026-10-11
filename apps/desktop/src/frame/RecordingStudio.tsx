@@ -11,7 +11,7 @@ import { AlertCircle, CheckCircle2, Download, FolderOpen, Loader2, Play, X } fro
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
-import { FrameEditor } from "./FrameEditor";
+import { FrameEditor, type RecentImage } from "./FrameEditor";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
 
 const SETTINGS_KEY = "screensway.frame";
@@ -33,8 +33,8 @@ type ExportState =
 function loadSettings(): FrameSettings {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<FrameSettings> | null;
-    // An uploaded image is not kept between sessions, so fall back to the default background.
-    if (stored?.background?.kind === "image") delete stored.background;
+    // Images chosen before they were saved to disk cannot be restored.
+    if (stored?.background?.kind === "image" && !stored.background.path) delete stored.background;
     return { ...DEFAULT_FRAME_SETTINGS, ...stored };
   } catch {
     return DEFAULT_FRAME_SETTINGS;
@@ -50,6 +50,27 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   });
 }
 
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** A small JPEG of the image, cropped like a swatch, for the recent images grid. */
+function thumbnailOf(image: HTMLImageElement): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 192;
+  canvas.height = 128;
+  const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+  canvas.getContext("2d")!.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
 function exportFileName(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -62,12 +83,16 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   const [settings, setSettings] = useState<FrameSettings>(loadSettings);
   const [autoZoom, setAutoZoom] = useState(true);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imagePath, setImagePath] = useState<string | null>(null);
+  const [recentImages, setRecentImages] = useState<RecentImage[]>([]);
   const [magic, setMagic] = useState<BackgroundSpec | null>(null);
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
   // An image background without a loaded image (e.g. after a restart) falls back to the default.
   const effectiveSettings = useMemo(
-    () => (settings.background.kind === "image" && !image ? { ...settings, background: DEFAULT_FRAME_SETTINGS.background } : settings),
-    [image, settings],
+    () => (settings.background.kind === "image" && (!image || imagePath !== (settings.background.path ?? null))
+      ? { ...settings, background: DEFAULT_FRAME_SETTINGS.background }
+      : settings),
+    [image, imagePath, settings],
   );
 
   const updateSettings = useCallback((patch: Partial<FrameSettings>) => {
@@ -82,6 +107,35 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
     });
   }, []);
 
+  const refreshRecentImages = useCallback(async () => {
+    try {
+      setRecentImages(await invoke<RecentImage[]>("list_background_images"));
+    } catch {
+      // Recent images are a convenience.
+    }
+  }, []);
+  useEffect(() => void refreshRecentImages(), [refreshRecentImages]);
+
+  // Loads the saved image a style or the last session refers to.
+  const wantedImage = settings.background.kind === "image" ? settings.background.path ?? null : null;
+  useEffect(() => {
+    if (!wantedImage || wantedImage === imagePath) return;
+    let cancelled = false;
+    invoke<string>("read_background_image", { path: wantedImage })
+      .then(loadImage)
+      .then((loaded) => {
+        if (cancelled) return;
+        setImage(loaded);
+        setImagePath(wantedImage);
+      })
+      .catch(() => {
+        if (!cancelled) updateSettings({ background: DEFAULT_FRAME_SETTINGS.background });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [imagePath, updateSettings, wantedImage]);
+
   useEffect(() => {
     const unlisten = listen<number>("export-progress", (event) => {
       setExportState((current) => (current.status === "running" ? { status: "running", progress: event.payload } : current));
@@ -91,12 +145,35 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
 
   async function chooseImage(file: File) {
     try {
-      const loaded = await loadImage(URL.createObjectURL(file));
+      const data = await readFile(file);
+      const loaded = await loadImage(data);
+      const path = await invoke<string>("save_background_image", { image: data, thumbnail: thumbnailOf(loaded) });
       setImage(loaded);
-      updateSettings({ background: { kind: "image", blur: 0 } });
+      setImagePath(path);
+      updateSettings({ background: { kind: "image", blur: 0, path } });
+      void refreshRecentImages();
     } catch {
       setExportState({ status: "failed", message: t("frame.imageFailed") });
     }
+  }
+
+  function chooseRecentImage(path: string) {
+    const blur = settings.background.kind === "image" ? settings.background.blur : 0;
+    updateSettings({ background: { kind: "image", blur, path } });
+  }
+
+  async function deleteRecentImage(path: string) {
+    try {
+      await invoke("delete_background_image", { path });
+    } catch {
+      // Already gone.
+    }
+    if (wantedImage === path) {
+      setImage(null);
+      setImagePath(null);
+      updateSettings({ background: DEFAULT_FRAME_SETTINGS.background });
+    }
+    void refreshRecentImages();
   }
 
   async function createMagic() {
@@ -134,8 +211,8 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           cursorHotspotX: CURSOR_HOTSPOT.x,
           cursorHotspotY: CURSOR_HOTSPOT.y,
           video: layout.video,
-          radius: layout.radius,
-          roundTopCorners: layout.titleBar === 0,
+          radius: layout.videoRadius,
+          roundTopCorners: layout.roundVideoTop,
           frames: buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom),
         },
       });
@@ -166,6 +243,9 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           hasImage={Boolean(image)}
           onMagic={() => void createMagic()}
           magicBackground={magic}
+          recentImages={recentImages}
+          onRecentImage={chooseRecentImage}
+          onDeleteRecentImage={(path) => void deleteRecentImage(path)}
         />
 
         <div className="export-box">
