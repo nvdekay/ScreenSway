@@ -54,7 +54,17 @@ pnpm build:macos
 
 `test:capture:macos` performs real display and window recordings (with system audio and the default microphone; set `SCREENSWAY_TEST_MICROPHONE=0` to skip it), a trimmed export with a caption, and with `SCREENSWAY_TEST_CAPTIONS=1` on-device captions in Vietnamese and English (needs Speech Recognition permission), exercises pause/resume and stop, and validates the MP4, audio track, manifest, pointer metadata and timeline alignment. It requires Screen Recording permission, an unlocked screen, and `ffprobe` from FFmpeg. `build:macos` builds the universal app and the compressed DMG.
 
-Windows capture is part of the product plan but is not implemented yet.
+### Windows (in progress)
+
+The Windows helper (`native/windows-capture`, Rust) records displays and windows with the pointer log, pause/resume and stop. Audio, export and captions are not ported yet, so the app hides the audio switches on Windows. On a Windows PC (Rust, Node, pnpm, WebView2):
+
+```bash
+pnpm test:capture:windows   # real display/window recordings; video checks need ffprobe on PATH
+pnpm dev:desktop
+pnpm build:windows          # NSIS installer in apps/desktop/src-tauri/target/release/bundle/nsis
+```
+
+The **Windows build** workflow runs the same build on `windows-latest` for every relevant push to `main` and uploads the installer as an artifact. It is unsigned, so SmartScreen asks for **More info → Run anyway**.
 
 ## Releases
 

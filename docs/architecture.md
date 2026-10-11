@@ -9,8 +9,8 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
 - `apps/desktop` is the Tauri 2 shell (Rust, `src-tauri/src/lib.rs`) and the React studio UI (`src/`).
 - `packages/core` holds the portable logic shared by preview and export: pointer/zoom types, zoom segment generation, the spring camera track, the frame model, and the per-frame render plan.
 - `native/macos-capture` is a Swift command-line sidecar: ScreenCaptureKit capture (`ScreenSwayCapture.swift`) and the GPU exporter (`Exporter.swift`).
+- `native/windows-capture` is the Windows sidecar in Rust with the same command line (see "Capture (Windows)").
 - `apps/web` is the independent marketing site (GitHub Pages). It imports `@screensway/core` for its live demo.
-- Windows capture will use Windows.Graphics.Capture; it is not implemented.
 
 ## Project bundle
 
@@ -42,6 +42,15 @@ The pointer is stored as metadata instead of being burned into the video, so the
 - `--list-sources` returns displays and windows with their point size and `pixelScale` (2 on Retina). The UI warns when a non-Retina source is selected, since zoomed-in moments look softer.
 - ScreenCaptureKit can drop a shareable-content query when two processes ask at once, so queries time out and retry, and the shell serializes helper launches. A missing Screen Recording permission is reported as `SCREENSWAY_SCREEN_RECORDING_DENIED`; the UI then shows how to grant it.
 - Starting a recording runs a 3-second countdown, hides the main window, and shows floating Liquid Glass controls plus a menu bar timer. ScreenSway's windows are excluded from the capture and from audio. Clicks on Pause/Stop are dropped from the pointer log. The controls window is hidden, never closed, when a recording ends: its own Stop request is still waiting for a reply, and answering a request from a destroyed webview raises an exception in WebKit. Release builds keep `panic = "unwind"` so wry can catch such exceptions instead of aborting.
+
+## Capture (Windows)
+
+- `native/windows-capture` builds the same `screensway-capture` helper for Windows (`screensway-capture-x86_64-pc-windows-msvc.exe`), driven exactly like the macOS one: control file, `SCREENSWAY_READY`, JSON summary, the same project bundle. The shell code is shared under `cfg(capture)`; only Liquid Glass, System Settings links and the menu bar title stay macOS-only. Recordings live in `Videos\ScreenSway` (`dirs::video_dir()`, `$VIDEO` in the asset scope, which is `~/Movies` on macOS).
+- Sources: displays from `EnumDisplayMonitors` (id = device name such as `\\.\DISPLAY1`, primary first) and top-level app windows from `EnumWindows` (visible, not cloaked, not tool windows, not ScreenSway's own; id = window handle). Sizes are logical pixels and `pixelScale` is the Windows scale factor (1.5 at 150 %). The process is per-monitor DPI aware, so cursor, monitor and window coordinates are all physical pixels.
+- Frames come from Windows.Graphics.Capture (cursor and the yellow border off). Each frame is copied into a texture the recorder keeps; the D3D11 video processor scales it and converts BGRA to NV12 (BT.709, studio range), and Media Foundation's sink writer encodes H.264 High into MP4 with the GPU encoder when there is one, at the same bitrate as macOS and a keyframe every 2 s. Frames carry their real duration (a frame is written when the next arrives), and the same `VideoTimeline` rules as macOS start the video at zero, cut pauses, refresh the frame on resume and hold the last frame until the stop.
+- The pointer is polled every 4 ms (`GetCursorPos`, `GetAsyncKeyState`, honoring swapped buttons) on the same performance-counter clock as the frames; `PointerLog` drops the Pause/Stop click like macOS. The recording ends and is saved when the window or display goes away or ScreenSway quits. The thumbnail is a frame at 0.5 s saved through WIC.
+- The recording controls are excluded from capture by `WDA_EXCLUDEFROMCAPTURE` (Tauri's content protection) and paint their own dark background instead of Liquid Glass. The main window keeps the standard Windows title bar.
+- Not ported yet: audio (`--list-microphones` returns an empty list and the UI hides the audio switches), `--export` and `--transcribe` (both exit with an error).
 
 ## Camera, preview and export
 
