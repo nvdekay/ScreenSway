@@ -15,13 +15,12 @@ import {
   Square,
   Sun,
   Video,
-  X,
   ZoomIn,
 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { CONTACT_MAILTO } from "./contact";
-import { Demo } from "./Demo";
+import { StudioFeatures, StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
@@ -178,14 +177,6 @@ const FEATURES: { icon: ReactNode; title: MessageKey; copy: MessageKey; classNam
   { icon: <Apple size={22} />, title: "features.nativeTitle", copy: "features.nativeCopy", className: "full" },
 ];
 
-const COMPARISON: { label: MessageKey; raw: "yes" | "no" | "depends" }[] = [
-  { label: "compare.row1", raw: "no" },
-  { label: "compare.row2", raw: "no" },
-  { label: "compare.row3", raw: "no" },
-  { label: "compare.row4", raw: "depends" },
-  { label: "compare.row5", raw: "depends" },
-];
-
 function FeatureVisual({ name }: { name?: string }) {
   if (name?.includes("zoom")) {
     return (
@@ -224,6 +215,7 @@ export default function App() {
         <Logo />
         <nav aria-label="Main">
           <SectionLink to="demo">{t("nav.demo")}</SectionLink>
+          <SectionLink to="studio">Studio</SectionLink>
           <SectionLink to="features">{t("nav.features")}</SectionLink>
           <SectionLink to="privacy">{t("nav.privacy")}</SectionLink>
           <SectionLink to="faq">{t("nav.faq")}</SectionLink>
@@ -253,7 +245,7 @@ export default function App() {
             <button className="link-button" onClick={openInstallGuide}>{t("hero.howToInstall")}</button>
           </p>
           <div className="hero-demo" id="demo">
-            <Demo />
+            <StudioShowcase />
           </div>
         </section>
 
@@ -304,37 +296,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="compare">
-          <SectionIntro kicker="compare.kicker" title="compare.title" />
-          <div className="compare-table" data-reveal>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col"><span className="sr-only">Feature</span></th>
-                  <th scope="col">{t("compare.raw")}</th>
-                  <th scope="col" className="highlight"><LogoMark size={18} /> {t("compare.sway")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {COMPARISON.map((row) => (
-                  <tr key={row.label}>
-                    <th scope="row">{t(row.label)}</th>
-                    <td>
-                      {row.raw === "no" ? (
-                        <span className="mark no"><X size={15} aria-hidden="true" /> {t("compare.no")}</span>
-                      ) : (
-                        <span className="mark maybe">{t("compare.depends")}</span>
-                      )}
-                    </td>
-                    <td className="highlight">
-                      <span className="mark yes"><Check size={15} aria-hidden="true" /> {t("compare.yes")}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <StudioFeatures />
 
         <section className="privacy" id="privacy">
           <div className="privacy-visual" data-reveal aria-hidden="true">

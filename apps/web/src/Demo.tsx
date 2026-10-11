@@ -75,7 +75,7 @@ function MockApp() {
         <div className="mock-nav"><Users size={18} /> {t("mock.team")}</div>
         <div className="mock-nav"><Settings size={18} /> {t("mock.settings")}</div>
       </aside>
-      <main className="mock-main">
+      <div className="mock-main">
         <header className="mock-header">
           <h4>
             <span className="title-overview">{t("mock.overview")}</span>
@@ -99,7 +99,7 @@ function MockApp() {
             ))}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
