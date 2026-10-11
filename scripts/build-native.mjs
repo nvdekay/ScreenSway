@@ -3,7 +3,7 @@ import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-if (process.platform !== "darwin") {
+if (process.platform !== "darwin" && process.platform !== "win32") {
   process.exit(0);
 }
 
@@ -12,9 +12,30 @@ const packagePath = path.join(repositoryRoot, "native/macos-capture");
 const binariesPath = path.join(repositoryRoot, "apps/desktop/src-tauri/binaries");
 const requestedTargetIndex = process.argv.indexOf("--target");
 const requestedTarget = requestedTargetIndex >= 0 ? process.argv[requestedTargetIndex + 1] : undefined;
-const targetTriple = requestedTarget
-  ?? process.env.TAURI_ENV_TARGET_TRIPLE
-  ?? execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf8" }).trim();
+const hostTriple = execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf8" }).trim();
+const targetTriple = requestedTarget ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? hostTriple;
+
+// Windows: the Rust helper in native/windows-capture, with the same command line as the Swift one.
+if (process.platform === "win32") {
+  const manifest = path.join(repositoryRoot, "native/windows-capture/Cargo.toml");
+  const crossTarget = targetTriple === hostTriple ? [] : ["--target", targetTriple];
+  const result = spawnSync("cargo", ["build", "--release", "--manifest-path", manifest, ...crossTarget], {
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+  const built = path.join(
+    repositoryRoot,
+    "native/windows-capture/target",
+    ...(crossTarget.length > 0 ? [targetTriple] : []),
+    "release/screensway-capture.exe",
+  );
+  mkdirSync(binariesPath, { recursive: true });
+  const destination = path.join(binariesPath, `screensway-capture-${targetTriple}.exe`);
+  copyFileSync(built, destination);
+  console.log(`Prepared ScreenSway capture sidecar: ${destination}`);
+  process.exit(0);
+}
 
 const swiftTargets = {
   "aarch64-apple-darwin": {
