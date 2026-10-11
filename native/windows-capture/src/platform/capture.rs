@@ -1,6 +1,7 @@
 //! Direct3D 11 resources shared by capture and encoding, and the GPU color conversion from
 //! the captured BGRA frames to the NV12 the H.264 encoders take.
 
+use super::Step;
 use windows::core::{Interface, Result};
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Win32::Foundation::{HMODULE, RECT};
@@ -26,7 +27,7 @@ unsafe impl Send for Gpu {}
 unsafe impl Sync for Gpu {}
 
 impl Gpu {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> std::result::Result<Self, String> {
         let mut device = None;
         let mut context = None;
         unsafe {
@@ -40,15 +41,19 @@ impl Gpu {
                 Some(&mut device),
                 None,
                 Some(&mut context),
-            )?;
+            )
+            .step("Creating the Direct3D 11 device")?;
         }
         let device: ID3D11Device = device.expect("D3D11CreateDevice returned no device");
         let context = context.expect("D3D11CreateDevice returned no context");
         // Media Foundation's encoder uses the device from its own threads.
         unsafe {
-            let _ = device.cast::<ID3D11Multithread>()?.SetMultithreadProtected(true);
+            let _ = device.cast::<ID3D11Multithread>().step("Enabling Direct3D multithreading")?.SetMultithreadProtected(true);
         }
-        let capture_device = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&device.cast::<IDXGIDevice>()?)? }.cast()?;
+        let dxgi_device = device.cast::<IDXGIDevice>().step("Getting the DXGI device")?;
+        let capture_device = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }
+            .and_then(|device| device.cast())
+            .step("Sharing the Direct3D device with Windows.Graphics.Capture")?;
         Ok(Self { device, context, capture_device })
     }
 
@@ -111,9 +116,11 @@ pub struct Converter {
 }
 
 impl Converter {
-    pub fn new(gpu: &Gpu, input: (u32, u32), output: (u32, u32)) -> Result<Self> {
-        let video_device: ID3D11VideoDevice = gpu.device.cast()?;
-        let video_context: ID3D11VideoContext = gpu.context.cast()?;
+    pub fn new(gpu: &Gpu, input: (u32, u32), output: (u32, u32)) -> std::result::Result<Self, String> {
+        // Missing on GPUs without video support, such as Microsoft's basic display driver.
+        let video_device: ID3D11VideoDevice = gpu.device.cast().step("Opening the GPU video processor (ID3D11VideoDevice)")?;
+        let video_context: ID3D11VideoContext =
+            gpu.context.cast().step("Opening the GPU video processor (ID3D11VideoContext)")?;
         let rate = DXGI_RATIONAL { Numerator: 60, Denominator: 1 };
         let content = D3D11_VIDEO_PROCESSOR_CONTENT_DESC {
             InputFrameFormat: D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE,
@@ -125,8 +132,9 @@ impl Converter {
             OutputHeight: output.1,
             Usage: D3D11_VIDEO_USAGE_PLAYBACK_NORMAL,
         };
-        let enumerator = unsafe { video_device.CreateVideoProcessorEnumerator(&content)? };
-        let processor = unsafe { video_device.CreateVideoProcessor(&enumerator, 0)? };
+        let enumerator = unsafe { video_device.CreateVideoProcessorEnumerator(&content) }
+            .step(&format!("Creating the GPU color converter ({}×{} → {}×{})", input.0, input.1, output.0, output.1))?;
+        let processor = unsafe { video_device.CreateVideoProcessor(&enumerator, 0) }.step("Creating the GPU color converter")?;
         unsafe {
             if let Ok(context) = video_context.cast::<ID3D11VideoContext1>() {
                 context.VideoProcessorSetStreamColorSpace1(&processor, 0, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);

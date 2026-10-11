@@ -4,9 +4,9 @@
 use super::capture::{texture_size, Converter, Gpu, CAPTURE_FORMAT};
 use super::encoder::Encoder;
 use super::sources::{self, size};
-use super::{now, thumbnail, ParentWatch};
+use super::{now, thumbnail, ParentWatch, Step};
 use crate::argument;
-use crate::model::{encoded_size, iso8601, Canvas, CaptureSummary, Media, ProjectManifest};
+use crate::model::{encoded_size, iso8601, Canvas, CaptureStats, CaptureSummary, Media, ProjectManifest};
 use crate::timeline::{PointerLog, VideoTimeline, TICKS_PER_SECOND};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,6 +28,8 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetSystemMetrics, SM
 /// Where in the recording the library thumbnail is taken, like on macOS.
 const THUMBNAIL_TIME: i64 = TICKS_PER_SECOND / 2;
 const DEFAULT_DURATION_SECONDS: f64 = 14_400.0;
+/// Three buffers let Windows deliver the next frame while one is being encoded.
+const POOL_BUFFERS: i32 = 3;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -43,10 +45,25 @@ struct Frames {
     thumbnail: Option<(ID3D11Texture2D, (u32, u32))>,
     pool_size: SizeInt32,
     failure: Option<String>,
+    stats: CaptureStats,
+    frame_time_total_ms: f64,
 }
 
 impl Frames {
     fn receive(&mut self, pool: &Direct3D11CaptureFramePool, frame: Direct3D11CaptureFrame) -> windows::core::Result<()> {
+        let started = Instant::now();
+        let result = self.receive_frame(pool, frame);
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+        self.stats.frames_received += 1;
+        self.frame_time_total_ms += elapsed_ms;
+        self.stats.slowest_frame_ms = self.stats.slowest_frame_ms.max(elapsed_ms);
+        if elapsed_ms > 1_000.0 / 60.0 {
+            self.stats.slow_frames += 1;
+        }
+        result
+    }
+
+    fn receive_frame(&mut self, pool: &Direct3D11CaptureFramePool, frame: Direct3D11CaptureFrame) -> windows::core::Result<()> {
         let time = frame.SystemRelativeTime()?.Duration;
         let content = frame.ContentSize()?;
         let surface: ID3D11Texture2D = unsafe { frame.Surface()?.cast::<IDirect3DDxgiInterfaceAccess>()?.GetInterface()? };
@@ -70,7 +87,7 @@ impl Frames {
 
         // A resized window keeps sending frames of the old size until the pool follows it.
         if content.Width != self.pool_size.Width || content.Height != self.pool_size.Height {
-            pool.Recreate(&self.gpu.capture_device, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, content)?;
+            pool.Recreate(&self.gpu.capture_device, DirectXPixelFormat::B8G8R8A8UIntNormalized, POOL_BUFFERS, content)?;
             self.pool_size = content;
         }
 
@@ -85,12 +102,14 @@ impl Frames {
         let result = self
             .converter
             .convert(&self.gpu, texture, *content)
-            .and_then(|converted| encoder.write(&converted, media_time));
-        if let Err(error) = result {
+            .step("Converting a frame to NV12")
+            .and_then(|converted| encoder.write(&converted, media_time).step("Encoding a frame"));
+        if let Err(message) = result {
             // For example a full disk; the main loop stops the recording.
-            self.failure.get_or_insert_with(|| format!("The video encoder failed: {}", error.message()));
+            self.failure.get_or_insert(message);
             return;
         }
+        self.stats.frames_written += 1;
         if self.thumbnail.is_none() && media_time >= THUMBNAIL_TIME {
             self.thumbnail = self.snapshot();
         }
@@ -114,12 +133,13 @@ struct Target {
 }
 
 fn target(arguments: &[String]) -> Result<Target, Error> {
-    let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()?;
+    let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
+        .step("Opening Windows.Graphics.Capture")?;
     let source_id = argument(arguments, "--source-id");
     if argument(arguments, "--source-kind") == Some("window") {
         let handle = source_id.and_then(|id| id.parse::<usize>().ok()).ok_or("The window to record is invalid.")?;
         let window = sources::window(HWND(handle as *mut _)).ok_or("The window to record is no longer open.")?;
-        let item = unsafe { interop.CreateForWindow(window.hwnd)? };
+        let item = unsafe { interop.CreateForWindow(window.hwnd) }.step("Starting capture of the window")?;
         return Ok(Target {
             item,
             origin: (f64::from(window.bounds.left), f64::from(window.bounds.top)),
@@ -127,7 +147,7 @@ fn target(arguments: &[String]) -> Result<Target, Error> {
         });
     }
     let display = sources::find_display(source_id)?.ok_or("ScreenSway could not find the main display.")?;
-    let item = unsafe { interop.CreateForMonitor(display.monitor)? };
+    let item = unsafe { interop.CreateForMonitor(display.monitor) }.step("Starting capture of the display")?;
     Ok(Target {
         item,
         origin: (f64::from(display.bounds.left), f64::from(display.bounds.top)),
@@ -136,7 +156,7 @@ fn target(arguments: &[String]) -> Result<Target, Error> {
 }
 
 pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
-    if !GraphicsCaptureSession::IsSupported()? {
+    if !GraphicsCaptureSession::IsSupported().step("Checking for Windows.Graphics.Capture")? {
         return Err("Screen capture needs Windows 10 version 1903 or newer.".into());
     }
     let project = PathBuf::from(argument(arguments, "--output").ok_or("Missing --output directory.")?);
@@ -153,7 +173,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
 
     let target = target(arguments)?;
     // Physical pixels already are the native density; only very large captures are scaled.
-    let item_size = target.item.Size()?;
+    let item_size = target.item.Size().step("Reading the capture size")?;
     let source_size = if item_size.Width > 0 && item_size.Height > 0 {
         (item_size.Width as u32, item_size.Height as u32)
     } else {
@@ -163,6 +183,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
 
     let gpu = Arc::new(Gpu::new()?);
     let encoder = Encoder::new(&video_path, &gpu, width, height)?;
+    let encoder_name = encoder.name.clone();
     let frames = Arc::new(Mutex::new(Frames {
         gpu: gpu.clone(),
         timeline: VideoTimeline::default(),
@@ -172,15 +193,25 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         thumbnail: None,
         pool_size: item_size,
         failure: None,
+        stats: CaptureStats {
+            encoder: encoder_name,
+            source_width: source_size.0,
+            source_height: source_size.1,
+            width,
+            height,
+            ..Default::default()
+        },
+        frame_time_total_ms: 0.0,
     }));
 
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
         &gpu.capture_device,
         DirectXPixelFormat::B8G8R8A8UIntNormalized,
-        2,
+        POOL_BUFFERS,
         item_size,
-    )?;
-    let session = pool.CreateCaptureSession(&target.item)?;
+    )
+    .step("Creating the capture frame pool")?;
+    let session = pool.CreateCaptureSession(&target.item).step("Creating the capture session")?;
     // The pointer is drawn later from the log, so it can be smoothed and scaled.
     let _ = session.SetIsCursorCaptureEnabled(false);
     // Windows 11 draws a yellow border around captured content unless told otherwise.
@@ -193,12 +224,13 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
             let Ok(frame) = pool.TryGetNextFrame() else { return Ok(()) };
             let Ok(mut frames) = frames.lock() else { return Ok(()) };
             if let Err(error) = frames.receive(pool, frame) {
-                frames.failure.get_or_insert_with(|| format!("Screen capture failed: {}", error.message()));
+                let message = format!("Receiving a frame failed: {} (0x{:08X})", error.message(), error.code().0 as u32);
+                frames.failure.get_or_insert(message);
             }
             Ok(())
         })
     };
-    pool.FrameArrived(&frame_handler)?;
+    pool.FrameArrived(&frame_handler).step("Listening for frames")?;
     // A recorded window was closed, or a display was disconnected.
     let closed = Arc::new(AtomicBool::new(false));
     {
@@ -206,12 +238,13 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         target.item.Closed(&TypedEventHandler::new(move |_, _| {
             closed.store(true, Ordering::SeqCst);
             Ok(())
-        }))?;
+        }))
+        .step("Listening for the capture to end")?;
     }
 
     let created_at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs());
     let started = Instant::now();
-    session.StartCapture()?;
+    session.StartCapture().step("Starting the capture")?;
     // The first frame usually arrives within a few milliseconds; give the capture a moment so
     // the video does not start black.
     let wait_until = Instant::now() + Duration::from_millis(500);
@@ -279,17 +312,21 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     let _ = pool.Close();
     let _ = pointer_thread.join();
 
-    let (encoder, has_frames, thumbnail) = {
+    let (encoder, has_frames, thumbnail, mut stats) = {
         let mut frames = frames.lock().map_err(|_| "The capture state is unavailable.")?;
         let (end, closing) = frames.timeline.finish(recording_end);
         if let Some(time) = closing {
             frames.encode_latest(time);
         }
         let thumbnail = frames.thumbnail.take().or_else(|| frames.latest.take());
-        (frames.encoder.take().map(|encoder| (encoder, end)), frames.timeline.has_frames(), thumbnail)
+        let mut stats = std::mem::take(&mut frames.stats);
+        if stats.frames_received > 0 {
+            stats.average_frame_ms = frames.frame_time_total_ms / stats.frames_received as f64;
+        }
+        (frames.encoder.take().map(|encoder| (encoder, end)), frames.timeline.has_frames(), thumbnail, stats)
     };
     if let Some((encoder, end)) = encoder {
-        encoder.finish(end)?;
+        encoder.finish(end).step("Finishing the video file")?;
     }
     if let Some(message) = failure {
         return Err(message.into());
@@ -307,6 +344,8 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         (pointer.duration_ms(recording_end), pointer.samples().to_vec())
     };
     std::fs::write(&pointer_events_path, serde_json::to_vec_pretty(&pointer_events)?)?;
+    stats.duration_ms = duration_ms;
+    let _ = std::fs::write(metadata.join("capture-stats.json"), serde_json::to_vec_pretty(&stats)?);
     let manifest = ProjectManifest {
         schema_version: 1,
         title: project.file_stem().map_or_else(String::new, |stem| stem.to_string_lossy().into_owned()),
