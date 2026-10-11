@@ -4,13 +4,15 @@ The marketing site lives in `apps/web` and deploys through the existing GitHub P
 
 ## Product story
 
+The page is deliberately compact: hero/downloads and the interactive demo → four benefit cards → five essential FAQs → a compact download CTA. The benefits combine auto zoom/editing, styles/backgrounds, audio/offline captions and 4K export. A short trust line covers local processing. Standalone metrics, how-it-works, recording-feature bento, Studio cards, export story, privacy illustration and FAQ chat were consolidated or removed to avoid repetition. Header navigation links only to the demo, benefits and FAQ; installation detail remains in the platform popup.
+
 The page follows recording → Studio editing → export. `StudioShowcase.tsx` wraps the existing shared-camera demo with the five real `BUILT_IN_STYLES` presets and a sample-caption toggle. It explicitly labels the result as an interactive illustration rather than a real recording editor.
 
 `RecordingFrame.tsx` uses `computeLayout` and `paintFrameBase` from the shared core, exactly like the desktop preview/export. Do not replace frames or backgrounds with approximate CSS: Studio uses its mesh and dark macOS chrome, Clean uses light macOS chrome, MacBook includes its bezel/camera/base, Website includes browser chrome and a 16:9 canvas, and Social uses waves/grain/glass on a square canvas. The eight desktop frame types are also independently selectable. Style thumbnails use the same painter, with an Auto canvas as in the desktop style picker. Applying a style resets the frame override, without resetting demo playback or sample captions.
 
 The sample captions contain six timed lines in both languages and use the demo playback clock, so pausing also pauses subtitles. Captions stay outside the camera transform to remain readable during zooms.
 
-The Studio section describes styles and reusable backgrounds, start/end trim and editable zooms, system audio and microphone processing, and on-device Vietnamese/English captions with MP4 and SRT output. Export copy covers 1080p/1440p/4K at 60 fps, frame presets and the local processing boundary. Ground future changes in `docs/product.md` and the desktop implementation; do not advertise roadmap capabilities as shipped.
+The benefit cards describe styles and reusable backgrounds, start/end trim and editable zooms, system audio and microphone processing, and on-device Vietnamese/English captions with MP4 and SRT output. Export copy covers 1080p/1440p/4K at 60 fps, frame presets and the local processing boundary. Ground future changes in `docs/product.md` and the desktop implementation; do not advertise roadmap capabilities as shipped.
 
 ## Design decisions
 
@@ -28,7 +30,7 @@ Browser QA should cover English/Vietnamese and light/dark at 375, 768, 1024 and 
 - Play/pause the demo. Reduced motion must start paused and reveal content immediately.
 - Open the new export/caption FAQs and the install dialog; Escape must dismiss the dialog.
 - Switch language and theme, and check that the header and content fit the viewport.
-- Repeatedly switch EN/VI with normal motion as well as reduced motion, then scroll through every Studio card. Cards must retain stable, language-independent keys and remain visible; refresh reveal observers when the language changes.
+- Repeatedly switch EN/VI with normal motion as well as reduced motion, then scroll through every benefit card. Cards must retain stable, language-independent keys and remain visible; refresh reveal observers when the language changes.
 - Let the demo complete a loop with sample captions enabled: all six lines must appear. Pause and verify the line stays unchanged, then switch language and hide/show captions.
 - Verify the download filename and install-guide behavior. A mocked download validates interaction only; verify the real hosted DMG separately after deployment.
 

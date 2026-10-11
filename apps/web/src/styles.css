@@ -739,3 +739,28 @@ main:focus { outline: none; }
 .mock-windows-toggle small { color: var(--text-muted); font-size: 10px; }
 .mock-windows-launch { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hairline); }
 .mock-windows-launch > svg:last-child { margin-left: auto; color: var(--success); }
+
+/* A short product story: live demo, four benefits, essential FAQ, download. */
+.benefits { width: var(--content); margin: 80px auto 0; }
+.benefits-heading { max-width: 760px; margin-bottom: 28px; }
+.benefits-heading h2 { font-size: clamp(30px, 4vw, 46px); line-height: 1.15; letter-spacing: -.04em; }
+.benefits-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.benefit-card { padding: 26px; border: 1px solid var(--glass-border); border-radius: 20px; background: var(--glass-fill); }
+.benefit-icon { display: inline-flex; margin-bottom: 14px; color: var(--accent-text); }
+.benefit-card h3 { margin-bottom: 8px; font-size: 21px; line-height: 1.3; letter-spacing: -.02em; }
+.benefit-card p { color: var(--text-muted); font-size: 16px; line-height: 1.6; }
+.benefits-trust { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; color: var(--text-muted); font-size: 14px; text-align: center; }
+.benefits-trust svg { flex: none; color: var(--accent-text); }
+.faq { margin-top: 72px; }
+.cta { margin-top: 64px; padding: 44px 24px; border-radius: 28px; }
+.cta h2 { font-size: clamp(28px, 3.5vw, 42px); }
+.cta .download-actions { margin-top: 24px; }
+.site-footer { margin-top: 48px; }
+@media (max-width: 700px) {
+  .benefits { margin-top: 56px; }
+  .benefits-grid { grid-template-columns: 1fr; gap: 12px; }
+  .benefit-card { padding: 22px; }
+  .benefits-trust { align-items: flex-start; text-align: left; }
+  .faq { margin-top: 56px; gap: 24px; }
+  .cta { margin-top: 48px; padding: 32px 16px; }
+}
