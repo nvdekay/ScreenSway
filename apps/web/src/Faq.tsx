@@ -10,6 +10,8 @@ const QUESTIONS: [MessageKey, MessageKey][] = [
   ["faq.q3", "faq.a3"],
   ["faq.q4", "faq.a4"],
   ["faq.q5", "faq.a5"],
+  ["faq.q7", "faq.a7"],
+  ["faq.q8", "faq.a8"],
   ["faq.q6", "faq.a6"],
 ];
 
