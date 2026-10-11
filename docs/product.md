@@ -34,7 +34,7 @@ Ordered by expected impact on activation, sharing and retention.
 4. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
 5. More editing: speed up idle stretches, cut out the middle of a recording, keystroke overlay.
 6. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
-7. Windows capture (the landing page marks it "coming soon").
+7. Windows version (in progress; the landing page marks it "coming soon"): capture works, then audio, export, captions and an installer release.
 8. Library management: rename, search, delete, hover scrub.
 
 Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
