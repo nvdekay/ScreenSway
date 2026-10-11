@@ -267,3 +267,4 @@ function stepSpring(
 
 export * from "./frame";
 export * from "./captions";
+export * from "./paint";
