@@ -4,7 +4,9 @@ The marketing site lives in `apps/web` and deploys through the existing GitHub P
 
 ## Product story
 
-The page follows recording → Studio editing → export. `StudioShowcase.tsx` wraps the existing shared-camera demo with five illustrative style previews and a sample-caption toggle. It explicitly labels the result as an interactive illustration rather than a real recording editor.
+The page follows recording → Studio editing → export. `StudioShowcase.tsx` wraps the existing shared-camera demo with the five real `BUILT_IN_STYLES` presets and a sample-caption toggle. It explicitly labels the result as an interactive illustration rather than a real recording editor.
+
+`RecordingFrame.tsx` uses `computeLayout` and `paintFrameBase` from the shared core, exactly like the desktop preview/export. Do not replace frames or backgrounds with approximate CSS: Studio uses its mesh and dark macOS chrome, Clean uses light macOS chrome, MacBook includes its bezel/camera/base, Website includes browser chrome and a 16:9 canvas, and Social uses waves/grain/glass on a square canvas. The eight desktop frame types are also independently selectable. Style thumbnails use the same painter, with an Auto canvas as in the desktop style picker. Applying a style resets the frame override, without resetting demo playback or sample captions.
 
 The sample captions contain six timed lines in both languages and use the demo playback clock, so pausing also pauses subtitles. Captions stay outside the camera transform to remain readable during zooms.
 
@@ -21,6 +23,7 @@ Run `pnpm --filter @screensway/web typecheck`, `pnpm build:web` and `pnpm test`.
 Browser QA should cover English/Vietnamese and light/dark at 375, 768, 1024 and 1440 px, including reduced motion:
 
 - Change each of the five styles; selected state and the preview must agree.
+- Try all eight frame types with each preset. Compare the background canvas pixels with the shared painter and the recording viewport bounds with `computeLayout`; styles must retain their real aspect, padding, radius and shadow. Verify English/Vietnamese labels match the app.
 - Show/hide sample captions and compare auto zoom with the raw recording.
 - Play/pause the demo. Reduced motion must start paused and reveal content immediately.
 - Open the new export/caption FAQs and the install dialog; Escape must dismiss the dialog.
@@ -30,3 +33,5 @@ Browser QA should cover English/Vietnamese and light/dark at 375, 768, 1024 and 
 - Verify the download filename and install-guide behavior. A mocked download validates interaction only; verify the real hosted DMG separately after deployment.
 
 The redesign passed these browser checks across all 16 layout combinations, plus 33 shared-core tests and the web production build. The private repository's Pages workflow is responsible for publishing the actual latest release asset.
+
+The shared-renderer update additionally passed 720 browser comparisons (five presets × preset default/eight frame overrides × 16 layout combinations): frame canvas pixels match `paintFrameBase`, video placement matches `computeLayout`, and controls fit the viewport. Normal-motion checks also cover all six timed subtitles, pause across style changes and repeated locale switching without losing Studio content.

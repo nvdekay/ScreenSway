@@ -3,11 +3,14 @@ import {
   generateZoomSegments,
   sampleCameraTrack,
   samplePointer,
+  DEFAULT_FRAME_SETTINGS,
+  type FrameSettings,
   type PointerEvent,
 } from "@screensway/core";
 import { BarChart3, FileText, LayoutGrid, Pause, Play, Plus, Settings, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "./i18n";
+import { RecordingFrame } from "./RecordingFrame";
 
 /** The mock app is laid out in this logical coordinate space and scaled to fit. */
 const SCREEN = { width: 1200, height: 750 };
@@ -114,7 +117,7 @@ function MockApp() {
   );
 }
 
-export function Demo({ showCaptions = false }: { showCaptions?: boolean }) {
+export function Demo({ showCaptions = false, settings = DEFAULT_FRAME_SETTINGS }: { showCaptions?: boolean; settings?: FrameSettings }) {
   const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLDivElement>(null);
@@ -252,27 +255,29 @@ export function Demo({ showCaptions = false }: { showCaptions?: boolean }) {
       </div>
 
       <div className="demo-frame">
-        <div className="demo-stage" ref={stageRef} role="img" aria-label={t("demo.label")}>
-          <div className="demo-camera" ref={cameraRef}>
-            <div className="demo-screen" ref={screenRef} data-step="0">
-              <MockApp />
-              <span className="demo-ripple" ref={rippleRef} />
-              <div className="demo-cursor" ref={cursorRef}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M4.5 2.8v16.6c0 .6.7.9 1.1.4l3.9-4.2 2.6 6.1c.2.4.6.6 1 .4l2.2-.9c.4-.2.6-.6.4-1l-2.6-6h5.7c.6 0 .9-.7.5-1.1L5.6 2.4c-.4-.4-1.1-.1-1.1.4z"
-                    fill="#111"
-                    stroke="#fff"
-                    strokeWidth="1.5"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+        <RecordingFrame settings={settings}>
+          <div className="demo-stage" ref={stageRef} role="img" aria-label={t("demo.label")}>
+            <div className="demo-camera" ref={cameraRef}>
+              <div className="demo-screen" ref={screenRef} data-step="0">
+                <MockApp />
+                <span className="demo-ripple" ref={rippleRef} />
+                <div className="demo-cursor" ref={cursorRef}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4.5 2.8v16.6c0 .6.7.9 1.1.4l3.9-4.2 2.6 6.1c.2.4.6.6 1 .4l2.2-.9c.4-.2.6-.6.4-1l-2.6-6h5.7c.6 0 .9-.7.5-1.1L5.6 2.4c-.4-.4-1.1-.1-1.1.4z"
+                      fill="#111"
+                      stroke="#fff"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
+            <span className="demo-badge" ref={badgeRef} data-visible="false" aria-hidden="true" />
+            {showCaptions && <p className="sample-caption">{t(sampleCaption)}</p>}
           </div>
-          <span className="demo-badge" ref={badgeRef} data-visible="false" aria-hidden="true" />
-          {showCaptions && <p className="sample-caption">{t(sampleCaption)}</p>}
-        </div>
+        </RecordingFrame>
         <div className="demo-footer">
           <p className="demo-caption" key={caption}>{t(caption)}</p>
           <div className="demo-timeline" aria-hidden="true">
