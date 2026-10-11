@@ -17,7 +17,7 @@ import {
   Video,
   ZoomIn,
 } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { DOWNLOADS, preferredPlatform } from "./downloads";
 import { CONTACT_MAILTO } from "./contact";
@@ -33,9 +33,27 @@ const MAC_DOWNLOAD = DOWNLOADS.macos;
 
 function WindowsIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#0078d4" aria-hidden="true">
       <path d="M3 4.7 10.4 3.7v7.6H3V4.7Zm8.4-1.15L21 2.2v9.1h-9.6V3.55ZM3 12.3h7.4v7.6L3 18.85V12.3Zm8.4 0H21v9.5l-9.6-1.35V12.3Z" />
     </svg>
+  );
+}
+
+function AppleIcon() {
+  const gradientId = useId();
+  return (
+    <Apple size={20} fill={`url(#${gradientId})`} stroke={`url(#${gradientId})`} aria-hidden="true">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#61bb46" /><stop offset="16.67%" stopColor="#61bb46" />
+          <stop offset="16.67%" stopColor="#fdb827" /><stop offset="33.33%" stopColor="#fdb827" />
+          <stop offset="33.33%" stopColor="#f5821f" /><stop offset="50%" stopColor="#f5821f" />
+          <stop offset="50%" stopColor="#e03a3e" /><stop offset="66.67%" stopColor="#e03a3e" />
+          <stop offset="66.67%" stopColor="#963d97" /><stop offset="83.33%" stopColor="#963d97" />
+          <stop offset="83.33%" stopColor="#009ddc" /><stop offset="100%" stopColor="#009ddc" />
+        </linearGradient>
+      </defs>
+    </Apple>
   );
 }
 
@@ -115,7 +133,7 @@ function DownloadActions({ centered = false }: { centered?: boolean }) {
   return (
     <div className={`download-actions${centered ? " centered" : ""}`}>
       <a className="button-primary" href={MAC_DOWNLOAD} download onClick={() => openInstallGuide("macos")}>
-        <Apple size={20} fill="currentColor" aria-hidden="true" />
+        <AppleIcon />
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
       </a>
@@ -224,7 +242,7 @@ export default function App() {
         <div className="header-actions">
           <ThemeSwitch />
           <LanguageSwitch />
-          <a className="header-download" href={DOWNLOADS[preferredPlatform()]} download onClick={() => openInstallGuide(preferredPlatform())}>{t("nav.download")}</a>
+          <button className="header-download" onClick={() => openInstallGuide(preferredPlatform())}>{t("nav.download")}</button>
         </div>
       </header>
 

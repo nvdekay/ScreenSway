@@ -35,3 +35,5 @@ Browser QA should cover English/Vietnamese and light/dark at 375, 768, 1024 and 
 The redesign passed these browser checks across all 16 layout combinations, plus 33 shared-core tests and the web production build. The private repository's Pages workflow is responsible for publishing the actual latest release asset.
 
 The shared-renderer update additionally passed 720 browser comparisons (five presets × preset default/eight frame overrides × 16 layout combinations): frame canvas pixels match `paintFrameBase`, video placement matches `computeLayout`, and controls fit the viewport. Normal-motion checks also cover all six timed subtitles, pause across style changes and repeated locale switching without losing Studio content.
+
+The header’s Download guide button opens the install dialog without starting a download. Its active platform tab names and links the corresponding installer. The main download actions use the classic rainbow Apple mark and Windows blue mark in both themes.
