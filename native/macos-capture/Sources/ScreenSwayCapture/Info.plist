@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>app.screensway.capture</string>
+  <key>CFBundleName</key>
+  <string>ScreenSway</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>ScreenSway records your voice with the screen when you turn on the microphone.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>ScreenSway turns the speech in your recordings into captions, entirely on this Mac.</string>
+</dict>
+</plist>

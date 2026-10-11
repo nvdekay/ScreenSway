@@ -66,11 +66,21 @@ function stripSymbols(binary) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// An ad-hoc signature binds the embedded Info.plist to the binary. Without it macOS
+// ignores the usage descriptions and ends the helper when it asks for speech recognition.
+// Release bundles are signed again by Tauri with the app's entitlements.
+function signBinary(binary) {
+  const result = spawnSync("codesign", ["--force", "--sign", "-", binary], { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
 function installBinary(source, target) {
   const targetPath = path.join(binariesPath, `screensway-capture-${target}`);
   copyFileSync(source, targetPath);
   chmodSync(targetPath, 0o755);
   stripSymbols(targetPath);
+  signBinary(targetPath);
   return targetPath;
 }
 
@@ -84,6 +94,7 @@ if (targetTriple === "universal-apple-darwin") {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
+  signBinary(destination);
 } else {
   installBinary(buildSwiftTarget(targetTriple), targetTriple);
 }
