@@ -19,6 +19,7 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 - Studio preview with automatic, spring-based zoom and pan that follows clicks, a smooth re-rendered cursor and click ripples.
 - Styles: built-in looks (Studio, Clean, MacBook, Website, Social) and your own saved styles, applied in one click.
 - Frame customization: a library of mesh, linear and wave backgrounds, solid colors and a custom two-color gradient, your own images (kept in Movies › ScreenSway › Backgrounds for reuse) with blur, a Magic background built from the recording's colors, film grain; macOS light/dark, browser light/dark (with address bar), MacBook, glass and outline frames; aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
+- Timeline: trim the start and end, move, resize, add or remove zooms and set each zoom's depth; edits are saved with the recording and can be reset to the automatic zooms.
 - Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
 - A local library of recordings, Vietnamese and English UI, Retina/standard display hints.
 

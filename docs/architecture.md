@@ -21,6 +21,7 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
     media/screen.mp4              H.264 High video, plus one AAC track when system audio and/or the microphone was on
     media/thumbnail.jpg           written by the helper for the library
     metadata/pointer-events.json  pointer moves and clicks in video pixels, ms on the video timeline
+    edits.json                    trim and zoom edits from the studio (absent until something is edited)
   Exports/
     ScreenSway <date time>.mp4    rendered videos
   Backgrounds/
@@ -45,13 +46,14 @@ The pointer is stored as metadata instead of being burned into the video, so the
 - `generateZoomSegments` turns clicks into zoom segments; `buildCameraTrack` simulates a 60 fps critically damped spring camera with a pan dead zone.
 - `FrameSettings` (background, frame style, aspect, padding, radius, shadow, quality) → `computeLayout` gives the output size and the window/video rectangles. Each frame style declares its chrome in video widths (title bar, device bezel, laptop base and its overhang), so window, browser and MacBook frames share one fitting rule; the layout also says how the video's own corners are rounded, which the preview and the exporter both use.
 - Backgrounds are data (`solid`, `linear`, `mesh`, `waves`, `image`) painted in code, so presets stay sharp at 4K and add nothing to the download. `BUILT_IN_STYLES` are ready-made looks; saved styles live in the UI's local storage. Image backgrounds reference a copy in `Backgrounds/`, read back as a data URL so the export canvas is never tainted.
+- `RecordingEdits` holds the trim and the zooms; `zooms: null` means "follow the clicks" (`generateZoomSegments`), an edited list replaces them. `normalizeZooms` keeps zooms sorted, non-overlapping, at least 400 ms and between 1.2× and 3×; `trimRange` keeps at least 500 ms. The camera is always simulated over the whole recording, so a trimmed export shows exactly what the preview shows at that moment.
 - `buildRenderFrames` produces the per-frame plan: source crop, cursor position and size, click ripple. The preview and the export both follow this plan, so they match.
 - The background, shadow and title bar are painted by one canvas function (`apps/desktop/src/frame/paint.ts`): at screen size for the preview and at output size for export.
-- Export: the UI sends the plan plus the painted background and cursor PNGs to `export_recording`. The shell writes them next to the project and runs `screensway-capture --export job.json`. The exporter decodes the recording, composes each frame with Core Image on Metal (edge-extended Lanczos scaling, rounded video mask, cursor, ripple), encodes 60 fps H.264 High, then adds the original audio track without re-encoding. Progress is streamed as `export-progress` events.
+- Export: the UI sends the plan plus the painted background and cursor PNGs to `export_recording`. The shell writes them next to the project and runs `screensway-capture --export job.json`. The exporter decodes the recording, composes each frame with Core Image on Metal (edge-extended Lanczos scaling, rounded video mask, cursor, ripple), encodes 60 fps H.264 High, then adds the original audio track without re-encoding. With a trimmed start the job carries `startMs`: the exporter reads from shortly before it and copies the audio from the same moment. Progress is streamed as `export-progress` events.
 
 ## Desktop shell commands
 
-Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `systemAudio` and `microphone`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `reveal_recording`, `read_thumbnail`. Backgrounds: `save_background_image`, `list_background_images`, `read_background_image`, `delete_background_image`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`, `open_microphone_settings`. File access is limited to `~/Movies/ScreenSway`.
+Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `systemAudio` and `microphone`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `reveal_recording`, `read_thumbnail`, `load_edits`, `save_edits`. Backgrounds: `save_background_image`, `list_background_images`, `read_background_image`, `delete_background_image`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`, `open_microphone_settings`. File access is limited to `~/Movies/ScreenSway`.
 
 ## Privacy boundary
 

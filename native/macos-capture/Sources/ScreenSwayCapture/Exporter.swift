@@ -32,6 +32,12 @@ struct ExportJob: Decodable {
     /// One entry per output frame, see `RenderFrame` in @screensway/core:
     /// [cropX, cropY, cropW, cropH, cursorX, cursorY, cursorSize, rippleX, rippleY, rippleSize, rippleAlpha]
     let frames: [[Double]]
+    /// Where the export starts in the recording, when the start was trimmed.
+    let startMs: Double?
+
+    var start: CMTime {
+        CMTime(value: CMTimeValue(max(0, startMs ?? 0).rounded()), timescale: 1_000)
+    }
 }
 
 struct ExportResult: Encodable {
@@ -53,7 +59,7 @@ enum Exporter {
         try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         try await renderVideo(job: job, sourceURL: sourceURL, to: videoOnlyURL)
-        try await addSourceAudio(from: sourceURL, video: videoOnlyURL, to: outputURL)
+        try await addSourceAudio(from: sourceURL, startingAt: job.start, video: videoOnlyURL, to: outputURL)
 
         let durationMs = Int((Double(job.frames.count) / Double(job.fps) * 1_000).rounded())
         return ExportResult(outputPath: outputURL.path, durationMs: durationMs, width: job.width, height: job.height)
@@ -74,6 +80,12 @@ enum Exporter {
         ])
         readerOutput.alwaysCopiesSampleData = false
         reader.add(readerOutput)
+        // Skip most of a trimmed start, keeping a little earlier: on a still screen the
+        // frame that is showing at the start may have arrived a while before it.
+        let preroll = CMTime(value: 3, timescale: 1)
+        if job.start > preroll {
+            reader.timeRange = CMTimeRange(start: job.start - preroll, duration: .positiveInfinity)
+        }
         guard reader.startReading() else {
             throw reader.error ?? CaptureError.exportFailed("The recording could not be read.")
         }
@@ -137,7 +149,8 @@ enum Exporter {
             try autoreleasepool {
                 // Recordings have a variable frame rate: show the newest source frame at or before this time.
                 let time = CMTime(value: CMTimeValue(index), timescale: CMTimeScale(job.fps))
-                while let next = pending, next.presentationTimeStamp <= time + CMTime(value: 1, timescale: 1_000) {
+                let sourceTime = job.start + time
+                while let next = pending, next.presentationTimeStamp <= sourceTime + CMTime(value: 1, timescale: 1_000) {
                     current = next
                     pending = readerOutput.copyNextSampleBuffer()
                 }
@@ -216,8 +229,8 @@ enum Exporter {
         }
     }
 
-    /// Copies the recording's audio (unchanged) next to the rendered video.
-    private static func addSourceAudio(from sourceURL: URL, video videoURL: URL, to outputURL: URL) async throws {
+    /// Copies the recording's audio (unchanged, from the trimmed start) next to the rendered video.
+    private static func addSourceAudio(from sourceURL: URL, startingAt start: CMTime, video videoURL: URL, to outputURL: URL) async throws {
         try? FileManager.default.removeItem(at: outputURL)
         let source = AVURLAsset(url: sourceURL)
         guard let audioTrack = try await source.loadTracks(withMediaType: .audio).first else {
@@ -229,7 +242,11 @@ enum Exporter {
             throw CaptureError.exportFailed("The rendered video has no track.")
         }
         let duration = try await rendered.load(.duration)
-        let audioDuration = try await audioTrack.load(.timeRange).duration
+        let audioDuration = try await audioTrack.load(.timeRange).end - start
+        guard audioDuration > .zero else {
+            try FileManager.default.moveItem(at: videoURL, to: outputURL)
+            return
+        }
 
         let composition = AVMutableComposition()
         guard let compositionVideo = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -238,7 +255,7 @@ enum Exporter {
         }
         try compositionVideo.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: videoTrack, at: .zero)
         try compositionAudio.insertTimeRange(
-            CMTimeRange(start: .zero, duration: CMTimeMinimum(duration, audioDuration)), of: audioTrack, at: .zero
+            CMTimeRange(start: start, duration: CMTimeMinimum(duration, audioDuration)), of: audioTrack, at: .zero
         )
         guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             throw CaptureError.exportFailed("Could not initialize the exporter.")

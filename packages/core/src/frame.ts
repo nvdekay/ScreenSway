@@ -6,6 +6,7 @@ import {
   type Canvas,
   type CameraState,
   type PointerEvent,
+  type ZoomSegment,
 } from "./index";
 
 /** A soft blob of color used to build mesh-style gradients. All values are fractions of the canvas. */
@@ -309,6 +310,18 @@ const RIPPLE_MS = 550;
  */
 export type RenderFrame = [number, number, number, number, number, number, number, number, number, number, number];
 
+export interface RenderOptions {
+  /** Zooms to follow; generated from the clicks when omitted. */
+  zooms?: ZoomSegment[];
+  /** The part of the recording to render (defaults to all of it). */
+  startMs?: number;
+  endMs?: number;
+}
+
+/**
+ * Frames for the kept part of the recording. The camera is simulated over the whole
+ * recording, so a trimmed export shows exactly what the preview shows at that moment.
+ */
 export function buildRenderFrames(
   events: PointerEvent[],
   source: Canvas,
@@ -316,17 +329,20 @@ export function buildRenderFrames(
   durationMs: number,
   fps: number,
   autoZoom: boolean,
+  options: RenderOptions = {},
 ): RenderFrame[] {
-  const segments = generateZoomSegments(events);
+  const segments = options.zooms ?? generateZoomSegments(events);
+  const startMs = Math.max(0, options.startMs ?? 0);
+  const endMs = Math.min(durationMs, options.endMs ?? durationMs);
   const track = buildCameraTrack(events, segments, source, durationMs + 1_000);
   const clicks = events.filter((event) => event.type !== "move");
   const frames: RenderFrame[] = [];
-  const count = Math.max(1, Math.ceil((durationMs / 1_000) * fps));
+  const count = Math.max(1, Math.ceil(((endMs - startMs) / 1_000) * fps));
   const round = (value: number) => Math.round(value * 100) / 100;
   let clickIndex = -1;
 
   for (let index = 0; index < count; index++) {
-    const timeMs = (index * 1_000) / fps;
+    const timeMs = startMs + (index * 1_000) / fps;
     const camera: CameraState = autoZoom ? sampleCameraTrack(track, timeMs) : { x: 0.5, y: 0.5, scale: 1 };
     const cropWidth = source.width / camera.scale;
     const cropHeight = source.height / camera.scale;

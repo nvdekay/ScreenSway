@@ -4,7 +4,14 @@ import {
   clampCamera,
   generateZoomSegments,
   sampleCameraTrack,
+  MAX_ZOOM_SCALE,
+  MIN_ZOOM_MS,
+  MIN_ZOOM_SCALE,
+  NO_EDITS,
+  normalizeZooms,
+  resolveZooms,
   samplePointer,
+  trimRange,
   type PointerEvent,
 } from "./index";
 
@@ -63,5 +70,48 @@ describe("buildCameraTrack", () => {
     for (const frame of track.frames) {
       expect(frame).toEqual(clampCamera(frame));
     }
+  });
+});
+
+describe("edits", () => {
+  const zoom = (id: string, startMs: number, endMs: number, scale = 1.8) =>
+    ({ id, startMs, endMs, centerX: 100, centerY: 100, scale });
+
+  it("keeps the trim inside the recording and at least half a second long", () => {
+    expect(trimRange(NO_EDITS, 10_000)).toEqual({ startMs: 0, endMs: 10_000 });
+    expect(trimRange({ ...NO_EDITS, trimStartMs: 2_000, trimEndMs: 8_000 }, 10_000)).toEqual({ startMs: 2_000, endMs: 8_000 });
+    expect(trimRange({ ...NO_EDITS, trimStartMs: 9_900, trimEndMs: 9_950 }, 10_000)).toEqual({ startMs: 9_450, endMs: 9_950 });
+    expect(trimRange({ ...NO_EDITS, trimStartMs: -50, trimEndMs: 99_000 }, 10_000)).toEqual({ startMs: 0, endMs: 10_000 });
+    expect(trimRange({ ...NO_EDITS, trimEndMs: 100 }, 10_000)).toEqual({ startMs: 0, endMs: 500 });
+  });
+
+  it("follows the clicks until zooms are edited, then uses the edited list", () => {
+    const events: PointerEvent[] = [{ timeMs: 1_000, type: "leftClick", x: 10, y: 10 }];
+    expect(resolveZooms(NO_EDITS, events, 10_000)).toHaveLength(1);
+    expect(resolveZooms({ ...NO_EDITS, zooms: [] }, events, 10_000)).toEqual([]);
+    expect(resolveZooms({ ...NO_EDITS, zooms: [zoom("a", 5_000, 6_000, 2.5)] }, events, 10_000)[0].scale).toBe(2.5);
+  });
+
+  it("sorts zooms, removes overlaps and clamps length, position and depth", () => {
+    const normalized = normalizeZooms([
+      zoom("late", 6_000, 7_000, 9),
+      zoom("early", 1_000, 3_000, 0.5),
+      zoom("overlap", 2_500, 4_000),
+      zoom("tiny", 8_000, 8_050),
+      zoom("past-end", 9_900, 12_000),
+    ], 10_000);
+    expect(normalized.map((z) => z.id)).toEqual(["early", "overlap", "late", "tiny", "past-end"]);
+    for (let index = 1; index < normalized.length; index++) {
+      expect(normalized[index].startMs).toBeGreaterThanOrEqual(normalized[index - 1].endMs);
+    }
+    for (const z of normalized) {
+      expect(z.endMs - z.startMs).toBeGreaterThanOrEqual(MIN_ZOOM_MS);
+      expect(z.endMs).toBeLessThanOrEqual(10_000);
+      expect(z.scale).toBeGreaterThanOrEqual(MIN_ZOOM_SCALE);
+      expect(z.scale).toBeLessThanOrEqual(MAX_ZOOM_SCALE);
+    }
+    expect(normalized.find((z) => z.id === "overlap")!.startMs).toBe(3_000);
+    // A zoom with no room left after its neighbor is dropped instead of overlapping.
+    expect(normalizeZooms([zoom("a", 0, 9_800), zoom("b", 9_700, 10_000)], 10_000).map((z) => z.id)).toEqual(["a"]);
   });
 });
