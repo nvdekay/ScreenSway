@@ -37,3 +37,5 @@ The redesign passed these browser checks across all 16 layout combinations, plus
 The shared-renderer update additionally passed 720 browser comparisons (five presets × preset default/eight frame overrides × 16 layout combinations): frame canvas pixels match `paintFrameBase`, video placement matches `computeLayout`, and controls fit the viewport. Normal-motion checks also cover all six timed subtitles, pause across style changes and repeated locale switching without losing Studio content.
 
 The header’s Download guide button opens the install dialog without starting a download. Its active platform tab names and links the corresponding installer. The main download actions use the monochrome Apple mark and Windows blue mark in both themes.
+
+The macOS and Windows download actions share equal widths, filled backgrounds, shadows and hover/press effects in both the hero and footer CTA. Neither platform is visually secondary.

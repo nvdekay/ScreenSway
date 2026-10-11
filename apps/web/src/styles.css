@@ -261,6 +261,7 @@ main:focus { outline: none; }
 .hero-copy { max-width: 660px; margin: 0 auto; color: var(--text-muted); font-size: clamp(17px, 2vw, 20px); line-height: 1.6; animation: rise var(--dur-slow) var(--ease-out) 260ms both; }
 .download-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; animation: rise var(--dur-slow) var(--ease-out) 340ms both; }
 .download-actions.centered { justify-content: center; }
+.download-actions > .button-primary { width: 290px; max-width: 100%; justify-content: center; }
 .button-primary { position: relative; min-height: 56px; display: inline-flex; align-items: center; gap: 10px; padding: 0 22px 0 24px; border-radius: 999px; background: var(--button-bg); color: var(--button-text); font-size: 17px; font-weight: 700; box-shadow: var(--button-highlight), 0 14px 40px var(--button-glow); transition: transform var(--dur-fast) ease, box-shadow var(--dur-base) ease; }
 .button-primary:hover { transform: translateY(-2px); box-shadow: var(--button-highlight), 0 20px 50px var(--button-glow-hover); }
 .button-primary:active { transform: scale(.98); }
@@ -713,8 +714,6 @@ main:focus { outline: none; }
   .audio-art i { width: 3px; }
 }
 
-.button-secondary { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:56px; padding:0 22px; border:1px solid var(--text-muted, #888); border-radius:999px; color:inherit; font-size:17px; font-weight:700; text-decoration:none; transition:background .2s; }
-.button-secondary:hover { background:color-mix(in srgb, currentColor 8%, transparent); }
 .guide-platforms { display:flex; gap:8px; margin:16px 0; }
 .guide-platforms button { padding:8px 18px; border:1px solid #8886; border-radius:999px; background:transparent; color:inherit; cursor:pointer; }
 .guide-platforms button[aria-pressed="true"] { background:#7258ef; color:white; border-color:#7258ef; }
