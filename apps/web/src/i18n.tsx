@@ -392,9 +392,9 @@ function initialLanguage(): Language {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "en" || stored === "vi") return stored;
   } catch {
-    // Storage can be unavailable; fall back to the browser language.
+    // Storage can be unavailable; fall back to English.
   }
-  return navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
+  return "en";
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
