@@ -856,6 +856,72 @@ fn read_manifest(project: &std::path::Path) -> Result<ProjectManifest, String> {
     serde_json::from_slice(&data).map_err(|error| format!("The project file is damaged: {error}"))
 }
 
+fn replace_file(temporary: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(not(target_os = "windows"))]
+    return std::fs::rename(temporary, destination);
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows does not replace an existing destination with rename. Keep the old
+        // file beside it until the new one is in place, so a failed update is recoverable.
+        if !destination.exists() {
+            return std::fs::rename(temporary, destination);
+        }
+        let backup = destination.with_extension("json.bak");
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(destination, &backup)?;
+        match std::fs::rename(temporary, destination) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = std::fs::rename(backup, destination);
+                Err(error)
+            }
+        }
+    }
+}
+
+fn rename_recording_in(project: &std::path::Path, title: &str) -> Result<String, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("The recording name cannot be empty.".into());
+    }
+    if title.chars().count() > 120 || title.chars().any(char::is_control) {
+        return Err("The recording name must be 120 characters or fewer.".into());
+    }
+
+    let manifest_path = project.join("project.json");
+    let data = std::fs::read(&manifest_path)
+        .map_err(|error| format!("Could not read the project file: {error}"))?;
+    let mut manifest: serde_json::Value = serde_json::from_slice(&data)
+        .map_err(|error| format!("The project file is damaged: {error}"))?;
+    let fields = manifest.as_object_mut().ok_or("The project file is damaged.")?;
+    fields.insert("title".into(), serde_json::Value::String(title.into()));
+    let temporary = project.join("project.json.tmp");
+    std::fs::write(&temporary, serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?)
+        .map_err(|error| format!("Could not rename the recording: {error}"))?;
+    replace_file(&temporary, &manifest_path)
+        .map_err(|error| format!("Could not rename the recording: {error}"))?;
+    Ok(title.into())
+}
+
+#[tauri::command]
+fn rename_recording(project_path: String, title: String) -> Result<String, String> {
+    rename_recording_in(&resolve_project(&project_path)?, &title)
+}
+
+#[tauri::command]
+async fn delete_recording(project_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = resolve_project(&project_path)?;
+        std::fs::remove_dir_all(project).map_err(|error| format!("Could not delete the recording: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Library task failed: {error}"))?
+}
+
 #[tauri::command]
 async fn list_recordings() -> Result<Vec<RecordingEntry>, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -953,7 +1019,7 @@ fn write_project_json(project: &std::path::Path, name: &str, value: &serde_json:
     // Write next to the file and rename, so a crash never leaves half a file behind.
     let temporary = project.join(format!("{name}.tmp"));
     std::fs::write(&temporary, data).map_err(|error| format!("Could not save {name}: {error}"))?;
-    std::fs::rename(&temporary, project.join(name)).map_err(|error| format!("Could not save {name}: {error}"))
+    replace_file(&temporary, &project.join(name)).map_err(|error| format!("Could not save {name}: {error}"))
 }
 
 /// Captions edited in the studio, or null before any were made.
@@ -1580,6 +1646,8 @@ pub fn run() {
             set_native_labels,
             list_recordings,
             load_recording,
+            rename_recording,
+            delete_recording,
             reveal_recording,
             open_screen_recording_settings,
             open_microphone_settings,
@@ -1640,6 +1708,34 @@ mod tests {
 
         std::fs::write(project.join(EDITS_FILE), b"{ broken").unwrap();
         assert_eq!(read_edits(&project), None);
+        std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn recording_titles_are_validated_and_saved_without_losing_manifest_fields() {
+        let project = std::env::temp_dir().join(format!("screensway-rename-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("project.json"), br#"{
+          "schemaVersion": 1,
+          "title": "Old title",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "durationMs": 1000,
+          "canvas": { "width": 1920, "height": 1080 },
+          "media": { "screen": "media/screen.mp4" },
+          "pointerEvents": "metadata/pointer-events.json",
+          "futureField": { "keep": true }
+        }"#).unwrap();
+
+        assert_eq!(rename_recording_in(&project, "  Product demo  ").unwrap(), "Product demo");
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(project.join("project.json")).unwrap()).unwrap();
+        assert_eq!(saved["title"], "Product demo");
+        assert_eq!(saved["futureField"]["keep"], true);
+        assert!(rename_recording_in(&project, "   ").is_err());
+        assert!(rename_recording_in(&project, &"x".repeat(121)).is_err());
+        assert!(rename_recording_in(&project, "bad\nname").is_err());
+        assert!(!project.join("project.json.tmp").exists());
+
         std::fs::remove_dir_all(&project).unwrap();
     }
 

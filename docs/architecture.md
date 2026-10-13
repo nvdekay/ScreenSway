@@ -67,7 +67,7 @@ The pointer is stored as metadata instead of being burned into the video, so the
 
 ## Desktop shell commands
 
-Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `systemAudio` and `microphone`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `reveal_recording`, `read_thumbnail`, `load_edits`, `save_edits`. Captions: `transcribe_recording` (streams `transcribe-progress`), `cancel_transcription`, `load_captions`, `save_captions`, `open_speech_settings`. Backgrounds: `save_background_image`, `list_background_images`, `read_background_image`, `delete_background_image`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`, `open_microphone_settings`. File access is limited to `~/Movies/ScreenSway`.
+Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `systemAudio` and `microphone`), `set_recording_paused`, `stop_recording`, `cancel_countdown`, `get_recording_state`. Library: `list_recordings`, `load_recording`, `rename_recording`, `delete_recording`, `reveal_recording`, `read_thumbnail`, `load_edits`, `save_edits`. Captions: `transcribe_recording` (streams `transcribe-progress`), `cancel_transcription`, `load_captions`, `save_captions`, `open_speech_settings`. Backgrounds: `save_background_image`, `list_background_images`, `read_background_image`, `delete_background_image`. Export: `export_recording`, `cancel_export`, `open_export`. Other: `set_native_labels` (menu bar language), `open_screen_recording_settings`, `open_microphone_settings`. File access is limited to `~/Movies/ScreenSway`.
 
 ## Privacy boundary
 
