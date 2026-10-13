@@ -6,6 +6,7 @@ import {
   AppWindow,
   Check,
   CheckCircle2,
+  Download,
   FolderOpen,
   Info,
   Languages,
@@ -37,6 +38,7 @@ import { LogoMark } from "./LogoMark";
 import { isWindows, supportsAudio } from "./platform";
 import { RecordingStudio } from "./frame/RecordingStudio";
 import { type RecordingResult } from "./ZoomPreview";
+import { useUpdater, type UpdaterController } from "./updater";
 
 interface CaptureSource {
   id: string;
@@ -143,7 +145,7 @@ export function recordingMatches(entry: LibraryEntry, query: string, language: L
     .some((value) => value.toLocaleLowerCase(language === "vi" ? "vi-VN" : "en-US").includes(words));
 }
 
-function SettingsMenu() {
+function SettingsMenu({ updater }: { updater: UpdaterController }) {
   const { language, setLanguage, t } = useI18n();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -166,7 +168,7 @@ function SettingsMenu() {
   return (
     <div className="settings" ref={menuRef}>
       <button
-        className={`icon-button${open ? " active" : ""}`}
+        className={`icon-button${open ? " active" : ""}${updater.state.status === "available" ? " has-update" : ""}`}
         aria-label={t("settings.open")}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -189,6 +191,27 @@ function SettingsMenu() {
                 {language === option.code && <Check size={16} aria-hidden="true" />}
               </button>
             ))}
+          </div>
+          <div className="update-settings">
+            <span className="settings-label"><RotateCw size={14} aria-hidden="true" /> {t("update.title")}</span>
+            {updater.state.status === "available" ? (
+              <>
+                <strong>{t("update.available", { version: updater.state.version })}</strong>
+                <button className="update-button" onClick={() => void updater.install()}><Download size={14} /> {t("update.install")}</button>
+              </>
+            ) : updater.state.status === "downloading" ? (
+              <span className="update-status">{t("update.downloading", { percent: updater.state.progress ?? "…" })}</span>
+            ) : updater.state.status === "restarting" ? (
+              <span className="update-status">{t("update.restarting")}</span>
+            ) : updater.state.status === "checking" ? (
+              <span className="update-status">{t("update.checking")}</span>
+            ) : updater.state.status === "upToDate" ? (
+              <><span className="update-status success"><CheckCircle2 size={14} /> {t("update.current")}</span><button className="update-link" onClick={() => void updater.checkNow()}>{t("update.checkAgain")}</button></>
+            ) : updater.state.status === "error" ? (
+              <><span className="update-error">{t("update.failed")}</span><button className="update-link" onClick={() => void updater.checkNow()}>{t("update.retry")}</button></>
+            ) : (
+              <button className="update-link" onClick={() => void updater.checkNow()}>{t("update.check")}</button>
+            )}
           </div>
         </div>
       )}
@@ -305,6 +328,7 @@ export function LibraryCard({
 export default function App() {
   const { language, t } = useI18n();
   const recorder = useRecordingState();
+  const updater = useUpdater();
   const [busy, setBusy] = useState(false);
   const [sources, setSources] = useState<CaptureSource[]>([]);
   const [sourceKind, setSourceKind] = useState<CaptureSource["kind"]>("display");
@@ -501,7 +525,7 @@ export default function App() {
           <LogoMark size={30} />
           <span>ScreenSway</span>
         </a>
-        <SettingsMenu />
+        <SettingsMenu updater={updater} />
       </header>
 
       <section className="studio">

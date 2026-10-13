@@ -3,6 +3,12 @@
   "identifier": "default",
   "description": "Default capabilities for the ScreenSway desktop windows",
   "windows": ["main", "hud"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "process:allow-restart",
+    "updater:allow-check",
+    "updater:allow-download-and-install"
+  ]
 }
 
