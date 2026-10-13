@@ -16,24 +16,30 @@ The benefit cards describe styles and reusable backgrounds, start/end trim and e
 
 ## Design decisions
 
-UI UX Pro Max informed the product-demo-first hierarchy, visible play/pause controls, keyboard access, responsive layouts, contrast and reduced-motion behavior. The existing indigo identity, locally bundled Plus Jakarta Sans, theme switch, translations and install guide are retained. Product illustrations use CSS and Lucide rather than downloading decorative image assets. Both installation tabs include theme-aware visual mockups. Windows shows the downloaded installer, SmartScreen’s More info → Run anyway flow, and desktop microphone access; keep their labels bilingual and all three cards responsive.
+UI UX Pro Max informed the product-demo-first hierarchy, visible play/pause controls, keyboard access, responsive layouts, contrast and reduced-motion behavior. Translations and the install guide are retained.
+
+The visual language is a black stage with white ink and a violet accent (`#a78bfa`) taken from the hero globe, set in the locally bundled Plus Jakarta Sans (medium-weight headings with tight tracking, light lede). The hero fills the first viewport: a looping clip of a violet dot-matrix globe (`public/hero/globe.mp4`, 3 MB, with `globe.jpg` as poster) behind a two-line headline, lede, two equal white pill downloads with arrows, and the requirements note. The clip's last frame does not match its first, so `HeroBackdrop` in `App.tsx` stacks two copies and cross-fades them 0.9 s before the loop point; under reduced motion it stays on the first frame. The clip is fixed behind the whole page (`.page-bg`), so the globe and stars stay visible while scrolling; once the hero scrolls away a veil in the page colour (`--veil`, driven by `--dim` from the scroll position) thickens so the sections stay readable, and cards use a blurred glass fill. The page is dark only: the light theme and its switch were removed because the black video backdrop has no light counterpart. The clip came from the design reference the founder supplied, re-encoded from a 38 MB original; confirm its licence before reusing it elsewhere.
+
+The header is a flat transparent row: wordmark left, section links centred, a dark pill for the language switch and a white pill for the download guide. It gains a blurred bar once the page scrolls. The link of the section crossing the middle of the viewport is marked `aria-current`. At 900 px and below the same links and controls re-compose into a panel under the burger button (closes on Escape, outside click or a link).
+
+The opening sequence runs once: `index.html` adds `.anim` to `<html>` before first paint (never under reduced motion), `useEntrance` in `App.tsx` waits for fonts (500 ms guard), adds `.play`, then removes both classes so no residual transforms remain. Headline lines rise out of a mask, the lede lifts into focus, pills settle and nav items lift quietly; the video itself never animates. Product illustrations use CSS and Lucide rather than downloading decorative image assets. Both installation tabs include theme-aware visual mockups. Windows shows the downloaded installer, SmartScreen’s More info → Run anyway flow, and desktop microphone access; keep their labels bilingual and all three cards responsive.
 
 The page reports visits, download clicks and install-guide opens to the analytics API when `VITE_ANALYTICS_URL` is set (`src/analytics.ts`): no cookies or storage, and nothing for visitors who send Do Not Track or Global Privacy Control. The footer states this; keep it accurate (see `analytics.md`).
 
-A first visit always opens in English and dark mode, ignoring the browser language and system appearance. A `?lang=en|vi` parameter or the visitor's saved language/theme choice (`screensway.language`, `screensway.theme` in localStorage) takes precedence.
+A first visit always opens in English, ignoring the browser language. A `?lang=en|vi` parameter or the visitor's saved language (`screensway.language` in localStorage) takes precedence. `page_view` still reports `theme: "dark"` so the analytics schema is unchanged.
 
 ## Validation
 
 Run `pnpm --filter @screensway/web typecheck`, `pnpm build:web` and `pnpm test`.
 
-Browser QA should cover English/Vietnamese and light/dark at 375, 768, 1024 and 1440 px, including reduced motion:
+Browser QA should cover English/Vietnamese at 375, 768, 1024 and 1440 px, including reduced motion:
 
 - Change each of the five styles; selected state and the preview must agree.
 - Try all eight frame types with each preset. Compare the background canvas pixels with the shared painter and the recording viewport bounds with `computeLayout`; styles must retain their real aspect, padding, radius and shadow. Verify English/Vietnamese labels match the app.
 - Show/hide sample captions and compare auto zoom with the raw recording.
 - Play/pause the demo. Reduced motion must start paused and reveal content immediately.
 - Open the new export/caption FAQs and the install dialog; Escape must dismiss the dialog.
-- Switch language and theme, and check that the header and content fit the viewport.
+- Switch language, and check that the header and content fit the viewport.
 - Repeatedly switch EN/VI with normal motion as well as reduced motion, then scroll through every benefit card. Cards must retain stable, language-independent keys and remain visible; refresh reveal observers when the language changes.
 - Let the demo complete a loop with sample captions enabled: all six lines must appear. Pause and verify the line stays unchanged, then switch language and hide/show captions.
 - Verify the download filename and install-guide behavior. A mocked download validates interaction only; verify the real hosted DMG separately after deployment.

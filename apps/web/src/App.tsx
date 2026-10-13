@@ -1,5 +1,5 @@
-import { Apple, ArrowRight, Languages, Moon, Sun } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Apple, Languages } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { track, trackDownload, trackPageView } from "./analytics";
 import { DOWNLOADS, preferredPlatform } from "./downloads";
@@ -10,7 +10,6 @@ import { Faq } from "./Faq";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language } from "./i18n";
-import { useTheme } from "./theme";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
 const MAC_DOWNLOAD = DOWNLOADS.macos;
@@ -23,6 +22,90 @@ function WindowsIcon() {
   );
 }
 
+function ArrowIcon() {
+  return (
+    <svg className="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true">
+      <path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const GLOBE_VIDEO = `${import.meta.env.BASE_URL}hero/globe.mp4`;
+const GLOBE_POSTER = `${import.meta.env.BASE_URL}hero/globe.jpg`;
+const GLOBE_FADE = 0.9;
+
+/**
+ * Looping globe and starfield fixed behind the whole page; a veil in the page
+ * colour thickens once the hero scrolls away so later sections stay readable.
+ * The clip's last frame does not match its first, so two copies cross-fade at
+ * the loop point instead of snapping. Under reduced motion it holds on the
+ * first frame.
+ */
+function HeroBackdrop() {
+  const first = useRef<HTMLVideoElement>(null);
+  const second = useRef<HTMLVideoElement>(null);
+  const veil = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onScroll = () => {
+      const height = window.innerHeight;
+      const dim = Math.min(1, Math.max(0, (window.scrollY - height * 0.4) / (height * 0.5)));
+      veil.current?.style.setProperty("--dim", dim.toFixed(3));
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+  useEffect(() => {
+    const a = first.current;
+    const b = second.current;
+    if (!a || !b) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      a.pause();
+      b.pause();
+      return;
+    }
+    const play = (video: HTMLVideoElement) => { video.play().catch(() => {}); };
+    let current = a;
+    let next = b;
+    let swapping = false;
+    let timer = 0;
+    const tick = () => {
+      if (swapping || !current.duration || current.duration - current.currentTime > GLOBE_FADE) return;
+      swapping = true;
+      const out = current;
+      next.currentTime = 0;
+      play(next);
+      next.classList.add("is-active");
+      out.classList.remove("is-active");
+      current = next;
+      next = out;
+      timer = window.setTimeout(() => {
+        out.pause();
+        out.currentTime = 0;
+        swapping = false;
+      }, GLOBE_FADE * 1000 + 100);
+    };
+    a.addEventListener("timeupdate", tick);
+    b.addEventListener("timeupdate", tick);
+    play(a);
+    return () => {
+      clearTimeout(timer);
+      a.removeEventListener("timeupdate", tick);
+      b.removeEventListener("timeupdate", tick);
+    };
+  }, []);
+  return (
+    <div className="page-bg" ref={veil} aria-hidden="true">
+      <video ref={first} className="hero-video is-active" src={GLOBE_VIDEO} poster={GLOBE_POSTER} muted loop playsInline preload="auto" disablePictureInPicture />
+      <video ref={second} className="hero-video" src={GLOBE_VIDEO} muted loop playsInline preload="auto" disablePictureInPicture />
+    </div>
+  );
+}
+
 /** Scrolls to an in-page section without adding a #fragment to the URL. */
 function scrollToSection(id: string, focus = false) {
   const target = document.getElementById(id);
@@ -32,7 +115,7 @@ function scrollToSection(id: string, focus = false) {
   if (focus) target.focus({ preventScroll: true });
 }
 
-function SectionLink({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; "aria-label"?: string }) {
+function SectionLink({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; "aria-label"?: string; "aria-current"?: "location" }) {
   return (
     <a
       href={`#${to}`}
@@ -53,8 +136,8 @@ function Logo() {
   const { t } = useI18n();
   return (
     <SectionLink to="top" className="logo" aria-label={t("nav.home")}>
-      <LogoMark size={32} />
-      <span>ScreenSway</span>
+      <LogoMark size={28} />
+      <span className="wordmark">ScreenSway</span>
     </SectionLink>
   );
 }
@@ -83,17 +166,6 @@ function LanguageSwitch() {
   );
 }
 
-function ThemeSwitch() {
-  const { t } = useI18n();
-  const { theme, toggleTheme } = useTheme();
-  const label = theme === "dark" ? t("nav.lightMode") : t("nav.darkMode");
-  return (
-    <button className="theme-switch" onClick={toggleTheme} aria-label={label} title={label}>
-      {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
-    </button>
-  );
-}
-
 function DownloadActions({ centered = false, placement }: { centered?: boolean; placement: "hero" | "cta" }) {
   const { t } = useI18n();
   return (
@@ -101,15 +173,136 @@ function DownloadActions({ centered = false, placement }: { centered?: boolean; 
       <a className="button-primary" href={MAC_DOWNLOAD} download onClick={() => { trackDownload("macos", placement); openInstallGuide("macos"); }}>
         <Apple size={20} fill="currentColor" aria-hidden="true" />
         {t("hero.mac")}
-        <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
+        <ArrowIcon />
       </a>
       <a className="button-primary" href={DOWNLOADS.windows} download onClick={() => { trackDownload("windows", placement); openInstallGuide("windows"); }}>
         <WindowsIcon />
         {t("hero.windows")}
-        <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
+        <ArrowIcon />
       </a>
     </div>
   );
+}
+
+const NAV_SECTIONS = ["demo", "features", "faq"] as const;
+
+/** Marks the section crossing the middle of the viewport as the current nav item. */
+function useCurrentSection() {
+  const [current, setCurrent] = useState<string | null>(null);
+  useEffect(() => {
+    const visible = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        }
+        setCurrent([...NAV_SECTIONS].reverse().find((id) => visible.has(id)) ?? null);
+      },
+      { rootMargin: "-45% 0px -50% 0px" },
+    );
+    for (const id of NAV_SECTIONS) {
+      const section = document.getElementById(id);
+      if (section) observer.observe(section);
+    }
+    return () => observer.disconnect();
+  }, []);
+  return current;
+}
+
+/**
+ * Top navigation. Below the collapse width the same links and controls
+ * re-compose into a panel opened by the burger button.
+ */
+function SiteHeader() {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const current = useCurrentSection();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const burgerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!panelRef.current?.contains(target) && !burgerRef.current?.contains(target)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      burgerRef.current?.focus();
+    };
+    document.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <header className="site-header" data-scrolled={scrolled}>
+      <div className="navrow" data-open={open}>
+        <Logo />
+        <div className="links" id="site-nav" ref={panelRef} onClick={(event) => { if ((event.target as Element).closest("a, .header-download")) setOpen(false); }}>
+          <nav aria-label="Main">
+            {NAV_SECTIONS.map((id) => (
+              <SectionLink key={id} to={id} aria-current={current === id ? "location" : undefined}>{t(`nav.${id}`)}</SectionLink>
+            ))}
+          </nav>
+          <div className="header-actions">
+            <LanguageSwitch />
+          </div>
+          <button className="header-download" onClick={() => { track("guide_open", { placement: "header" }); openInstallGuide(preferredPlatform()); }}>{t("nav.download")}<ArrowIcon /></button>
+        </div>
+        <button ref={burgerRef} className="burger" type="button" aria-label={open ? t("nav.menuClose") : t("nav.menuOpen")} aria-expanded={open} aria-controls="site-nav" onClick={() => setOpen(!open)}>
+          <span /><span /><span />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Plays the opening sequence once. index.html adds `.anim` before first paint
+ * (never under reduced motion); afterwards both classes are removed so the page
+ * rests in its plain authored state.
+ */
+function useEntrance() {
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!root.classList.contains("anim")) return;
+    let cancelled = false;
+    let frame = 0;
+    let done = 0;
+    const play = () => {
+      if (cancelled || frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          root.classList.add("play");
+          done = window.setTimeout(() => root.classList.remove("anim", "play"), 1900);
+        });
+      });
+    };
+    // A stalled font must not hold the page back.
+    const guard = window.setTimeout(play, 500);
+    document.fonts?.ready.then(play);
+    return () => {
+      cancelled = true;
+      clearTimeout(guard);
+      clearTimeout(done);
+      cancelAnimationFrame(frame);
+      root.classList.remove("play");
+    };
+  }, []);
 }
 
 /** Fades sections in as they scroll into view; content stays visible without JavaScript. */
@@ -140,45 +333,34 @@ function useScrollReveal() {
 export default function App() {
   const { language, t } = useI18n();
   useScrollReveal();
+  useEntrance();
   useEffect(() => {
-    trackPageView(language, document.documentElement.dataset.theme === "light" ? "light" : "dark");
+    trackPageView(language, "dark");
     // Only the first render counts as a visit; switching language does not.
   }, []);
 
   return (
     <div id="top">
       <SectionLink to="main" className="skip-link">{t("nav.skip")}</SectionLink>
-      <header className="site-header">
-        <Logo />
-        <nav aria-label="Main">
-          <SectionLink to="demo">{t("nav.demo")}</SectionLink>
-          <SectionLink to="features">{t("nav.features")}</SectionLink>
-          <SectionLink to="faq">{t("nav.faq")}</SectionLink>
-        </nav>
-        <div className="header-actions">
-          <ThemeSwitch />
-          <LanguageSwitch />
-          <button className="header-download" onClick={() => { track("guide_open", { placement: "header" }); openInstallGuide(preferredPlatform()); }}>{t("nav.download")}</button>
-        </div>
-      </header>
+      <HeroBackdrop />
+      <SiteHeader />
 
       <main id="main" tabIndex={-1}>
         <section className="hero">
-          <div className="hero-glow" aria-hidden="true" />
-          <p className="release-pill">
-            <span className="release-tag">{t("hero.releaseTag")}</span>
-            <span>{t("hero.release", { version: appVersion })}</span>
-          </p>
-          <h1>
-            <span className="hero-line">{t("hero.titleA")}</span>
-            <span className="hero-line accent">{t("hero.titleB")}</span>
-          </h1>
-          <p className="hero-copy">{t("hero.copy")}</p>
-          <DownloadActions centered placement="hero" />
-          <p className="hero-note">
-            {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
-            <button className="link-button" onClick={() => { track("guide_open", { placement: "hero" }); openInstallGuide(preferredPlatform()); }}>{t("hero.howToInstall")}</button>
-          </p>
+          <div className="hero-stage">
+            <div className="hero-inner">
+              <h1>
+                <span className="ent-mask"><span className="ent-line">{t("hero.titleA")}</span></span>
+                <span className="ent-mask"><span className="ent-line">{t("hero.titleB")}</span></span>
+              </h1>
+              <p className="hero-copy">{t("hero.copy")}</p>
+              <DownloadActions centered placement="hero" />
+              <p className="hero-note">
+                v{appVersion} · {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
+                <button className="link-button" onClick={() => { track("guide_open", { placement: "hero" }); openInstallGuide(preferredPlatform()); }}>{t("hero.howToInstall")}</button>
+              </p>
+            </div>
+          </div>
           <div className="hero-demo" id="demo">
             <StudioShowcase />
           </div>
