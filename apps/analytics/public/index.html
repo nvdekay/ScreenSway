@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>ScreenSway Analytics</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --track: #cde2fb;
+    --up: #006300; --down: #d03b3b; --accent: #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --track: #0d366b;
+      --up: #0ca30c; --down: #e66767; --accent: #818cf8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  header .meta { color: var(--muted); font-size: 12.5px; }
+  .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+  .seg button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--ink-2); }
+  .seg button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 6px 12px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 32px 0 12px; font-weight: 650; }
+  .grid { display: grid; gap: 12px; }
+  .tiles { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+  .three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; min-width: 0; }
+  .card h3 { margin: 0; font-size: 14px; font-weight: 650; }
+  .card .sub { color: var(--muted); font-size: 12.5px; margin: 2px 0 12px; }
+  .tile .label { color: var(--ink-2); font-size: 13px; }
+  .tile .value { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin: 4px 0 2px; }
+  .tile.hero .value { font-size: 48px; line-height: 1.05; }
+  .delta { font-size: 12.5px; color: var(--muted); }
+  .delta b { font-weight: 600; }
+  .delta .up { color: var(--up); } .delta .down { color: var(--down); }
+  .legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--page); border-radius: 8px; padding: 6px 9px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; transition: opacity .1s; z-index: 2; }
+  .tip b { font-weight: 650; }
+  .bars { display: grid; gap: 9px; }
+  .bar-row { display: grid; grid-template-columns: minmax(90px, 38%) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+  .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .bar-row .track { height: 10px; border-radius: 0 4px 4px 0; background: var(--wash); }
+  .bar-row .fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--s1); min-width: 2px; }
+  .bar-row .num { font-variant-numeric: tabular-nums; color: var(--ink); min-width: 72px; text-align: right; }
+  .bar-row .num small { color: var(--muted); }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--grid); }
+  td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; font-variant-numeric: tabular-nums; }
+  td.props { color: var(--ink-2); word-break: break-word; }
+  .scroll { overflow-x: auto; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--wash); font-size: 12px; }
+  #login { max-width: 420px; margin: 12vh auto; }
+  #login input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); margin: 10px 0; }
+  #login .error { color: var(--down); min-height: 1.4em; font-size: 13px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="login" class="card" hidden>
+    <h1 style="margin:0 0 4px;font-size:20px">ScreenSway Analytics</h1>
+    <div class="sub" style="color:var(--muted)">Nhập mã truy cập dashboard để xem số liệu.</div>
+    <form id="login-form">
+      <input id="token" type="password" autocomplete="current-password" placeholder="Mã truy cập (DASHBOARD_TOKEN)" required />
+      <div class="error" id="login-error"></div>
+      <button class="btn primary" type="submit">Mở dashboard</button>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <header>
+      <h1>ScreenSway Analytics</h1>
+      <span class="meta" id="updated"></span>
+      <span class="spacer"></span>
+      <div class="seg" id="range" role="group" aria-label="Khoảng thời gian">
+        <button data-days="7">7 ngày</button><button data-days="30">30 ngày</button><button data-days="90">90 ngày</button><button data-days="365">1 năm</button>
+      </div>
+      <button class="btn" id="refresh">Làm mới</button>
+      <button class="btn" id="logout">Đăng xuất</button>
+    </header>
+    <main id="content"></main>
+  </div>
+</div>
+<script>
+const API = new URLSearchParams(location.search).get("api") || "";
+const TOKEN_KEY = "screensway.analytics.token", DAYS_KEY = "screensway.analytics.days";
+const $ = (selector) => document.querySelector(selector);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
+let token = store.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
+
+const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+const compact = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : n >= 1e4 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K" : n.toLocaleString("vi-VN"));
+const shortDay = (day) => `${Number(day.slice(8))}/${Number(day.slice(5, 7))}`;
+
+const EVENT_NAMES = {
+  app_open: "Mở app", telemetry_enabled: "Bật chia sẻ số liệu", recording_started: "Bắt đầu ghi hình", recording_finished: "Ghi hình xong",
+  recording_failed: "Ghi hình lỗi", recording_opened: "Mở lại bản ghi cũ", export_finished: "Xuất video xong", export_failed: "Xuất video lỗi",
+  export_cancelled: "Huỷ xuất video", captions_generated: "Tạo phụ đề", captions_failed: "Tạo phụ đề lỗi", style_applied: "Áp dụng style",
+  page_view: "Xem landing page", download_click: "Bấm tải", guide_open: "Mở hướng dẫn cài đặt",
+};
+const VALUE_NAMES = { true: "Bật", false: "Tắt", unknown: "Không rõ", macos: "macOS", windows: "Windows", display: "Màn hình", window: "Cửa sổ", direct: "Truy cập trực tiếp" };
+const label = (key) => VALUE_NAMES[key] ?? key;
+
+function delta(current, previous, upIsGood = true) {
+  if (!previous) return `<span class="delta">${current ? "mới trong kỳ này" : "chưa có dữ liệu"}</span>`;
+  const change = (current - previous) / previous, sign = change > 0 ? "+" : "";
+  const tone = change === 0 ? "" : (change > 0) === upIsGood ? "up" : "down";
+  const arrow = change > 0 ? "▲" : change < 0 ? "▼" : "•";
+  return `<span class="delta"><b class="${tone}">${arrow} ${sign}${(change * 100).toFixed(0)}%</b> so với ${days} ngày trước đó (${compact(previous)})</span>`;
+}
+const tile = (name, value, deltaHtml, hero = false) =>
+  `<div class="card tile${hero ? " hero" : ""}"><div class="label">${name}</div><div class="value">${value}</div>${deltaHtml}</div>`;
+
+function barList(items, { total, unit = "", secondary } = {}) {
+  if (!items.length) return `<div class="empty">Chưa có dữ liệu trong khoảng này.</div>`;
+  const max = Math.max(...items.map((item) => item.count)), sum = total ?? items.reduce((a, item) => a + item.count, 0);
+  return `<div class="bars">${items.map((item) => `
+    <div class="bar-row" title="${esc(label(item.key))}: ${item.count.toLocaleString("vi-VN")}${unit}">
+      <span class="name">${esc(label(item.key))}</span>
+      <span class="track"><span class="fill" style="width:${(item.count / max) * 100}%;display:block"></span></span>
+      <span class="num">${compact(item.count)} <small>${secondary ? secondary(item) : sum ? Math.round((item.count / sum) * 100) + "%" : ""}</small></span>
+    </div>`).join("")}</div>`;
+}
+const card = (title, sub, body) => `<div class="card"><h3>${title}</h3><div class="sub">${sub}</div>${body}</div>`;
+
+// One time-series chart: stacked columns or lines, a single y axis, with a hover readout.
+function chart(series, defs, kind) {
+  const W = 640, H = 220, L = 34, R = 8, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
+  const totals = series.map((row) => (kind === "columns" ? defs.reduce((a, d) => a + row[d.key], 0) : Math.max(...defs.map((d) => row[d.key]))));
+  // Four gridlines on whole, round numbers: the tick unit is 1, 2 or 5 times a power of ten.
+  const rawMax = Math.max(1, ...totals), pow = Math.pow(10, Math.floor(Math.log10(rawMax / 4 || 1)));
+  const unit = [1, 2, 5, 10].map((m) => Math.max(1, m * pow)).find((u) => u * 4 >= rawMax), max = unit * 4;
+  const y = (v) => T + ph - (v / max) * ph, n = series.length, slot = pw / n, x = (i) => L + slot * (i + 0.5);
+  let svg = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = (max / 4) * k;
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${k ? "var(--grid)" : "var(--axis)"}" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${compact(v)}</text>`;
+  }
+  const every = Math.ceil(n / 8);
+  series.forEach((row, i) => { if ((n - 1 - i) % every === 0) svg += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${shortDay(row.day)}</text>`; });
+  if (kind === "columns") {
+    const bw = Math.min(24, Math.max(2, slot - 2));
+    series.forEach((row, i) => {
+      let base = 0;
+      defs.forEach((d, di) => {
+        const v = row[d.key]; if (!v) return;
+        const top = y(base + v), bottom = y(base) - (base ? 2 : 0), h = Math.max(1, bottom - top), last = defs.slice(di + 1).every((o) => !row[o.key]), r = last ? Math.min(4, h, bw / 2) : 0;
+        svg += `<path d="M${x(i) - bw / 2},${top + h} v${-(h - r)} q0,${-r} ${r},${-r} h${bw - 2 * r} q${r},0 ${r},${r} v${h - r} z" fill="${d.color}"/>`;
+        base += v;
+      });
+    });
+  } else {
+    defs.forEach((d, di) => {
+      const points = series.map((row, i) => `${x(i)},${y(row[d.key])}`);
+      if (di === 0 && defs.length === 1) svg += `<path d="M${x(0)},${y(0)} L${points.join(" L")} L${x(n - 1)},${y(0)} z" fill="${d.color}" opacity=".1"/>`;
+      svg += `<path d="M${points.join(" L")}" fill="none" stroke="${d.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      svg += `<circle cx="${x(n - 1)}" cy="${y(series[n - 1][d.key])}" r="4" fill="${d.color}" stroke="var(--surface)" stroke-width="2"/>`;
+    });
+  }
+  svg += `<line class="cross" x1="0" x2="0" y1="${T}" y2="${T + ph}" stroke="var(--axis)" stroke-width="1" opacity="0"/>`;
+  const legend = defs.length > 1 ? `<div class="legend">${defs.map((d) => `<span><i style="background:${d.color}"></i>${d.name}</span>`).join("")}</div>` : "";
+  const data = esc(JSON.stringify({ series: series.map((row) => [row.day, ...defs.map((d) => row[d.key])]), names: defs.map((d) => d.name), colors: defs.map((d) => d.color), L, slot, W, kind }));
+  return `${legend}<div class="chart" data-chart="${data}"><svg viewBox="0 0 ${W} ${H}" role="img">${svg}</svg><div class="tip"></div></div>`;
+}
+function wireCharts() {
+  document.querySelectorAll("[data-chart]").forEach((node) => {
+    const meta = JSON.parse(node.dataset.chart), svg = node.querySelector("svg"), tip = node.querySelector(".tip"), cross = node.querySelector(".cross");
+    const move = (event) => {
+      const box = svg.getBoundingClientRect(), px = ((event.clientX - box.left) / box.width) * meta.W;
+      const i = Math.min(meta.series.length - 1, Math.max(0, Math.floor((px - meta.L) / meta.slot))), row = meta.series[i], cx = meta.L + meta.slot * (i + 0.5);
+      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("opacity", "1");
+      const total = meta.kind === "columns" && meta.names.length > 1 ? `<br>Tổng: <b>${row.slice(1).reduce((a, b) => a + b, 0).toLocaleString("vi-VN")}</b>` : "";
+      tip.innerHTML = `${shortDay(row[0])}/${row[0].slice(0, 4)}<br>` + meta.names.map((name, k) => `<span style="color:${meta.colors[k]}">●</span> ${name}: <b>${row[k + 1].toLocaleString("vi-VN")}</b>`).join("<br>") + total;
+      tip.style.left = `${Math.min(Math.max((cx / meta.W) * box.width, 70), box.width - 70)}px`; tip.style.top = "6px"; tip.style.transform = "translate(-50%, 0)"; tip.style.opacity = "1";
+    };
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerleave", () => { tip.style.opacity = "0"; cross.setAttribute("opacity", "0"); });
+  });
+}
+
+function render(data) {
+  const { totals: t, previous: p, series, breakdowns: b } = data;
+  const rate = (a, v) => (v ? `${((a / v) * 100).toFixed(1)}%` : "–");
+  const appEvents = data.events.filter((event) => event.source === "app" && event.name !== "app_open").sort((a, c) => c.actors - a.actors || c.count - a.count);
+  const mac = series.reduce((a, row) => a + row.downloadsMac, 0), win = series.reduce((a, row) => a + row.downloadsWindows, 0);
+  const B = (key) => b[key] ?? [];
+  $("#updated").textContent = `${data.range.from} → ${data.range.to} · cập nhật ${new Date(data.generatedAt).toLocaleTimeString("vi-VN")}`;
+  $("#content").innerHTML = `
+    <div class="grid tiles">
+      ${tile("Lượt tải", compact(t.downloads), delta(t.downloads, p.downloads), true)}
+      ${tile("Khách xem landing page", compact(t.visitors), delta(t.visitors, p.visitors))}
+      ${tile("Tỉ lệ tải / khách", rate(t.downloads, t.visitors), `<span class="delta">kỳ trước: ${rate(p.downloads, p.visitors)}</span>`)}
+      ${tile("Máy đang dùng app", compact(t.activeInstalls), delta(t.activeInstalls, p.activeInstalls))}
+      ${tile("Máy mới", compact(t.newInstalls), delta(t.newInstalls, p.newInstalls))}
+      ${tile("Bản ghi", compact(t.recordings), delta(t.recordings, p.recordings))}
+      ${tile("Video đã xuất", compact(t.exports), delta(t.exports, p.exports))}
+      ${tile("Lần tạo phụ đề", compact(t.captions), delta(t.captions, p.captions))}
+    </div>
+    <div class="grid tiles" style="margin-top:12px">
+      ${tile("Dùng hôm nay (DAU)", compact(data.activeNow.daily), `<span class="delta">máy có mở app hôm nay</span>`)}
+      ${tile("7 ngày qua (WAU)", compact(data.activeNow.weekly), `<span class="delta">máy có mở app trong 7 ngày</span>`)}
+      ${tile("30 ngày qua (MAU)", compact(data.activeNow.monthly), `<span class="delta">máy có mở app trong 30 ngày</span>`)}
+      ${tile("Từ trước đến nay", compact(data.allTime.downloads), `<span class="delta">lượt tải · ${compact(data.allTime.installs)} máy đã bật chia sẻ số liệu${data.allTime.firstDay ? ` · từ ${data.allTime.firstDay}` : ""}</span>`)}
+    </div>
+
+    <h2>Tải về và landing page</h2>
+    <div class="grid two">
+      ${card("Lượt tải theo ngày", `macOS ${compact(mac)} · Windows ${compact(win)} trong ${days} ngày`, chart(series, [{ key: "downloadsMac", name: "macOS", color: "var(--s1)" }, { key: "downloadsWindows", name: "Windows", color: "var(--s2)" }], "columns"))}
+      ${card("Khách xem landing page theo ngày", `${compact(t.pageViews)} lượt xem trang · ${compact(t.guideOpens)} lần mở hướng dẫn cài đặt`, chart(series, [{ key: "visitors", name: "Khách", color: "var(--s1)" }], "line"))}
+    </div>
+    <div class="grid three" style="margin-top:12px">
+      ${card("Nguồn truy cập", "Trang giới thiệu khách đến từ đâu", barList(data.web.referrers))}
+      ${card("Quốc gia (landing page)", "Theo lượt xem trang", barList(data.web.countries))}
+      ${card("Nút tải được bấm ở đâu", "Vị trí trên landing page", barList(B("downloadPlacement")))}
+      ${card("Hệ điều hành của khách", "Theo lượt xem trang", barList(data.web.os))}
+      ${card("Ngôn ngữ trang", "EN hay VI khi xem", barList(data.web.languages))}
+      ${card("Giao diện", "Sáng hay tối khi xem", barList(data.web.themes))}
+    </div>
+
+    <h2>Người dùng app</h2>
+    <div class="grid two">
+      ${card("Máy đang dùng app theo ngày", "Số máy có mở app mỗi ngày (chỉ tính máy đã bật chia sẻ số liệu)", chart(series, [{ key: "activeInstalls", name: "Máy đang dùng", color: "var(--s1)" }, { key: "newInstalls", name: "Máy mới", color: "var(--s2)" }], "line"))}
+      ${card("Hoạt động theo ngày", "Số bản ghi và số video đã xuất", chart(series, [{ key: "recordings", name: "Bản ghi", color: "var(--s1)" }, { key: "exports", name: "Video đã xuất", color: "var(--s2)" }], "line"))}
+    </div>
+    <div class="grid three" style="margin-top:12px">
+      ${card("Phiên bản app", "Theo số máy", barList(data.app.versions))}
+      ${card("Hệ điều hành", "Theo số máy", barList(data.app.os))}
+      ${card("Quốc gia (app)", "Theo số máy", barList(data.app.countries))}
+      ${card("Ngôn ngữ app", "Theo số máy", barList(data.app.locales))}
+    </div>
+
+    <h2>Tính năng được dùng</h2>
+    <div class="grid two">
+      ${card("Tính năng dùng nhiều nhất", "Xếp theo số máy có dùng; số nhỏ bên phải là số máy", barList(appEvents.map((event) => ({ key: EVENT_NAMES[event.name] ?? event.name, count: event.count, actors: event.actors })), { secondary: (item) => `${compact(item.actors)} máy` }))}
+      ${card("Style được áp dụng", "Style có sẵn hoặc tự lưu", barList(B("styleApplied")))}
+    </div>
+    <div class="grid three" style="margin-top:12px">
+      ${card("Chất lượng xuất", "1080p / 1440p / 4K", barList(B("exportQuality")))}
+      ${card("Khung cửa sổ khi xuất", "Loại khung trong video đã xuất", barList(B("exportFrame")))}
+      ${card("Tỉ lệ khung hình", "Khi xuất video", barList(B("exportAspect")))}
+      ${card("Nền khi xuất", "Loại nền", barList(B("exportBackground")))}
+      ${card("Xuất kèm phụ đề", "Video có phụ đề hay không", barList(B("exportCaptions")))}
+      ${card("Auto-zoom khi xuất", "Bật hay tắt", barList(B("exportAutoZoom")))}
+      ${card("Có cắt đầu/cuối", "Video đã xuất có trim không", barList(B("exportTrimmed")))}
+      ${card("Độ dài video xuất", "Theo nhóm thời lượng", barList(B("exportDuration")))}
+      ${card("Ngôn ngữ phụ đề", "Khi tạo phụ đề", barList(B("captionLocale")))}
+      ${card("Ghi màn hình hay cửa sổ", "Khi bắt đầu ghi", barList(B("recordingSource")))}
+      ${card("Âm thanh hệ thống", "Khi bắt đầu ghi", barList(B("recordingSystemAudio")))}
+      ${card("Micro", "Khi bắt đầu ghi", barList(B("recordingMicrophone")))}
+      ${card("Độ dài bản ghi", "Theo nhóm thời lượng", barList(B("recordingDuration")))}
+      ${card("Lý do ghi hình lỗi", "Theo nhóm lỗi", barList(B("recordingFailure")))}
+    </div>
+
+    <h2>Sự kiện mới nhất</h2>
+    <div class="card scroll"><table>
+      <thead><tr><th>Thời gian</th><th>Nguồn</th><th>Sự kiện</th><th>Phiên bản</th><th>Hệ điều hành</th><th>Quốc gia</th><th>Chi tiết</th></tr></thead>
+      <tbody>${data.recent.map((event) => `<tr>
+        <td>${new Date(event.ts).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+        <td><span class="pill">${event.source === "app" ? "App" : "Web"}</span></td>
+        <td>${esc(EVENT_NAMES[event.name] ?? event.name)}</td><td>${esc(event.version ?? "")}</td><td>${esc(event.os ?? "")}</td><td>${esc(event.country ?? "")}</td>
+        <td class="props">${event.props ? esc(Object.entries(event.props).map(([k, v]) => `${k}: ${v}`).join(" · ")) : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">Chưa có sự kiện nào.</td></tr>`}</tbody>
+    </table></div>`;
+  wireCharts();
+}
+
+async function load() {
+  if (!token) return showLogin();
+  document.querySelectorAll("#range button").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.days) === days)));
+  try {
+    const response = await fetch(`${API}/v1/stats?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (response.status === 401) return showLogin("Mã truy cập không đúng.");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    $("#login").hidden = true; $("#app").hidden = false;
+    render(await response.json());
+  } catch (error) {
+    $("#login").hidden = true; $("#app").hidden = false;
+    $("#content").innerHTML = `<div class="card empty">Không tải được số liệu (${esc(error.message)}). Thử bấm “Làm mới”.</div>`;
+  }
+}
+function showLogin(message = "") {
+  token = null; store.set(TOKEN_KEY, null);
+  $("#app").hidden = true; $("#login").hidden = false; $("#login-error").textContent = message;
+}
+$("#login-form").addEventListener("submit", (event) => { event.preventDefault(); token = $("#token").value.trim(); store.set(TOKEN_KEY, token); void load(); });
+$("#range").addEventListener("click", (event) => { const d = Number(event.target.dataset?.days); if (d) { days = d; store.set(DAYS_KEY, String(d)); void load(); } });
+$("#refresh").addEventListener("click", () => void load());
+$("#logout").addEventListener("click", () => showLogin());
+setInterval(() => { if (token && !document.hidden) void load(); }, 60000);
+void load();
+</script>
+</body>
+</html>
