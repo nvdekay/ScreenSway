@@ -12,7 +12,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 
 ## Current state
 
-- Version `0.3.0`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS DMG from its own `download/` path.
+- Version `0.3.1`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS and Windows installers from its own `download/` path.
 - The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
 - The local recording library supports search, inline rename, confirmed permanent deletion and on-demand hover scrubbing.
