@@ -18,7 +18,7 @@
     "test:export:windows": "node scripts/test-windows-export.mjs",
     "test:speech:windows": "node scripts/test-windows-transcribe.mjs",
     "build:windows": "pnpm --filter @screensway/desktop tauri build --bundles nsis",
-    "build:macos": "pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles dmg && node scripts/compress-dmg.mjs",
+    "build:macos": "pnpm --filter @screensway/desktop tauri build --target universal-apple-darwin --bundles app,dmg && node scripts/compress-dmg.mjs",
     "build:web": "pnpm --filter @screensway/web build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
