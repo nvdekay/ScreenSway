@@ -10,8 +10,8 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "screensway-analytics"
-# Filled in by `wrangler d1 create screensway-analytics` (see docs/analytics.md).
-database_id = "00000000-0000-0000-0000-000000000000"
+# Created with `wrangler d1 create screensway-analytics` (see docs/analytics.md).
+database_id = "9c27780f-e0d6-48ff-8a12-f61d29ac2965"
 migrations_dir = "migrations"
 
 [vars]

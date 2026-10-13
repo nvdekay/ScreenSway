@@ -40,6 +40,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @screensway/web build
+        env:
+          # Public URL of the analytics API (apps/analytics); local builds send nothing.
+          VITE_ANALYTICS_URL: https://screensway-analytics.visual-lab-dm4.workers.dev
       # The repository is private, so release assets are not publicly downloadable.
       # Serve the latest desktop builds from the landing page itself instead.
       - name: Bundle the latest desktop downloads
