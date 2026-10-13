@@ -71,7 +71,7 @@ Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `
 
 ## Privacy boundary
 
-The desktop application makes no network requests during recording, editing or export. Fonts are bundled. Update checks may be added later as an explicit, documented exception. The marketing site is independent and contains no recording data.
+The desktop application makes no network requests during recording, editing or export. Fonts are bundled. Its production Content Security Policy only permits bundled content, Tauri IPC and local ScreenSway media exposed through the scoped asset protocol; scripts, frames, objects, forms and arbitrary network connections are blocked. Development adds only the local Vite HTTP/WebSocket origin for hot reload. Update checks may be added later as an explicit, documented exception. The marketing site is independent and contains no recording data.
 
 ## Distribution
 
