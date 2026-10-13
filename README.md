@@ -34,6 +34,8 @@ pnpm dev:desktop
 
 On macOS, ScreenSway records a display or application window (optionally with system audio and the microphone), pauses and resumes without keeping the paused interval, previews automatic cursor-aware zooms in a studio with a customizable frame, and exports MP4 up to 4K at 60 fps. Recordings are local `.screensway` projects under `~/Movies/ScreenSway`; exports go to `~/Movies/ScreenSway/Exports`. See [docs/architecture.md](docs/architecture.md).
 
+Installed builds check ScreenSway's public static update feed after launch. Updates are downloaded and installed only after Tauri verifies their embedded signature; recording, editing and export remain entirely local.
+
 The capture helper currently requires macOS 15 or newer. On first use, macOS asks for Screen Recording permission. Build the helper before starting the desktop application:
 
 ```bash
