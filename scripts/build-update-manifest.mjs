@@ -8,7 +8,7 @@ const directory = path.dirname(output);
 const version = JSON.parse(readFileSync(path.join(root, "apps/desktop/src-tauri/tauri.conf.json"), "utf8")).version;
 const base = "https://nvdekay.github.io/ScreenSway/update";
 const mac = "ScreenSway-macos-universal.app.tar.gz";
-const windows = "ScreenSway-windows-x64-setup.nsis.zip";
+const windows = "ScreenSway-windows-x64-setup.exe";
 const signature = (name) => readFileSync(path.join(directory, `${name}.sig`), "utf8").trim();
 
 const manifest = {

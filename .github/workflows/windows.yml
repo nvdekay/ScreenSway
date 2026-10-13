@@ -87,8 +87,7 @@ jobs:
           name: ScreenSway-windows-x64-setup
           path: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
-            apps/desktop/src-tauri/target/release/bundle/nsis/*.nsis.zip
-            apps/desktop/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe.sig
           if-no-files-found: error
 
       - name: Publish Windows installer and deploy downloads
@@ -103,17 +102,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Matching release $tag does not exist" }
           $installer = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
           if ($installer.Count -ne 1) { throw "Expected exactly one installer" }
-          $updater = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis/*.nsis.zip
-          if ($updater.Count -ne 1) { throw "Expected exactly one updater bundle" }
-          if (!(Test-Path "$($updater.FullName).sig")) { throw "Updater signature is missing" }
+          if (!(Test-Path "$($installer.FullName).sig")) { throw "Updater signature is missing" }
           $asset = "ScreenSway-windows-x64-setup.exe"
-          $updateAsset = "ScreenSway-windows-x64-setup.nsis.zip"
           Copy-Item -LiteralPath $installer.FullName -Destination $asset
-          Copy-Item -LiteralPath $updater.FullName -Destination $updateAsset
-          Copy-Item -LiteralPath "$($updater.FullName).sig" -Destination "$updateAsset.sig"
+          Copy-Item -LiteralPath "$($installer.FullName).sig" -Destination "$asset.sig"
           $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
           "$hash  $asset" | Set-Content -Encoding ascii "$asset.sha256"
-          gh release upload $tag $asset "$asset.sha256" $updateAsset "$updateAsset.sig" --clobber --repo $env:GITHUB_REPOSITORY
+          gh release upload $tag $asset "$asset.sha256" "$asset.sig" --clobber --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { throw "Windows release upload failed" }
           gh workflow run web.yml --repo $env:GITHUB_REPOSITORY --ref main
           if ($LASTEXITCODE -ne 0) { throw "Landing page dispatch failed" }

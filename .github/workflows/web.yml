@@ -66,8 +66,8 @@ jobs:
           if gh release download --repo "$GITHUB_REPOSITORY" \
             --pattern ScreenSway-macos-universal.app.tar.gz \
             --pattern ScreenSway-macos-universal.app.tar.gz.sig \
-            --pattern ScreenSway-windows-x64-setup.nsis.zip \
-            --pattern ScreenSway-windows-x64-setup.nsis.zip.sig \
+            --pattern ScreenSway-windows-x64-setup.exe \
+            --pattern ScreenSway-windows-x64-setup.exe.sig \
             --dir apps/web/dist/update; then
             UPDATE_PUB_DATE=$(gh release view --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)
             UPDATE_NOTES=$(gh release view --repo "$GITHUB_REPOSITORY" --json name --jq .name)
