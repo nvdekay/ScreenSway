@@ -4,6 +4,7 @@ import { generateZoomSegments } from "@screensway/core";
 import {
   AlertCircle,
   AppWindow,
+  BarChart3,
   Check,
   CheckCircle2,
   FolderOpen,
@@ -33,6 +34,7 @@ import { useRecordingState } from "./recordingState";
 import { LogoMark } from "./LogoMark";
 import { isWindows, supportsAudio } from "./platform";
 import { RecordingStudio } from "./frame/RecordingStudio";
+import { durationBucket, track, useTelemetry } from "./telemetry";
 import { type RecordingResult } from "./ZoomPreview";
 
 interface CaptureSource {
@@ -129,8 +131,36 @@ function formatCreatedAt(value: string, language: Language): string {
   }).format(date);
 }
 
+/** What went wrong, as a category; the message itself can contain names and paths. */
+function failureReason(message: string): string {
+  if (message.includes(PERMISSION_DENIED_MARKER)) return "permission";
+  if (message.includes(MICROPHONE_DENIED_MARKER)) return "microphone";
+  return "other";
+}
+
+/** Asked once, on first launch; nothing is sent before the user answers. */
+function TelemetryPrompt() {
+  const { t } = useI18n();
+  const { status, setEnabled } = useTelemetry();
+  if (!status.available || status.enabled !== null) return null;
+  return (
+    <aside className="telemetry-prompt" role="dialog" aria-labelledby="telemetry-title">
+      <span className="telemetry-icon" aria-hidden="true"><BarChart3 size={18} /></span>
+      <div>
+        <strong id="telemetry-title">{t("telemetry.title")}</strong>
+        <p>{t("telemetry.body")}</p>
+        <div className="permission-actions">
+          <button className="permission-primary" onClick={() => void setEnabled(true)}>{t("telemetry.allow")}</button>
+          <button className="secondary-button compact" onClick={() => void setEnabled(false)}>{t("telemetry.decline")}</button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function SettingsMenu() {
   const { language, setLanguage, t } = useI18n();
+  const telemetry = useTelemetry();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -176,6 +206,21 @@ function SettingsMenu() {
               </button>
             ))}
           </div>
+          {telemetry.status.available && (
+            <label className="settings-toggle">
+              <span>
+                <strong>{t("telemetry.setting")}</strong>
+                <small>{t("telemetry.settingHint")}</small>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={telemetry.status.enabled === true}
+                onChange={(event) => void telemetry.setEnabled(event.target.checked)}
+              />
+              <span className="switch" aria-hidden="true" />
+            </label>
+          )}
         </div>
       )}
     </div>
@@ -225,7 +270,7 @@ function LibraryCard({
 }
 
 export default function App() {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const recorder = useRecordingState();
   const [busy, setBusy] = useState(false);
   const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -315,6 +360,12 @@ export default function App() {
     if (result) previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [result]);
 
+  useEffect(() => {
+    // The document language is applied after this first effect, so pass it explicitly.
+    track("app_open", {}, language);
+    // Once per launch, not on every language change.
+  }, []);
+
   // Recordings can be stopped from the floating controls or the menu bar, not only from here.
   useEffect(() => {
     const finished = listen<RecordingResult>("recording-finished", (event) => {
@@ -322,8 +373,12 @@ export default function App() {
       setJustSaved(true);
       setError(null);
       void refreshLibrary();
+      track("recording_finished", { duration: durationBucket(event.payload.durationMs) });
     });
-    const failed = listen<string>("recording-failed", (event) => setError(event.payload));
+    const failed = listen<string>("recording-failed", (event) => {
+      setError(event.payload);
+      track("recording_failed", { reason: failureReason(event.payload) });
+    });
     return () => {
       void finished.then((dispose) => dispose());
       void failed.then((dispose) => dispose());
@@ -343,8 +398,16 @@ export default function App() {
         systemAudio: supportsAudio && systemAudio,
         microphone: supportsAudio && microphoneOn ? chosenMicrophone : null,
       });
+      track("recording_started", {
+        source: selectedSource.kind,
+        system_audio: supportsAudio && systemAudio,
+        microphone: supportsAudio && microphoneOn,
+      });
     } catch (captureError) {
-      if (String(captureError) !== CANCELLED_MESSAGE) setError(String(captureError));
+      if (String(captureError) !== CANCELLED_MESSAGE) {
+        setError(String(captureError));
+        track("recording_failed", { reason: failureReason(String(captureError)) });
+      }
     } finally {
       setBusy(false);
     }
@@ -373,6 +436,7 @@ export default function App() {
     try {
       setJustSaved(false);
       setResult(await invoke<RecordingResult>("load_recording", { projectPath: entry.projectPath }));
+      track("recording_opened");
     } catch (libraryError) {
       setError(String(libraryError));
       void refreshLibrary();
@@ -401,6 +465,7 @@ export default function App() {
         </a>
         <SettingsMenu />
       </header>
+      <TelemetryPrompt />
 
       <section className="studio">
         <div className="studio-intro reveal">

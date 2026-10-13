@@ -23,6 +23,7 @@ import { FrameEditor, type RecentImage } from "./FrameEditor";
 import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
 import { DEFAULT_CAPTION_STYLE, loadCaptionFont, paintCaption, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
+import { durationBucket, track } from "../telemetry";
 
 const SETTINGS_KEY = "screensway.frame";
 const CAPTION_STYLE_KEY = "screensway.captionStyle";
@@ -230,8 +231,10 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       if (!mounted.current) return;
       updateCaptions({ locale: result.locale, enabled: true, lines: buildCaptionLines(result.words) });
       setTranscription({ status: "idle" });
+      track("captions_generated", { locale: result.locale });
     } catch (error) {
       const message = String(error);
+      if (message !== "Captions cancelled.") track("captions_failed");
       setTranscription(message === "Captions cancelled." ? { status: "idle" } : { status: "failed", message });
     } finally {
       activeJobs.current.transcription = false;
@@ -401,8 +404,19 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
         },
       });
       setExportState({ status: "done", result });
+      track("export_finished", {
+        quality: effective.quality,
+        frame: effective.frame,
+        aspect: effective.aspect,
+        background: effective.background.kind,
+        captions: keptCaptions.length > 0,
+        auto_zoom: autoZoom,
+        trimmed: range.startMs > 0 || range.endMs < recording.durationMs,
+        duration: durationBucket(range.endMs - range.startMs),
+      });
     } catch (error) {
       const message = String(error);
+      track(message === "Export cancelled." ? "export_cancelled" : "export_failed");
       setExportState(message === "Export cancelled." ? { status: "idle" } : { status: "failed", message });
     } finally {
       activeJobs.current.export = false;

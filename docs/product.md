@@ -37,4 +37,4 @@ Ordered by expected impact on activation, sharing and retention.
 7. Windows version: capture, audio, export, offline editable captions and a local NSIS installer are implemented. Public release remains pending; the landing page marks it "coming soon". See windows-validation.md for tested behavior and limitations.
 8. Library management: rename, search, delete, hover scrub.
 
-Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
+Growth is measured without breaking the privacy promise: cookie-free visit and download counts on the landing page, and opt-in anonymous feature statistics in the app, both reported on the private dashboard (see analytics.md). Recording content is never part of it.
