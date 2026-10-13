@@ -1,6 +1,6 @@
 # ScreenSway
 
-Local-first screen recorder with automatic cursor-aware zooms. macOS is the complete released platform; the Windows port implements capture, audio, export and offline captions with an unsigned NSIS installer (see docs/windows-validation.md). Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap), `docs/landing-page.md` (marketing demo constraints) and `docs/releasing.md` (release flow) before larger changes.
+Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows x64 are publicly available; Windows implements capture, audio, export and offline captions with an unsigned NSIS installer (see docs/windows-validation.md). Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap), `docs/landing-page.md` (marketing demo constraints) and `docs/releasing.md` (release flow) before larger changes.
 
 ## Layout
 
@@ -17,7 +17,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS is the comp
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
 - Windows display/window capture, pointer metadata, pause/resume, thumbnails, shared desktop shell and NSIS CI build are implemented. Windows audio, export and offline captions are implemented and tested locally. The landing page serves both macOS and Windows installers from the latest release, with platform-specific install guides.
 - Windows speech uses optimized MSVC C/C++ kernels and fused attention, with a bundled Whisper model. Keep `.cargo/windows-speech.cmake` and the CI cache key aligned; see `docs/windows-validation.md` for timings, accuracy samples and CPU requirements.
-- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags, and `windows.yml` tests/builds the unsigned Windows installer artifact on relevant pushes.
+- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags and dispatches the matching Windows release, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
 
 ## Commands
 

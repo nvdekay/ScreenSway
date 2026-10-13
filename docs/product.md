@@ -12,10 +12,12 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 4. Native capture quality. Platform-specific capture backends feed one shared project model.
 5. No account required.
 
-## What ships today (macOS)
+## What ships today
+
+Unless noted otherwise, these workflows ship on both macOS and Windows. The floating controls use Liquid Glass and the timer also appears in the menu bar on macOS; Windows uses native dark controls and a standard title bar.
 
 - Record a display or an application window, with optional system audio and microphone (pick the device; the voice is leveled and background noise is lowered between phrases). Pause and resume without keeping the paused interval.
-- 3-second countdown, floating Liquid Glass controls and a menu bar timer; ScreenSway stays out of the video.
+- 3-second countdown and floating controls that stay out of the video; macOS also provides a menu bar timer.
 - Studio preview with automatic, spring-based zoom and pan that follows clicks, a smooth re-rendered cursor and click ripples.
 - Styles: built-in looks (Studio, Clean, MacBook, Website, Social) and your own saved styles, applied in one click.
 - Frame customization: a library of mesh, linear and wave backgrounds, solid colors and a custom two-color gradient, your own images (kept in Movies › ScreenSway › Backgrounds for reuse) with blur, a Magic background built from the recording's colors, film grain; macOS light/dark, browser light/dark (with address bar), MacBook, glass and outline frames; aspect presets (auto, 16:9, 4:3, 1:1, 9:16), padding, corners and shadow.
@@ -23,6 +25,7 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 - Captions: on-device speech recognition (Vietnamese and English), balanced caption lines you can edit, three sizes and three looks, burned into the export plus an .srt file next to the video.
 - Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
 - A local library of recordings, Vietnamese and English UI, Retina/standard display hints.
+- Public macOS universal and Windows x64 downloads. Windows provides the same capture, audio, Studio editing, MP4/SRT export and offline editable captions workflow; platform-specific implementation details and requirements are documented in [windows-validation.md](windows-validation.md).
 
 ## Roadmap
 
@@ -34,7 +37,6 @@ Ordered by expected impact on activation, sharing and retention.
 4. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
 5. More editing: speed up idle stretches, cut out the middle of a recording, keystroke overlay.
 6. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
-7. Windows version: capture, audio, export, offline editable captions and a local NSIS installer are implemented. Public release remains pending; the landing page marks it "coming soon". See windows-validation.md for tested behavior and limitations.
-8. Library management: rename, search, delete, hover scrub.
+7. Library management: rename, search, delete, hover scrub.
 
 Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
