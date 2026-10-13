@@ -1,0 +1,23 @@
+name = "screensway-analytics"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# The dashboard is a static page; everything under /v1 is handled by the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "screensway-analytics"
+# Filled in by `wrangler d1 create screensway-analytics` (see docs/analytics.md).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[vars]
+# Days in the dashboard follow this offset from UTC (420 = Asia/Ho_Chi_Minh).
+TZ_OFFSET_MINUTES = "420"
+
+# Secrets (set with `wrangler secret put`, or in .dev.vars for local runs):
+#   DASHBOARD_TOKEN  bearer token for GET /v1/stats
+#   ACTOR_SALT       salt for the daily-rotating visitor hash
