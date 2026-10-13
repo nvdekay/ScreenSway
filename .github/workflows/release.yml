@@ -44,6 +44,9 @@ jobs:
       - run: pnpm test && pnpm typecheck
       # Builds the universal app, bundles the DMG, and recompresses it with LZMA.
       - run: pnpm build:macos
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Verify the DMG
         run: |
@@ -58,6 +61,11 @@ jobs:
           test -f "$APP/Contents/Resources/icon.icns"
           hdiutil detach "$MOUNT"
           cp "$DMG" ScreenSway-macos-universal.dmg
+          UPDATER=$(find apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle -name '*.app.tar.gz' -print -quit)
+          test -n "$UPDATER"
+          test -f "$UPDATER.sig"
+          cp "$UPDATER" ScreenSway-macos-universal.app.tar.gz
+          cp "$UPDATER.sig" ScreenSway-macos-universal.app.tar.gz.sig
           shasum -a 256 ScreenSway-macos-universal.dmg | tee checksum.txt
 
       - name: Publish the release
@@ -66,7 +74,10 @@ jobs:
         run: |
           CHECKSUM=$(cut -d ' ' -f 1 checksum.txt)
           sed "s/__CHECKSUM__/$CHECKSUM/" .github/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" ScreenSway-macos-universal.dmg \
+          gh release create "$GITHUB_REF_NAME" \
+            ScreenSway-macos-universal.dmg \
+            ScreenSway-macos-universal.app.tar.gz \
+            ScreenSway-macos-universal.app.tar.gz.sig \
             --title "ScreenSway $GITHUB_REF_NAME" \
             --notes-file notes.md \
             --generate-notes \

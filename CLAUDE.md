@@ -1,6 +1,6 @@
 # ScreenSway
 
-Local-first screen recorder with automatic cursor-aware zooms. macOS is the complete released platform; the Windows port implements capture, audio, export and offline captions with an unsigned NSIS installer (see docs/windows-validation.md). Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap), `docs/landing-page.md` (marketing demo constraints) and `docs/releasing.md` (release flow) before larger changes.
+Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows x64 are publicly available; Windows implements capture, audio, export and offline captions with an unsigned NSIS installer (see docs/windows-validation.md). Read `docs/architecture.md` (how it works), `docs/product.md` (what ships, roadmap), `docs/landing-page.md` (marketing demo constraints) and `docs/releasing.md` (release flow) before larger changes.
 
 ## Layout
 
@@ -13,18 +13,20 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS is the comp
 
 ## Current state
 
-- Version `0.3.0`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS DMG from its own `download/` path.
+- Version `0.3.1`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS and Windows installers from its own `download/` path.
 - The landing page groups its message into hero/demo, four benefit cards, five essential FAQs and a compact download CTA; install details stay in the popup.
 - The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
+- The local recording library supports search, inline rename, confirmed permanent deletion and on-demand hover scrubbing.
+- The signed Tauri updater checks the public Pages feed after launch and can download, verify, install and relaunch from Settings. Release CI requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; never commit or rotate the private key casually.
 - Windows display/window capture, pointer metadata, pause/resume, thumbnails, shared desktop shell and NSIS CI build are implemented. Windows audio, export and offline captions are implemented and tested locally. The landing page serves both macOS and Windows installers from the latest release, with platform-specific install guides.
 - Windows speech uses optimized MSVC C/C++ kernels and fused attention, with a bundled Whisper model. Keep `.cargo/windows-speech.cmake` and the CI cache key aligned; see `docs/windows-validation.md` for timings, accuracy samples and CPU requirements.
-- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags, and `windows.yml` tests/builds the unsigned Windows installer artifact on relevant pushes.
+- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags and dispatches the matching Windows release, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
 
 ## Commands
 
 ```bash
-pnpm typecheck && pnpm test                       # TS types + core unit tests
+pnpm typecheck && pnpm test                       # TS types + core and desktop UI tests
 (cd apps/desktop/src-tauri && cargo test --lib)   # Rust unit tests
 pnpm build:capture:macos                          # rebuild the Swift sidecar (needed after Swift changes)
 pnpm test:capture:macos                           # real screen/window/audio capture test

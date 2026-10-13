@@ -103,8 +103,8 @@ const en = {
   "features.pauseCopy": "Pause and resume as often as you like. Paused time is cut from the final video automatically.",
   "features.libraryTitle": "Your library, on your computer",
   "features.libraryCopy": "Every recording is a plain folder in Movies › ScreenSway. Open, preview, or reveal it in Finder.",
-  "features.nativeTitle": "Feels native",
-  "features.nativeCopy": "Native screen and window capture, floating controls, and a Vietnamese or English interface. Available for macOS and Windows.",
+  "features.nativeTitle": "Native and always current",
+  "features.nativeCopy": "Native capture and floating controls on macOS and Windows. When a signed update is ready, install it directly in ScreenSway—no installer download needed.",
 
   "compare.kicker": "The difference",
   "compare.title": "Same recording. A very different story.",
@@ -290,8 +290,8 @@ const vi: Record<MessageKey, string> = {
   "features.pauseCopy": "Tạm dừng và tiếp tục bao nhiêu lần tùy ý. Khoảng thời gian tạm dừng tự động bị cắt khỏi video.",
   "features.libraryTitle": "Thư viện ngay trên máy của bạn",
   "features.libraryCopy": "Mỗi bản quay là một thư mục trong Phim › ScreenSway. Mở, xem trước hoặc hiện trong Finder.",
-  "features.nativeTitle": "Trải nghiệm tự nhiên",
-  "features.nativeCopy": "Quay màn hình và cửa sổ, điều khiển nổi, giao diện Việt hoặc Anh. Có trên macOS và Windows.",
+  "features.nativeTitle": "Tự nhiên và luôn mới",
+  "features.nativeCopy": "Quay native và điều khiển nổi trên macOS lẫn Windows. Khi có bản cập nhật đã ký, cài ngay trong ScreenSway—không cần tải lại bộ cài.",
 
   "compare.kicker": "Sự khác biệt",
   "compare.title": "Cùng một bản quay. Một câu chuyện hoàn toàn khác.",

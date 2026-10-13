@@ -1,6 +1,6 @@
 [package]
 name = "screensway"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local-first screen recorder with automatic cursor-aware camera movement"
 authors = ["ScreenSway"]
 edition = "2021"
@@ -23,6 +23,8 @@ tauri = { version = "2", features = ["protocol-asset", "tray-icon", "macos-priva
 # binary small and needs no C toolchain when cross-checking the Windows target.
 ureq = { version = "2", default-features = false, features = ["native-tls"] }
 native-tls = "0.2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 
 
 # Smaller release binaries: the app is mostly glue around the webview and the
