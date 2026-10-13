@@ -22,7 +22,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 ## Commands
 
 ```bash
-pnpm typecheck && pnpm test                       # TS types + core unit tests
+pnpm typecheck && pnpm test                       # TS types + core and desktop UI tests
 (cd apps/desktop/src-tauri && cargo test --lib)   # Rust unit tests
 pnpm build:capture:macos                          # rebuild the Swift sidecar (needed after Swift changes)
 pnpm test:capture:macos                           # real screen/window/audio capture test
