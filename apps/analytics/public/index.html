@@ -8,45 +8,74 @@
 <style>
   :root {
     color-scheme: light;
-    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.04);
-    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --track: #cde2fb;
-    --up: #006300; --down: #d03b3b; --accent: #4f46e5;
+    --page: #f4f5f7; --surface: #fff; --surface-2: #f8f8fa; --ink: #17171b; --ink-2: #55545d; --muted: #85838d;
+    --grid: #e7e7eb; --axis: #c8c8cf; --border: rgba(23,23,27,.09); --wash: rgba(23,23,27,.045);
+    --s1: #635bff; --s2: #ff754c; --s3: #22a879; --track: #dedcff;
+    --up: #11845b; --down: #d24646; --accent: #635bff; --accent-soft: #eeedff;
+    --sidebar: #17171b; --sidebar-ink: #f8f8fa; --sidebar-muted: #98969f;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.05);
-      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --track: #0d366b;
-      --up: #0ca30c; --down: #e66767; --accent: #818cf8;
+      --page: #101014; --surface: #18181d; --surface-2: #202026; --ink: #f2f1f4; --ink-2: #c2c0c7; --muted: #8c8993;
+      --grid: #2c2c33; --axis: #404048; --border: rgba(255,255,255,.09); --wash: rgba(255,255,255,.05);
+      --s1: #8b86ff; --s2: #ff805b; --s3: #32bd8d; --track: #302d6f;
+      --up: #3bc18f; --down: #f06b6b; --accent: #817bff; --accent-soft: #292650;
+      --sidebar: #0a0a0d; --sidebar-ink: #f8f8fa; --sidebar-muted: #8f8d96;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
   button, input, select { font: inherit; color: inherit; }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 64px; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
-  header h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
-  header .meta { color: var(--muted); font-size: 12.5px; }
+  button { -webkit-tap-highlight-color: transparent; }
+  .dashboard-shell { min-height: 100vh; padding-left: 248px; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: 248px; padding: 24px 16px 16px; background: var(--sidebar); color: var(--sidebar-ink); display: flex; flex-direction: column; z-index: 10; }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 26px; }
+  .brand-mark { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(145deg, #918cff, #5148ed); display: grid; place-items: center; box-shadow: 0 8px 24px rgba(99,91,255,.35); }
+  .brand-mark svg { width: 18px; height: 18px; }
+  .brand-name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .brand-name small { display: block; color: var(--sidebar-muted); font-size: 10px; font-weight: 600; letter-spacing: .11em; text-transform: uppercase; margin-top: 1px; }
+  .nav-label { color: #68666f; padding: 0 12px 8px; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .side-nav { display: grid; gap: 4px; }
+  .nav-item { width: 100%; border: 0; border-radius: 10px; padding: 10px 11px; background: transparent; color: var(--sidebar-muted); cursor: pointer; display: flex; align-items: center; gap: 11px; text-align: left; font-size: 13.5px; font-weight: 560; transition: background .16s, color .16s; }
+  .nav-item:hover { background: rgba(255,255,255,.06); color: var(--sidebar-ink); }
+  .nav-item[aria-current="page"] { background: rgba(255,255,255,.10); color: #fff; }
+  .nav-item svg { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; }
+  .sidebar-foot { margin-top: auto; border-top: 1px solid rgba(255,255,255,.08); padding-top: 12px; }
+  .sidebar-foot .nav-item { color: var(--sidebar-muted); }
+  .content-shell { width: 100%; min-width: 0; }
+  .topbar { min-height: 76px; padding: 15px 32px; background: color-mix(in srgb, var(--surface) 92%, transparent); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 8; backdrop-filter: blur(14px); }
+  .page-identity { min-width: 180px; }
+  .page-identity h1 { font-size: 18px; line-height: 1.25; margin: 0; font-weight: 720; letter-spacing: -.025em; }
+  .topbar .meta { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
   .spacer { flex: 1; }
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
-  .seg button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--ink-2); }
-  .seg button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
-  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 6px 12px; cursor: pointer; }
+  .seg { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: 10px; padding: 3px; background: var(--surface-2); }
+  .seg button { border: 0; border-radius: 7px; background: none; padding: 6px 10px; cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 650; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 7px 11px; cursor: pointer; font-size: 12.5px; }
+  .btn:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
   .btn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 32px 0 12px; font-weight: 650; }
+  .main-content { max-width: 1480px; padding: 30px 32px 64px; margin: 0 auto; }
+  .view-head { margin-bottom: 22px; }
+  .view-head h2 { margin: 0; color: var(--ink); font-size: 25px; line-height: 1.25; font-weight: 730; letter-spacing: -.035em; text-transform: none; }
+  .view-head p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 30px 0 12px; }
+  .section-title h3 { margin: 0; font-size: 15px; font-weight: 680; letter-spacing: -.015em; }
+  .section-title span { color: var(--muted); font-size: 12px; }
   .grid { display: grid; gap: 12px; }
   .tiles { grid-template-columns: repeat(4, 1fr); }
-  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   .two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
   .three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; min-width: 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; min-width: 0; box-shadow: 0 1px 2px rgba(0,0,0,.025); }
   .card h3 { margin: 0; font-size: 14px; font-weight: 650; }
   .card .sub { color: var(--muted); font-size: 12.5px; margin: 2px 0 12px; }
-  .tile .label { color: var(--ink-2); font-size: 13px; }
-  .tile .value { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin: 4px 0 2px; }
-  .tile.hero .value { font-size: 48px; line-height: 1.05; }
+  .tile { position: relative; min-height: 126px; display: flex; flex-direction: column; justify-content: space-between; }
+  .tile .label { color: var(--muted); font-size: 12.5px; font-weight: 550; }
+  .tile .value { font-size: 31px; line-height: 1.1; font-weight: 720; letter-spacing: -.035em; margin: 9px 0 7px; }
+  .tile.hero { background: linear-gradient(145deg, var(--accent), #7b55e7); color: #fff; border: 0; }
+  .tile.hero .label, .tile.hero .delta, .tile.hero .delta b { color: rgba(255,255,255,.75); }
+  .tile.hero .value { font-size: 39px; }
   .delta { font-size: 12.5px; color: var(--muted); }
   .delta b { font-weight: 600; }
   .delta .up { color: var(--up); } .delta .down { color: var(--down); }
@@ -74,11 +103,40 @@
   #login { max-width: 420px; margin: 12vh auto; }
   #login input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); margin: 10px 0; }
   #login .error { color: var(--down); min-height: 1.4em; font-size: 13px; }
+  .login-wrap { padding: 20px; }
+  .loading { min-height: 240px; display: grid; place-items: center; color: var(--muted); }
+  [data-view][hidden] { display: none !important; }
   [hidden] { display: none !important; }
+  @media (max-width: 1120px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 760px) {
+    .dashboard-shell { padding-left: 0; padding-top: 132px; }
+    .sidebar { inset: 0 0 auto; width: auto; height: 132px; padding: 12px 14px 10px; }
+    .brand { padding: 0 4px 10px; }
+    .brand-mark { width: 28px; height: 28px; border-radius: 8px; }
+    .brand-name small, .nav-label, .sidebar-foot { display: none; }
+    .side-nav { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+    .side-nav::-webkit-scrollbar { display: none; }
+    .nav-item { width: auto; flex: 0 0 auto; padding: 8px 10px; }
+    .nav-item svg { width: 16px; height: 16px; }
+    .topbar { min-height: 68px; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
+    .page-identity { flex: 1; min-width: 140px; }
+    .page-identity h1 { font-size: 16px; }
+    .topbar .meta { display: none; }
+    .seg { order: 3; width: 100%; }
+    .seg button { flex: 1; padding-inline: 5px; }
+    .main-content { padding: 24px 16px 48px; }
+    .view-head h2 { font-size: 22px; }
+  }
+  @media (max-width: 520px) {
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .tile { min-height: 118px; padding: 15px; }
+    .tile .value, .tile.hero .value { font-size: 27px; }
+    .bar-row { grid-template-columns: minmax(76px, 35%) 1fr auto; gap: 7px; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="login-wrap">
   <section id="login" class="card" hidden>
     <h1 style="margin:0 0 4px;font-size:20px">ScreenSway Analytics</h1>
     <div class="sub" style="color:var(--muted)">Nhập mã truy cập dashboard để xem số liệu.</div>
@@ -89,18 +147,33 @@
     </form>
   </section>
 
-  <div id="app" hidden>
-    <header>
-      <h1>ScreenSway Analytics</h1>
-      <span class="meta" id="updated"></span>
+</div>
+<div id="app" class="dashboard-shell" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 16.5v-9Z" stroke="white" stroke-width="2"/><path d="m10 9 5 3-5 3V9Z" fill="white"/></svg></span>
+      <span class="brand-name">ScreenSway<small>Analytics</small></span>
+    </div>
+    <div class="nav-label">Quản lý</div>
+    <nav class="side-nav" aria-label="Điều hướng dashboard">
+      <button class="nav-item" data-nav="overview" aria-current="page"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" stroke-width="1.8"/></svg>Tổng quan</button>
+      <button class="nav-item" data-nav="acquisition"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Thu hút & tải</button>
+      <button class="nav-item" data-nav="audience"><svg viewBox="0 0 24 24" fill="none"><path d="M16 20v-1.7c0-2.4-1.8-4.3-4-4.3H7c-2.2 0-4 1.9-4 4.3V20m6.5-10A3.5 3.5 0 1 0 9.5 3a3.5 3.5 0 0 0 0 7Zm7-5.8a3.5 3.5 0 0 1 0 6.6M21 20v-1.7c0-2-1.2-3.6-3-4.1" stroke-width="1.8" stroke-linecap="round"/></svg>Người dùng</button>
+      <button class="nav-item" data-nav="product"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9ZM4.5 7.8 12 12l7.5-4.2M12 12v9" stroke-width="1.8" stroke-linejoin="round"/></svg>Sản phẩm</button>
+      <button class="nav-item" data-nav="activity"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 12h16M4 19h16M7 3v4m8 3v4m-5 3v4" stroke-width="1.8" stroke-linecap="round"/></svg>Hoạt động</button>
+    </nav>
+    <div class="sidebar-foot"><button class="nav-item" id="logout"><svg viewBox="0 0 24 24" fill="none"><path d="M10 5H5v14h5m4-3 4-4-4-4m4 4H9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Đăng xuất</button></div>
+  </aside>
+  <div class="content-shell">
+    <header class="topbar">
+      <div class="page-identity"><h1 id="page-title">Tổng quan</h1><div class="meta" id="updated"></div></div>
       <span class="spacer"></span>
       <div class="seg" id="range" role="group" aria-label="Khoảng thời gian">
         <button data-days="7">7 ngày</button><button data-days="30">30 ngày</button><button data-days="90">90 ngày</button><button data-days="365">1 năm</button>
       </div>
       <button class="btn" id="refresh">Làm mới</button>
-      <button class="btn" id="logout">Đăng xuất</button>
     </header>
-    <main id="content"></main>
+    <main id="content" class="main-content"><div class="loading">Đang tải dữ liệu…</div></main>
   </div>
 </div>
 <script>
@@ -109,6 +182,8 @@ const TOKEN_KEY = "screensway.analytics.token", DAYS_KEY = "screensway.analytics
 const $ = (selector) => document.querySelector(selector);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 let token = store.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
+const VIEW_NAMES = { overview: "Tổng quan", acquisition: "Thu hút & tải", audience: "Người dùng", product: "Sản phẩm", activity: "Hoạt động" };
+let currentView = VIEW_NAMES[location.hash.slice(1)] ? location.hash.slice(1) : "overview";
 
 const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const compact = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : n >= 1e4 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K" : n.toLocaleString("vi-VN"));
@@ -200,6 +275,19 @@ function wireCharts() {
   });
 }
 
+function showView(view, updateUrl = true) {
+  if (!VIEW_NAMES[view]) view = "overview";
+  currentView = view;
+  document.querySelectorAll("[data-view]").forEach((section) => { section.hidden = section.dataset.view !== view; });
+  document.querySelectorAll("[data-nav]").forEach((button) => {
+    if (button.dataset.nav === view) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  $("#page-title").textContent = VIEW_NAMES[view];
+  if (updateUrl) history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function render(data) {
   const { totals: t, previous: p, series, breakdowns: b } = data;
   const rate = (a, v) => (v ? `${((a / v) * 100).toFixed(1)}%` : "–");
@@ -208,81 +296,122 @@ function render(data) {
   const B = (key) => b[key] ?? [];
   $("#updated").textContent = `${data.range.from} → ${data.range.to} · cập nhật ${new Date(data.generatedAt).toLocaleTimeString("vi-VN")}`;
   $("#content").innerHTML = `
-    <div class="grid tiles">
-      ${tile("Lượt tải", compact(t.downloads), delta(t.downloads, p.downloads), true)}
-      ${tile("Khách xem landing page", compact(t.visitors), delta(t.visitors, p.visitors))}
-      ${tile("Tỉ lệ tải / khách", rate(t.downloads, t.visitors), `<span class="delta">kỳ trước: ${rate(p.downloads, p.visitors)}</span>`)}
-      ${tile("Máy đang dùng app", compact(t.activeInstalls), delta(t.activeInstalls, p.activeInstalls))}
-      ${tile("Máy mới", compact(t.newInstalls), delta(t.newInstalls, p.newInstalls))}
-      ${tile("Bản ghi", compact(t.recordings), delta(t.recordings, p.recordings))}
-      ${tile("Video đã xuất", compact(t.exports), delta(t.exports, p.exports))}
-      ${tile("Lần tạo phụ đề", compact(t.captions), delta(t.captions, p.captions))}
-    </div>
-    <div class="grid tiles" style="margin-top:12px">
-      ${tile("Dùng hôm nay (DAU)", compact(data.activeNow.daily), `<span class="delta">máy có mở app hôm nay</span>`)}
-      ${tile("7 ngày qua (WAU)", compact(data.activeNow.weekly), `<span class="delta">máy có mở app trong 7 ngày</span>`)}
-      ${tile("30 ngày qua (MAU)", compact(data.activeNow.monthly), `<span class="delta">máy có mở app trong 30 ngày</span>`)}
-      ${tile("Từ trước đến nay", compact(data.allTime.downloads), `<span class="delta">lượt tải · ${compact(data.allTime.installs)} máy đã bật chia sẻ số liệu${data.allTime.firstDay ? ` · từ ${data.allTime.firstDay}` : ""}</span>`)}
-    </div>
+    <section data-view="overview">
+      <div class="view-head"><h2>Tổng quan hiệu suất</h2><p>Các chỉ số quan trọng nhất của ScreenSway trong ${days} ngày gần đây.</p></div>
+      <div class="grid tiles">
+        ${tile("Lượt tải", compact(t.downloads), delta(t.downloads, p.downloads), true)}
+        ${tile("Khách landing page", compact(t.visitors), delta(t.visitors, p.visitors))}
+        ${tile("Tỉ lệ chuyển đổi", rate(t.downloads, t.visitors), `<span class="delta">kỳ trước: ${rate(p.downloads, p.visitors)}</span>`)}
+        ${tile("Máy đang dùng", compact(t.activeInstalls), delta(t.activeInstalls, p.activeInstalls))}
+      </div>
+      <div class="section-title"><h3>Sức khỏe sản phẩm</h3><span>Hoạt động trong kỳ đã chọn</span></div>
+      <div class="grid tiles">
+        ${tile("Máy mới", compact(t.newInstalls), delta(t.newInstalls, p.newInstalls))}
+        ${tile("Bản ghi hoàn tất", compact(t.recordings), delta(t.recordings, p.recordings))}
+        ${tile("Video đã xuất", compact(t.exports), delta(t.exports, p.exports))}
+        ${tile("Lần tạo phụ đề", compact(t.captions), delta(t.captions, p.captions))}
+      </div>
+      <div class="section-title"><h3>Xu hướng chính</h3><span>Di chuột lên biểu đồ để xem chi tiết</span></div>
+      <div class="grid two">
+        ${card("Lượt tải theo ngày", `macOS ${compact(mac)} · Windows ${compact(win)}`, chart(series, [{ key: "downloadsMac", name: "macOS", color: "var(--s1)" }, { key: "downloadsWindows", name: "Windows", color: "var(--s2)" }], "columns"))}
+        ${card("Hoạt động trong app", "Số bản ghi và video đã xuất", chart(series, [{ key: "recordings", name: "Bản ghi", color: "var(--s1)" }, { key: "exports", name: "Video xuất", color: "var(--s2)" }], "line"))}
+      </div>
+    </section>
 
-    <h2>Tải về và landing page</h2>
-    <div class="grid two">
-      ${card("Lượt tải theo ngày", `macOS ${compact(mac)} · Windows ${compact(win)} trong ${days} ngày`, chart(series, [{ key: "downloadsMac", name: "macOS", color: "var(--s1)" }, { key: "downloadsWindows", name: "Windows", color: "var(--s2)" }], "columns"))}
-      ${card("Khách xem landing page theo ngày", `${compact(t.pageViews)} lượt xem trang · ${compact(t.guideOpens)} lần mở hướng dẫn cài đặt`, chart(series, [{ key: "visitors", name: "Khách", color: "var(--s1)" }], "line"))}
-    </div>
-    <div class="grid three" style="margin-top:12px">
-      ${card("Nguồn truy cập", "Trang giới thiệu khách đến từ đâu", barList(data.web.referrers))}
-      ${card("Quốc gia (landing page)", "Theo lượt xem trang", barList(data.web.countries))}
-      ${card("Nút tải được bấm ở đâu", "Vị trí trên landing page", barList(B("downloadPlacement")))}
-      ${card("Hệ điều hành của khách", "Theo lượt xem trang", barList(data.web.os))}
-      ${card("Ngôn ngữ trang", "EN hay VI khi xem", barList(data.web.languages))}
-      ${card("Giao diện", "Sáng hay tối khi xem", barList(data.web.themes))}
-    </div>
+    <section data-view="acquisition" hidden>
+      <div class="view-head"><h2>Thu hút & tải xuống</h2><p>Theo dõi hành trình từ lượt ghé landing page đến lượt tải ứng dụng.</p></div>
+      <div class="grid tiles">
+        ${tile("Lượt tải", compact(t.downloads), delta(t.downloads, p.downloads), true)}
+        ${tile("Khách truy cập", compact(t.visitors), delta(t.visitors, p.visitors))}
+        ${tile("Lượt xem trang", compact(t.pageViews), delta(t.pageViews, p.pageViews))}
+        ${tile("Chuyển đổi tải", rate(t.downloads, t.visitors), `<span class="delta">kỳ trước: ${rate(p.downloads, p.visitors)}</span>`)}
+      </div>
+      <div class="section-title"><h3>Hiệu suất theo thời gian</h3><span>${compact(t.guideOpens)} lần mở hướng dẫn cài đặt</span></div>
+      <div class="grid two">
+        ${card("Lượt tải theo nền tảng", `macOS ${compact(mac)} · Windows ${compact(win)}`, chart(series, [{ key: "downloadsMac", name: "macOS", color: "var(--s1)" }, { key: "downloadsWindows", name: "Windows", color: "var(--s2)" }], "columns"))}
+        ${card("Khách truy cập theo ngày", `${compact(t.pageViews)} lượt xem trong kỳ`, chart(series, [{ key: "visitors", name: "Khách", color: "var(--s1)" }], "line"))}
+      </div>
+      <div class="section-title"><h3>Phân bổ traffic</h3><span>Nguồn và đặc điểm người truy cập</span></div>
+      <div class="grid three">
+        ${card("Nguồn truy cập", "Khách đến từ đâu", barList(data.web.referrers))}
+        ${card("Quốc gia", "Theo lượt xem trang", barList(data.web.countries))}
+        ${card("Vị trí nút tải", "Điểm chạm tạo lượt tải", barList(B("downloadPlacement")))}
+        ${card("Hệ điều hành", "Thiết bị truy cập landing page", barList(data.web.os))}
+        ${card("Ngôn ngữ trang", "EN hay VI", barList(data.web.languages))}
+        ${card("Giao diện", "Sáng hay tối", barList(data.web.themes))}
+      </div>
+    </section>
 
-    <h2>Người dùng app</h2>
-    <div class="grid two">
-      ${card("Máy đang dùng app theo ngày", "Số máy có mở app mỗi ngày (chỉ tính máy đã bật chia sẻ số liệu)", chart(series, [{ key: "activeInstalls", name: "Máy đang dùng", color: "var(--s1)" }, { key: "newInstalls", name: "Máy mới", color: "var(--s2)" }], "line"))}
-      ${card("Hoạt động theo ngày", "Số bản ghi và số video đã xuất", chart(series, [{ key: "recordings", name: "Bản ghi", color: "var(--s1)" }, { key: "exports", name: "Video đã xuất", color: "var(--s2)" }], "line"))}
-    </div>
-    <div class="grid three" style="margin-top:12px">
-      ${card("Phiên bản app", "Theo số máy", barList(data.app.versions))}
-      ${card("Hệ điều hành", "Theo số máy", barList(data.app.os))}
-      ${card("Quốc gia (app)", "Theo số máy", barList(data.app.countries))}
-      ${card("Ngôn ngữ app", "Theo số máy", barList(data.app.locales))}
-    </div>
+    <section data-view="audience" hidden>
+      <div class="view-head"><h2>Người dùng</h2><p>Mức độ hoạt động, tăng trưởng và phân bổ người dùng ScreenSway.</p></div>
+      <div class="grid tiles">
+        ${tile("Hôm nay · DAU", compact(data.activeNow.daily), `<span class="delta">máy có mở app hôm nay</span>`, true)}
+        ${tile("7 ngày · WAU", compact(data.activeNow.weekly), `<span class="delta">máy hoạt động trong 7 ngày</span>`)}
+        ${tile("30 ngày · MAU", compact(data.activeNow.monthly), `<span class="delta">máy hoạt động trong 30 ngày</span>`)}
+        ${tile("Tổng máy", compact(data.allTime.installs), `<span class="delta">đã bật chia sẻ số liệu</span>`)}
+      </div>
+      <div class="section-title"><h3>Tăng trưởng người dùng</h3><span>Chỉ tính máy đã bật chia sẻ số liệu</span></div>
+      <div class="grid two">
+        ${card("Máy hoạt động theo ngày", "Người dùng quay lại và máy mới", chart(series, [{ key: "activeInstalls", name: "Máy hoạt động", color: "var(--s1)" }, { key: "newInstalls", name: "Máy mới", color: "var(--s2)" }], "line"))}
+        ${card("Hoạt động tạo nội dung", "Bản ghi và video hoàn tất", chart(series, [{ key: "recordings", name: "Bản ghi", color: "var(--s1)" }, { key: "exports", name: "Video xuất", color: "var(--s2)" }], "line"))}
+      </div>
+      <div class="section-title"><h3>Phân khúc</h3><span>Đặc điểm cài đặt đang hoạt động</span></div>
+      <div class="grid three">
+        ${card("Phiên bản app", "Theo số máy", barList(data.app.versions))}
+        ${card("Hệ điều hành", "Theo số máy", barList(data.app.os))}
+        ${card("Quốc gia", "Theo số máy", barList(data.app.countries))}
+        ${card("Ngôn ngữ app", "Theo số máy", barList(data.app.locales))}
+      </div>
+    </section>
 
-    <h2>Tính năng được dùng</h2>
-    <div class="grid two">
-      ${card("Tính năng dùng nhiều nhất", "Xếp theo số máy có dùng; số nhỏ bên phải là số máy", barList(appEvents.map((event) => ({ key: EVENT_NAMES[event.name] ?? event.name, count: event.count, actors: event.actors })), { secondary: (item) => `${compact(item.actors)} máy` }))}
-      ${card("Style được áp dụng", "Style có sẵn hoặc tự lưu", barList(B("styleApplied")))}
-    </div>
-    <div class="grid three" style="margin-top:12px">
-      ${card("Chất lượng xuất", "1080p / 1440p / 4K", barList(B("exportQuality")))}
-      ${card("Khung cửa sổ khi xuất", "Loại khung trong video đã xuất", barList(B("exportFrame")))}
-      ${card("Tỉ lệ khung hình", "Khi xuất video", barList(B("exportAspect")))}
-      ${card("Nền khi xuất", "Loại nền", barList(B("exportBackground")))}
-      ${card("Xuất kèm phụ đề", "Video có phụ đề hay không", barList(B("exportCaptions")))}
-      ${card("Auto-zoom khi xuất", "Bật hay tắt", barList(B("exportAutoZoom")))}
-      ${card("Có cắt đầu/cuối", "Video đã xuất có trim không", barList(B("exportTrimmed")))}
-      ${card("Độ dài video xuất", "Theo nhóm thời lượng", barList(B("exportDuration")))}
-      ${card("Ngôn ngữ phụ đề", "Khi tạo phụ đề", barList(B("captionLocale")))}
-      ${card("Ghi màn hình hay cửa sổ", "Khi bắt đầu ghi", barList(B("recordingSource")))}
-      ${card("Âm thanh hệ thống", "Khi bắt đầu ghi", barList(B("recordingSystemAudio")))}
-      ${card("Micro", "Khi bắt đầu ghi", barList(B("recordingMicrophone")))}
-      ${card("Độ dài bản ghi", "Theo nhóm thời lượng", barList(B("recordingDuration")))}
-      ${card("Lý do ghi hình lỗi", "Theo nhóm lỗi", barList(B("recordingFailure")))}
-    </div>
+    <section data-view="product" hidden>
+      <div class="view-head"><h2>Sản phẩm & tính năng</h2><p>Hiểu cách người dùng ghi hình, chỉnh sửa và xuất video.</p></div>
+      <div class="grid tiles">
+        ${tile("Bản ghi", compact(t.recordings), delta(t.recordings, p.recordings), true)}
+        ${tile("Video xuất", compact(t.exports), delta(t.exports, p.exports))}
+        ${tile("Phụ đề", compact(t.captions), delta(t.captions, p.captions))}
+        ${tile("Máy hoạt động", compact(t.activeInstalls), delta(t.activeInstalls, p.activeInstalls))}
+      </div>
+      <div class="section-title"><h3>Mức độ sử dụng</h3><span>Tính năng và style phổ biến</span></div>
+      <div class="grid two">
+        ${card("Tính năng dùng nhiều nhất", "Xếp theo lượt dùng và số máy", barList(appEvents.map((event) => ({ key: EVENT_NAMES[event.name] ?? event.name, count: event.count, actors: event.actors })), { secondary: (item) => `${compact(item.actors)} máy` }))}
+        ${card("Style được áp dụng", "Style có sẵn hoặc tự lưu", barList(B("styleApplied")))}
+      </div>
+      <div class="section-title"><h3>Cấu hình xuất video</h3><span>Lựa chọn của người dùng khi xuất</span></div>
+      <div class="grid three">
+        ${card("Chất lượng xuất", "1080p / 1440p / 4K", barList(B("exportQuality")))}
+        ${card("Khung cửa sổ", "Loại khung trong video", barList(B("exportFrame")))}
+        ${card("Tỉ lệ khung hình", "Khi xuất video", barList(B("exportAspect")))}
+        ${card("Nền khi xuất", "Loại nền", barList(B("exportBackground")))}
+        ${card("Xuất kèm phụ đề", "Có hoặc không", barList(B("exportCaptions")))}
+        ${card("Auto-zoom", "Bật hoặc tắt", barList(B("exportAutoZoom")))}
+        ${card("Cắt đầu/cuối", "Video có trim không", barList(B("exportTrimmed")))}
+        ${card("Độ dài video", "Theo nhóm thời lượng", barList(B("exportDuration")))}
+        ${card("Ngôn ngữ phụ đề", "Khi tạo phụ đề", barList(B("captionLocale")))}
+      </div>
+      <div class="section-title"><h3>Cấu hình ghi hình</h3><span>Nguồn và âm thanh đầu vào</span></div>
+      <div class="grid three">
+        ${card("Nguồn ghi", "Màn hình hay cửa sổ", barList(B("recordingSource")))}
+        ${card("Âm thanh hệ thống", "Bật hoặc tắt", barList(B("recordingSystemAudio")))}
+        ${card("Micro", "Bật hoặc tắt", barList(B("recordingMicrophone")))}
+        ${card("Độ dài bản ghi", "Theo nhóm thời lượng", barList(B("recordingDuration")))}
+        ${card("Lỗi ghi hình", "Theo nhóm lỗi", barList(B("recordingFailure")))}
+      </div>
+    </section>
 
-    <h2>Sự kiện mới nhất</h2>
-    <div class="card scroll"><table>
+    <section data-view="activity" hidden>
+      <div class="view-head"><h2>Hoạt động gần đây</h2><p>Dòng sự kiện mới nhất từ landing page và ứng dụng desktop.</p></div>
+      <div class="card scroll"><table>
       <thead><tr><th>Thời gian</th><th>Nguồn</th><th>Sự kiện</th><th>Phiên bản</th><th>Hệ điều hành</th><th>Quốc gia</th><th>Chi tiết</th></tr></thead>
       <tbody>${data.recent.map((event) => `<tr>
         <td>${new Date(event.ts).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
         <td><span class="pill">${event.source === "app" ? "App" : "Web"}</span></td>
         <td>${esc(EVENT_NAMES[event.name] ?? event.name)}</td><td>${esc(event.version ?? "")}</td><td>${esc(event.os ?? "")}</td><td>${esc(event.country ?? "")}</td>
         <td class="props">${event.props ? esc(Object.entries(event.props).map(([k, v]) => `${k}: ${v}`).join(" · ")) : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">Chưa có sự kiện nào.</td></tr>`}</tbody>
-    </table></div>`;
+      </table></div>
+    </section>`;
   wireCharts();
+  showView(currentView, false);
 }
 
 async function load() {
@@ -304,6 +433,10 @@ function showLogin(message = "") {
   $("#app").hidden = true; $("#login").hidden = false; $("#login-error").textContent = message;
 }
 $("#login-form").addEventListener("submit", (event) => { event.preventDefault(); token = $("#token").value.trim(); store.set(TOKEN_KEY, token); void load(); });
+document.querySelector(".side-nav").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-nav]");
+  if (button) showView(button.dataset.nav);
+});
 $("#range").addEventListener("click", (event) => { const d = Number(event.target.dataset?.days); if (d) { days = d; store.set(DAYS_KEY, String(d)); void load(); } });
 $("#refresh").addEventListener("click", () => void load());
 $("#logout").addEventListener("click", () => showLogin());
