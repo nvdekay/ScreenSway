@@ -8,6 +8,7 @@ on:
       - "packages/core/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/build-update-manifest.mjs"
       - ".github/workflows/web.yml"
   # Re-deploy when a release is published so the site serves the new downloads.
   release:
@@ -54,6 +55,26 @@ jobs:
             --dir apps/web/dist/download
           (cd apps/web/dist/download && sha256sum -c ScreenSway-windows-x64-setup.exe.sha256)
           ls -l apps/web/dist/download
+      - name: Build the signed updater feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p apps/web/dist/update
+          if gh release download --repo "$GITHUB_REPOSITORY" \
+            --pattern ScreenSway-macos-universal.app.tar.gz \
+            --pattern ScreenSway-macos-universal.app.tar.gz.sig \
+            --pattern ScreenSway-windows-x64-setup.nsis.zip \
+            --pattern ScreenSway-windows-x64-setup.nsis.zip.sig \
+            --dir apps/web/dist/update; then
+            UPDATE_PUB_DATE=$(gh release view --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)
+            UPDATE_NOTES=$(gh release view --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+            export UPDATE_PUB_DATE UPDATE_NOTES
+            node scripts/build-update-manifest.mjs
+            node -e "JSON.parse(require('fs').readFileSync('apps/web/dist/update/latest.json'))"
+          else
+            echo "The current release predates signed updater artifacts; publishing downloads without an update feed."
+            rm -rf apps/web/dist/update
+          fi
       - uses: actions/configure-pages@v6
         with:
           enablement: true

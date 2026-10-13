@@ -32,10 +32,9 @@ Unless noted otherwise, these workflows ship on both macOS and Windows. The floa
 Ordered by expected impact on activation, sharing and retention.
 
 1. Notarization (Apple Developer Program) to remove the first-launch block.
-2. In-app auto-update, documented as the only network exception.
-3. Global shortcut and quick record from the menu bar; first-run onboarding.
-4. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
-5. More editing: speed up idle stretches, cut out the middle of a recording, keystroke overlay.
-6. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
+2. Global shortcut and quick record from the menu bar; first-run onboarding.
+3. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
+4. More editing: speed up idle stretches, cut out the middle of a recording, keystroke overlay.
+5. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
 
-Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
+Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and anonymous requests to the static update manifest as a proxy for active users.
