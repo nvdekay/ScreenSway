@@ -24,7 +24,7 @@ The header is a flat transparent row: wordmark left, section links centred, a da
 
 The opening sequence runs once: `index.html` adds `.anim` to `<html>` before first paint (never under reduced motion), `useEntrance` in `App.tsx` waits for fonts (500 ms guard), adds `.play`, then removes both classes so no residual transforms remain. Headline lines rise out of a mask, the lede lifts into focus, pills settle and nav items lift quietly; the video itself never animates. Product illustrations use CSS and Lucide rather than downloading decorative image assets. Both installation tabs include theme-aware visual mockups. Windows shows the downloaded installer, SmartScreen’s More info → Run anyway flow, and desktop microphone access; keep their labels bilingual and all three cards responsive.
 
-The page reports visits, download clicks and install-guide opens to the analytics API when `VITE_ANALYTICS_URL` is set (`src/analytics.ts`): no cookies or storage, and nothing for visitors who send Do Not Track or Global Privacy Control. The footer states this; keep it accurate (see `analytics.md`).
+The page reports visits, download clicks and install-guide opens to the analytics API when `VITE_ANALYTICS_URL` is set (`src/analytics.ts`): no cookies or storage, and nothing for visitors who send Do Not Track or Global Privacy Control. The page no longer shows a notice about this (the founder removed the footer line); see `analytics.md` for what is collected.
 
 A first visit always opens in English, ignoring the browser language. A `?lang=en|vi` parameter or the visitor's saved language (`screensway.language` in localStorage) takes precedence. `page_view` still reports `theme: "dark"` so the analytics schema is unchanged.
 

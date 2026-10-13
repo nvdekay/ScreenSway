@@ -182,7 +182,6 @@ const en = {
 
   "footer.tagline": "Beautiful screen recordings, automatically.",
   "footer.contact": "Contact",
-  "footer.privacy": "This page counts visits and downloads anonymously: no cookies, no personal data. In the app, usage statistics are optional and never include your recordings.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -367,7 +366,6 @@ const vi: Record<MessageKey, string> = {
 
   "footer.tagline": "Video quay màn hình đẹp, hoàn toàn tự động.",
   "footer.contact": "Liên hệ",
-  "footer.privacy": "Trang này chỉ đếm lượt xem và lượt tải ẩn danh: không cookie, không dữ liệu cá nhân. Trong app, số liệu sử dụng là tuỳ chọn và không bao giờ chứa bản ghi của bạn.",
 };
 
 const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, vi };

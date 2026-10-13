@@ -19,7 +19,7 @@ desktop app (opt-in)   ───┘
 - The landing page uses no cookies and no browser storage. A visitor is a salted hash of address, browser and day; it changes every day and the address is not stored. `Do Not Track` and Global Privacy Control are honoured.
 - The Worker stores the country reported by Cloudflare, never the IP address.
 
-Keep the landing page's footer note and the in-app wording in step with these rules when they change.
+Keep the in-app wording in step with these rules when they change. The landing page shows no notice about its own counting.
 
 ## Events
 
