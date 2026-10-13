@@ -15,11 +15,14 @@ import {
   Monitor,
   MousePointer2,
   Pause,
+  Pencil,
   Play,
   RotateCw,
+  Search,
   Settings2,
   ShieldAlert,
   Square,
+  Trash2,
   Video,
   Volume2,
   VolumeX,
@@ -129,6 +132,17 @@ function formatCreatedAt(value: string, language: Language): string {
   }).format(date);
 }
 
+function recordingTitle(entry: LibraryEntry, language: Language): string {
+  return /^Recording-\d+$/.test(entry.title) ? formatCreatedAt(entry.createdAt, language) : entry.title;
+}
+
+export function recordingMatches(entry: LibraryEntry, query: string, language: Language): boolean {
+  const words = query.trim().toLocaleLowerCase(language === "vi" ? "vi-VN" : "en-US");
+  if (!words) return true;
+  return [recordingTitle(entry, language), formatCreatedAt(entry.createdAt, language), `${entry.width} ${entry.height}`]
+    .some((value) => value.toLocaleLowerCase(language === "vi" ? "vi-VN" : "en-US").includes(words));
+}
+
 function SettingsMenu() {
   const { language, setLanguage, t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -182,50 +196,114 @@ function SettingsMenu() {
   );
 }
 
-function LibraryCard({
+export function LibraryCard({
   entry,
   active,
   onOpen,
+  onRename,
+  onDelete,
 }: {
   entry: LibraryEntry;
   active: boolean;
   onOpen: () => void;
+  onRename: (title: string) => Promise<boolean>;
+  onDelete: () => void;
 }) {
   const { language, t } = useI18n();
-  const title = formatCreatedAt(entry.createdAt, language);
+  const title = recordingTitle(entry, language);
+  const createdAt = formatCreatedAt(entry.createdAt, language);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const saveTitle = async () => {
+    if (saving) return;
+    setSaving(true);
+    if (await onRename(draft)) setEditing(false);
+    setSaving(false);
+  };
 
   return (
     <article className={`library-card${active ? " active" : ""}`}>
-      <button className="library-thumb" onClick={onOpen} aria-label={t("library.open", { title })}>
-        {entry.thumbnailPath ? (
+      <button
+        className={`library-thumb${scrubbing ? " scrubbing" : ""}`}
+        onClick={onOpen}
+        onPointerEnter={() => setScrubbing(true)}
+        onPointerLeave={() => setScrubbing(false)}
+        onPointerMove={(event) => {
+          const video = videoRef.current;
+          if (!video || !Number.isFinite(video.duration)) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const progress = Math.min(1, Math.max(0, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+          video.currentTime = progress * video.duration;
+        }}
+        aria-label={t("library.open", { title })}
+      >
+        {entry.thumbnailPath && (
           <img src={convertFileSrc(entry.thumbnailPath)} alt="" loading="lazy" decoding="async" />
-        ) : (
-          <video src={`${convertFileSrc(entry.videoPath)}#t=0.5`} preload="auto" muted playsInline tabIndex={-1} />
+        )}
+        {(scrubbing || !entry.thumbnailPath) && (
+          <video
+            ref={videoRef}
+            className="scrub-video"
+            src={`${convertFileSrc(entry.videoPath)}#t=0.5`}
+            preload="metadata"
+            muted
+            playsInline
+            tabIndex={-1}
+          />
         )}
         <span className="thumb-play" aria-hidden="true"><Play size={16} fill="currentColor" /></span>
         <span className="thumb-duration">{formatDuration(entry.durationMs)}</span>
         {active && <span className="thumb-badge">{t("library.playing")}</span>}
       </button>
       <div className="library-meta">
-        <div>
-          <strong>{title}</strong>
-          <span>{entry.width} × {entry.height}</span>
-        </div>
-        <button
-          className="icon-button small"
-          aria-label={t("library.reveal")}
-          title={t("library.reveal")}
-          onClick={() => void invoke("reveal_recording", { projectPath: entry.projectPath }).catch(() => {})}
-        >
-          <FolderOpen size={16} />
-        </button>
+        {editing ? (
+          <form
+            className="library-rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveTitle();
+            }}
+          >
+            <input
+              autoFocus
+              value={draft}
+              maxLength={120}
+              aria-label={t("library.name")}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setDraft(title);
+                  setEditing(false);
+                }
+              }}
+            />
+            <button className="icon-button small" disabled={saving || !draft.trim()} aria-label={t("library.saveName")}><Check size={15} /></button>
+            <button type="button" className="icon-button small" aria-label={t("library.cancelRename")} onClick={() => { setDraft(title); setEditing(false); }}><X size={15} /></button>
+          </form>
+        ) : (
+          <>
+            <div className="library-details">
+              <strong>{title}</strong>
+              <span>{createdAt} · {entry.width} × {entry.height}</span>
+            </div>
+            <div className="library-actions">
+              <button className="icon-button small" aria-label={t("library.rename")} title={t("library.rename")} onClick={() => setEditing(true)}><Pencil size={15} /></button>
+              <button className="icon-button small" aria-label={t("library.reveal")} title={t("library.reveal")} onClick={() => void invoke("reveal_recording", { projectPath: entry.projectPath }).catch(() => {})}><FolderOpen size={15} /></button>
+              <button className="icon-button small danger" aria-label={t("library.delete")} title={t("library.delete")} onClick={onDelete}><Trash2 size={15} /></button>
+            </div>
+          </>
+        )}
       </div>
     </article>
   );
 }
 
 export default function App() {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const recorder = useRecordingState();
   const [busy, setBusy] = useState(false);
   const [sources, setSources] = useState<CaptureSource[]>([]);
@@ -236,6 +314,7 @@ export default function App() {
   const [justSaved, setJustSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  const [libraryQuery, setLibraryQuery] = useState("");
   const [systemAudio, setSystemAudio] = useStoredBoolean(SYSTEM_AUDIO_KEY, true);
   const [microphoneOn, setMicrophoneOn] = useStoredBoolean(MICROPHONE_KEY, false);
   const [microphoneDevice, setMicrophoneDevice] = useStoredString(MICROPHONE_DEVICE_KEY, DEFAULT_MICROPHONE);
@@ -258,6 +337,10 @@ export default function App() {
   );
   const visibleSources = sources.filter((source) => source.kind === sourceKind);
   const selectedSource = sources.find((source) => `${source.kind}:${source.id}` === selectedSourceKey);
+  const visibleLibrary = useMemo(
+    () => library.filter((entry) => recordingMatches(entry, libraryQuery, language)),
+    [language, library, libraryQuery],
+  );
 
   const refreshLibrary = useCallback(async () => {
     try {
@@ -373,6 +456,28 @@ export default function App() {
     } catch (libraryError) {
       setError(String(libraryError));
       void refreshLibrary();
+    }
+  }
+
+  async function renameRecording(entry: LibraryEntry, title: string): Promise<boolean> {
+    try {
+      const saved = await invoke<string>("rename_recording", { projectPath: entry.projectPath, title });
+      setLibrary((current) => current.map((item) => item.projectPath === entry.projectPath ? { ...item, title: saved } : item));
+      return true;
+    } catch (libraryError) {
+      setError(String(libraryError));
+      return false;
+    }
+  }
+
+  async function deleteRecording(entry: LibraryEntry) {
+    if (!window.confirm(t("library.deleteConfirm", { title: recordingTitle(entry, language) }))) return;
+    try {
+      await invoke("delete_recording", { projectPath: entry.projectPath });
+      setLibrary((current) => current.filter((item) => item.projectPath !== entry.projectPath));
+      if (result?.projectPath === entry.projectPath) setResult(null);
+    } catch (libraryError) {
+      setError(String(libraryError));
     }
   }
 
@@ -650,6 +755,14 @@ export default function App() {
               <span>{t(library.length === 1 ? "library.countOne" : "library.count", { count: library.length })}</span>
             )}
           </div>
+          {library.length > 0 && (
+            <label className="library-search">
+              <Search size={15} aria-hidden="true" />
+              <span className="sr-only">{t("library.search")}</span>
+              <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder={t("library.search")} />
+              {libraryQuery && <button aria-label={t("library.clearSearch")} onClick={() => setLibraryQuery("")}><X size={14} /></button>}
+            </label>
+          )}
         </div>
         {library.length === 0 ? (
           <div className="library-empty glass">
@@ -657,14 +770,22 @@ export default function App() {
             <strong>{t("library.emptyTitle")}</strong>
             <span>{t("library.emptyHint")}</span>
           </div>
+        ) : visibleLibrary.length === 0 ? (
+          <div className="library-empty glass library-no-results">
+            <Search size={22} aria-hidden="true" />
+            <strong>{t("library.noResults")}</strong>
+            <span>{t("library.noResultsHint", { query: libraryQuery })}</span>
+          </div>
         ) : (
           <div className="library-grid">
-            {library.map((entry) => (
+            {visibleLibrary.map((entry) => (
               <LibraryCard
                 key={entry.projectPath}
                 entry={entry}
                 active={result?.projectPath === entry.projectPath}
                 onOpen={() => void openRecording(entry)}
+                onRename={(title) => renameRecording(entry, title)}
+                onDelete={() => void deleteRecording(entry)}
               />
             ))}
           </div>

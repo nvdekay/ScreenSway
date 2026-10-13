@@ -24,7 +24,7 @@ Unless noted otherwise, these workflows ship on both macOS and Windows. The floa
 - Timeline: trim the start and end, move, resize, add or remove zooms and set each zoom's depth; edits are saved with the recording and can be reset to the automatic zooms.
 - Captions: on-device speech recognition (Vietnamese and English), balanced caption lines you can edit, three sizes and three looks, burned into the export plus an .srt file next to the video.
 - Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
-- A local library of recordings, Vietnamese and English UI, Retina/standard display hints.
+- A searchable local library with inline rename, confirmed deletion and hover scrubbing; Vietnamese and English UI; Retina/standard display hints.
 - Public macOS universal and Windows x64 downloads. Windows provides the same capture, audio, Studio editing, MP4/SRT export and offline editable captions workflow; platform-specific implementation details and requirements are documented in [windows-validation.md](windows-validation.md).
 
 ## Roadmap
@@ -37,6 +37,5 @@ Ordered by expected impact on activation, sharing and retention.
 4. Webcam overlay; optional echo cancellation for recording the microphone over speakers.
 5. More editing: speed up idle stretches, cut out the middle of a recording, keystroke overlay.
 6. Vertical 9:16 exports where the camera follows the action; GIF and clipboard export.
-7. Library management: rename, search, delete, hover scrub.
 
 Measure growth without breaking the privacy promise: cookie-free analytics on the landing page only, download counts, and (once it exists) update checks as a proxy for active users.
