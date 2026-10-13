@@ -91,10 +91,10 @@ main:focus { outline: none; }
 /* Header: a floating product bar over the hero. The light surface deliberately
    separates navigation from the cinematic background without copying it. */
 #top { position: relative; isolation: isolate; }
-.site-header { --h-ink: #17171c; --h-muted: #5e5d68; --h-panel: #f0eff4; --h-panel-hover: #e8e7ee; --h-selected: #dedce8; --h-btn: #655cf6; --h-btn-hover: #5148e8; --h-btn-ink: #ffffff; --h-menu: #fdfdfef5; --h-line: #1d1b2a18;
+.site-header { --h-ink: #ffffff; --h-muted: #c7c5cf; --h-panel: #ffffff12; --h-panel-hover: #ffffff1c; --h-selected: #ffffff1f; --h-btn: #655cf6; --h-btn-hover: #766dff; --h-btn-ink: #ffffff; --h-menu: #111115f5; --h-line: #ffffff17;
   position: sticky; top: 0; z-index: 50; height: 82px; padding-top: 12px; color: var(--h-ink); pointer-events: none; }
-.navrow { position: relative; width: min(1240px, calc(100% - 24px)); height: 58px; margin: 0 auto; padding: 0 10px 0 16px; display: flex; align-items: center; gap: 16px; border: 1px solid #ffffff80; border-radius: 18px; background: #fbfbfce8; box-shadow: 0 8px 30px #00000018, inset 0 1px 0 #ffffff; -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%); pointer-events: auto; transition: background var(--dur-base) ease, box-shadow var(--dur-base) ease, transform var(--dur-base) var(--ease-out); }
-.site-header[data-scrolled="true"] .navrow { background: #fdfdfef5; box-shadow: 0 12px 36px #0000002b, inset 0 1px 0 #ffffff; }
+.navrow { position: relative; width: min(1240px, calc(100% - 24px)); height: 58px; margin: 0 auto; padding: 0 10px 0 16px; display: flex; align-items: center; gap: 16px; border: 1px solid #ffffff1f; border-radius: 18px; background: #0d0d11c7; box-shadow: 0 10px 34px #00000040, inset 0 1px 0 #ffffff12; -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%); pointer-events: auto; transition: background var(--dur-base) ease, box-shadow var(--dur-base) ease, transform var(--dur-base) var(--ease-out); }
+.site-header[data-scrolled="true"] .navrow { background: #101014ed; box-shadow: 0 14px 40px #00000070, inset 0 1px 0 #ffffff16; }
 .logo { display: inline-flex; align-items: center; gap: 10px; }
 .logo svg { flex: none; border-radius: 8px; }
 .wordmark { font-size: 19px; font-weight: 800; line-height: 1; letter-spacing: -.025em; white-space: nowrap; }
@@ -105,9 +105,9 @@ main:focus { outline: none; }
 .links nav a::after { content: ""; position: absolute; left: 50%; right: 50%; bottom: -10px; height: 2px; border-radius: 2px; background: var(--h-btn); transition: left .2s var(--ease-out), right .2s var(--ease-out); }
 .links nav a:hover::after, .links nav a[aria-current]::after { left: 18%; right: 18%; }
 .header-actions { display: flex; align-items: center; gap: 7px; }
-.language-switch { height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 3px 0 11px; border: 1px solid #1d1b2a0b; border-radius: 11px; background: var(--h-panel); color: var(--h-muted); }
+.language-switch { height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 3px 0 11px; border: 1px solid #ffffff0d; border-radius: 11px; background: var(--h-panel); color: var(--h-muted); }
 .language-switch button { min-width: 36px; height: 30px; border: 0; border-radius: 15px; background: transparent; color: var(--h-muted); font-size: 12.5px; font-weight: 600; transition: background .18s ease, color .18s ease; }
-.language-switch button.selected { background: #ffffff; color: var(--h-ink); box-shadow: 0 1px 3px #00000014; }
+.language-switch button.selected { background: var(--h-selected); color: var(--h-ink); box-shadow: inset 0 1px 0 #ffffff14; }
 .header-download { flex: none; height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 17px; border: 1px solid #8179ff; border-radius: 12px; background: var(--h-btn); color: var(--h-btn-ink); box-shadow: inset 0 1px 0 #ffffff52, 0 5px 14px #655cf63d; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; transition: background .18s ease, transform .18s var(--ease-out), box-shadow .18s ease; }
 .header-download:hover { background: var(--h-btn-hover); transform: translateY(-1px); box-shadow: inset 0 1px 0 #ffffff52, 0 8px 20px #655cf650; }
 .arw { flex: none; display: block; width: 12px; height: 10px; }
