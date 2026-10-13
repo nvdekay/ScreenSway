@@ -1,6 +1,7 @@
 import { ArrowRight, Check, Copy, Download, Folder, Lock, Mic, ShieldAlert, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "./i18n";
+import { trackDownload } from "./analytics";
 import { DOWNLOADS, preferredPlatform, type DownloadPlatform } from "./downloads";
 import { LogoMark } from "./LogoMark";
 
@@ -59,7 +60,7 @@ export function InstallGuide() {
           {(["macos", "windows"] as const).map((option) => <button key={option} aria-pressed={platform === option} onClick={() => setPlatform(option)}>{option === "macos" ? "macOS" : "Windows"}</button>)}
         </div>
         <p className="guide-lead">
-          {t(platform === "windows" ? "guide.windowsDownload" : "guide.downloading")} <a href={downloadUrl} download>{t(platform === "windows" ? "hero.windows" : "hero.mac")}</a>
+          {t(platform === "windows" ? "guide.windowsDownload" : "guide.downloading")} <a href={downloadUrl} download onClick={() => trackDownload(platform, "guide")}>{t(platform === "windows" ? "hero.windows" : "hero.mac")}</a>
         </p>
 
         {platform === "windows" ? <>

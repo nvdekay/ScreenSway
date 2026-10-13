@@ -121,7 +121,7 @@ const en = {
 
   "privacy.kicker": "Local by design",
   "privacy.title": "Your screen. Your voice. Your computer.",
-  "privacy.copy": "Recording, editing, speech recognition and export happen on your computer. No account, no cloud processing, and no network requests while you create. Your videos and voice recordings stay with you.",
+  "privacy.copy": "Recording, editing, speech recognition and export happen on your computer. No account and no cloud processing. Your videos and voice recordings never leave your computer; anonymous usage statistics are optional.",
   "privacy.item1": "No account or sign-in",
   "privacy.item2": "No cloud processing",
   "privacy.item3": "Your files, in a folder you own",
@@ -184,6 +184,7 @@ const en = {
 
   "footer.tagline": "Beautiful screen recordings, automatically.",
   "footer.contact": "Contact",
+  "footer.privacy": "This page counts visits and downloads anonymously: no cookies, no personal data. In the app, usage statistics are optional and never include your recordings.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -307,7 +308,7 @@ const vi: Record<MessageKey, string> = {
 
   "privacy.kicker": "Riêng tư từ thiết kế",
   "privacy.title": "Màn hình, giọng nói, máy tính của bạn.",
-  "privacy.copy": "Quay, chỉnh sửa, nhận dạng giọng nói và xuất video đều diễn ra trên máy của bạn. Không cần tài khoản, không xử lý trên cloud, không gửi request mạng khi bạn sáng tạo. Video và bản thu giọng nói ở lại với bạn.",
+  "privacy.copy": "Quay, chỉnh sửa, nhận dạng giọng nói và xuất video đều diễn ra trên máy của bạn. Không cần tài khoản, không xử lý trên cloud. Video và bản thu giọng nói không bao giờ rời khỏi máy; số liệu sử dụng ẩn danh là tuỳ chọn.",
   "privacy.item1": "Không cần tài khoản hay đăng nhập",
   "privacy.item2": "Không xử lý trên cloud",
   "privacy.item3": "File của bạn, trong thư mục của bạn",
@@ -370,6 +371,7 @@ const vi: Record<MessageKey, string> = {
 
   "footer.tagline": "Video quay màn hình đẹp, hoàn toàn tự động.",
   "footer.contact": "Liên hệ",
+  "footer.privacy": "Trang này chỉ đếm lượt xem và lượt tải ẩn danh: không cookie, không dữ liệu cá nhân. Trong app, số liệu sử dụng là tuỳ chọn và không bao giờ chứa bản ghi của bạn.",
 };
 
 const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, vi };
