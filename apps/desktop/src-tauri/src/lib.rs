@@ -1,3 +1,5 @@
+mod telemetry;
+
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -1596,6 +1598,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ExportManager::default())
         .manage(TranscriptionManager::default())
+        .manage(telemetry::Telemetry::default())
         .manage(CaptureManager {
             state: Arc::new(Mutex::new(RecordingState { status: "idle", ..Default::default() })),
             ..Default::default()
@@ -1603,8 +1606,9 @@ pub fn run() {
         .setup(|app| {
             #[cfg(capture)]
             setup_tray(app)?;
-            #[cfg(not(capture))]
-            let _ = app;
+            if let Ok(directory) = app.path().app_config_dir() {
+                app.state::<telemetry::Telemetry>().init(directory);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1664,7 +1668,10 @@ pub fn run() {
             save_background_image,
             list_background_images,
             read_background_image,
-            delete_background_image
+            delete_background_image,
+            telemetry::telemetry_status,
+            telemetry::set_telemetry,
+            telemetry::track_event
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")

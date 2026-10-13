@@ -71,7 +71,7 @@ Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `
 
 ## Privacy boundary
 
-The desktop application makes no network requests during recording, editing or export. Fonts are bundled. Update checks may be added later as an explicit, documented exception. The marketing site is independent and contains no recording data.
+Recordings, audio, captions and exports never leave the computer, and fonts are bundled. The one network exception is optional usage statistics: after the user agrees (asked once on first launch, switchable in Settings), `telemetry.rs` sends batched, anonymous event names with short labels to the analytics API. Commands: `telemetry_status`, `set_telemetry`, `track_event`. The landing page counts visits and downloads without cookies through the same API. Events, API and deployment are described in `analytics.md`. Update checks may be added later as a second documented exception.
 
 ## Distribution
 

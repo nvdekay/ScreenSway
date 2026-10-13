@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import { paintBackground, paintFrameBase } from "./paint";
 import { createStyle, loadStyles, sameLook, storeStyles, type SavedStyle } from "./styles";
+import { track } from "../telemetry";
 
 export interface RecentImage {
   path: string;
@@ -132,7 +133,7 @@ function StylesSection({ settings, onChange, recentImages }: {
       <div className="style-grid">
         {saved.map((style) => (
           <div key={style.id} className={`style-card${sameLook(style.settings, look) ? " selected" : ""}`}>
-            <button className="style-apply" onClick={() => onChange(style.settings)} aria-pressed={sameLook(style.settings, look)}>
+            <button className="style-apply" onClick={() => { onChange(style.settings); track("style_applied", { style: "custom" }); }} aria-pressed={sameLook(style.settings, look)}>
               <StylePreview
                 settings={style.settings}
                 thumbnail={imageThumbnail(style.settings.background, recentImages)}
@@ -151,7 +152,7 @@ function StylesSection({ settings, onChange, recentImages }: {
         ))}
         {BUILT_IN_STYLES.map((style) => (
           <div key={style.id} className={`style-card${sameLook(style.settings, look) ? " selected" : ""}`}>
-            <button className="style-apply" onClick={() => onChange(style.settings)} aria-pressed={sameLook(style.settings, look)}>
+            <button className="style-apply" onClick={() => { onChange(style.settings); track("style_applied", { style: style.id }); }} aria-pressed={sameLook(style.settings, look)}>
               <StylePreview settings={style.settings} />
               <span>{t(`style.${style.id}` as MessageKey)}</span>
             </button>
