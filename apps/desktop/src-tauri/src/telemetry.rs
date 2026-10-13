@@ -12,7 +12,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 /// The analytics API (apps/analytics). Empty disables telemetry entirely.
-const DEFAULT_ENDPOINT: &str = "";
+const DEFAULT_ENDPOINT: &str = "https://screensway-analytics.visual-lab-dm4.workers.dev";
 const EVENTS: &[&str] = &[
     "app_open",
     "telemetry_enabled",

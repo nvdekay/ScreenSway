@@ -83,7 +83,7 @@ pnpm --filter @screensway/analytics test:e2e  # end-to-end test against a throwa
 
 For local runs put `DASHBOARD_TOKEN=…` and `ACTOR_SALT=…` in `apps/analytics/.dev.vars` (not committed).
 
-First deployment, from `apps/analytics`:
+The service runs at `https://screensway-analytics.visual-lab-dm4.workers.dev` (dashboard at `/`). Later changes only need `pnpm run deploy`. The first deployment, from `apps/analytics`, was:
 
 ```bash
 npx wrangler login
@@ -95,7 +95,7 @@ pnpm run deploy                                  # applies migrations, then depl
 
 Then point the clients at the deployed URL:
 
-- Landing page: `VITE_ANALYTICS_URL` in `apps/web/.env.production`. Without it the page sends nothing.
+- Landing page: `VITE_ANALYTICS_URL` on the build step in `.github/workflows/web.yml`. Local builds leave it unset and send nothing.
 - Desktop app: `DEFAULT_ENDPOINT` in `apps/desktop/src-tauri/src/telemetry.rs` (or `SCREENSWAY_ANALYTICS_URL` at build or run time). Without it the consent prompt and the Settings switch are hidden.
 
 `SCREENSWAY_ANALYTICS_URL=http://localhost:8787 cargo test --lib live -- --ignored` (in `apps/desktop/src-tauri`) sends real events from the Rust client to a running API.
