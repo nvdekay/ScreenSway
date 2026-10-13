@@ -25,5 +25,5 @@ Before building Windows, run `pnpm setup:windows-speech` to download and verify 
 
 ## Signing
 
-Unsigned macOS and Windows builds trigger security warnings. Before a public release, configure Apple Developer signing/notarization and a Windows code-signing certificate in repository secrets. Never commit signing credentials.
+Unsigned macOS and Windows builds trigger security warnings. Configure Apple Developer signing/notarization and a Windows code-signing certificate in repository secrets to remove those warnings from future releases. Never commit signing credentials.
 

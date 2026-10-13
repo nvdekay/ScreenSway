@@ -91,8 +91,8 @@ Speech tests save timings, WER and recognizer logs beside their temporary
 transcripts. Clear `SCREENSWAY_TEST_MAX_SPEECH_SECONDS` on slower hardware.
 After changing the CMake toolchain, clear stale native objects with
 `cargo clean -p whisper-rs-sys --release --manifest-path native/windows-capture/Cargo.toml`.
-No test recordings or speech fixtures are committed. The public Windows download
-remains pending release; the local NSIS installer is unsigned.
+No test recordings or speech fixtures are committed. The public Windows x64 download
+is served by the landing page; its NSIS installer remains unsigned.
 
 Final automated checks: 33 shared tests, 19 Windows native tests and 4 desktop
 shell tests passed, along with workspace TypeScript checks. A regression test
