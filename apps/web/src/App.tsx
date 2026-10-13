@@ -1,6 +1,7 @@
 import { Apple, ArrowRight, Languages, Moon, Sun } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
+import { track, trackDownload, trackPageView } from "./analytics";
 import { DOWNLOADS, preferredPlatform } from "./downloads";
 import { CONTACT_MAILTO } from "./contact";
 import { Benefits } from "./Benefits";
@@ -93,16 +94,16 @@ function ThemeSwitch() {
   );
 }
 
-function DownloadActions({ centered = false }: { centered?: boolean }) {
+function DownloadActions({ centered = false, placement }: { centered?: boolean; placement: "hero" | "cta" }) {
   const { t } = useI18n();
   return (
     <div className={`download-actions${centered ? " centered" : ""}`}>
-      <a className="button-primary" href={MAC_DOWNLOAD} download onClick={() => openInstallGuide("macos")}>
+      <a className="button-primary" href={MAC_DOWNLOAD} download onClick={() => { trackDownload("macos", placement); openInstallGuide("macos"); }}>
         <Apple size={20} fill="currentColor" aria-hidden="true" />
         {t("hero.mac")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
       </a>
-      <a className="button-primary" href={DOWNLOADS.windows} download onClick={() => openInstallGuide("windows")}>
+      <a className="button-primary" href={DOWNLOADS.windows} download onClick={() => { trackDownload("windows", placement); openInstallGuide("windows"); }}>
         <WindowsIcon />
         {t("hero.windows")}
         <ArrowRight size={18} className="button-arrow" aria-hidden="true" />
@@ -137,8 +138,12 @@ function useScrollReveal() {
 }
 
 export default function App() {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   useScrollReveal();
+  useEffect(() => {
+    trackPageView(language, document.documentElement.dataset.theme === "light" ? "light" : "dark");
+    // Only the first render counts as a visit; switching language does not.
+  }, []);
 
   return (
     <div id="top">
@@ -153,7 +158,7 @@ export default function App() {
         <div className="header-actions">
           <ThemeSwitch />
           <LanguageSwitch />
-          <button className="header-download" onClick={() => openInstallGuide(preferredPlatform())}>{t("nav.download")}</button>
+          <button className="header-download" onClick={() => { track("guide_open", { placement: "header" }); openInstallGuide(preferredPlatform()); }}>{t("nav.download")}</button>
         </div>
       </header>
 
@@ -169,10 +174,10 @@ export default function App() {
             <span className="hero-line accent">{t("hero.titleB")}</span>
           </h1>
           <p className="hero-copy">{t("hero.copy")}</p>
-          <DownloadActions centered />
+          <DownloadActions centered placement="hero" />
           <p className="hero-note">
             {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
-            <button className="link-button" onClick={() => openInstallGuide(preferredPlatform())}>{t("hero.howToInstall")}</button>
+            <button className="link-button" onClick={() => { track("guide_open", { placement: "hero" }); openInstallGuide(preferredPlatform()); }}>{t("hero.howToInstall")}</button>
           </p>
           <div className="hero-demo" id="demo">
             <StudioShowcase />
@@ -186,7 +191,7 @@ export default function App() {
         <section className="cta" data-reveal>
           <div className="cta-glow" aria-hidden="true" />
           <h2>{t("cta.title")}</h2>
-          <DownloadActions centered />
+          <DownloadActions centered placement="cta" />
         </section>
       </main>
 
@@ -200,6 +205,7 @@ export default function App() {
           <span>© 2026 ScreenSway</span>
         </div>
       </footer>
+      <p className="site-privacy">{t("footer.privacy")}</p>
     </div>
   );
 }

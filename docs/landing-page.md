@@ -18,6 +18,8 @@ The benefit cards describe styles and reusable backgrounds, start/end trim and e
 
 UI UX Pro Max informed the product-demo-first hierarchy, visible play/pause controls, keyboard access, responsive layouts, contrast and reduced-motion behavior. The existing indigo identity, locally bundled Plus Jakarta Sans, theme switch, translations and install guide are retained. Product illustrations use CSS and Lucide rather than downloading decorative image assets. Both installation tabs include theme-aware visual mockups. Windows shows the downloaded installer, SmartScreen’s More info → Run anyway flow, and desktop microphone access; keep their labels bilingual and all three cards responsive.
 
+The page reports visits, download clicks and install-guide opens to the analytics API when `VITE_ANALYTICS_URL` is set (`src/analytics.ts`): no cookies or storage, and nothing for visitors who send Do Not Track or Global Privacy Control. The footer states this; keep it accurate (see `analytics.md`).
+
 A first visit always opens in English and dark mode, ignoring the browser language and system appearance. A `?lang=en|vi` parameter or the visitor's saved language/theme choice (`screensway.language`, `screensway.theme` in localStorage) takes precedence.
 
 ## Validation
