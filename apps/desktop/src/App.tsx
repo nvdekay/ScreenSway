@@ -219,6 +219,40 @@ function SettingsMenu({ updater }: { updater: UpdaterController }) {
   );
 }
 
+export function HeaderUpdateButton({ updater }: { updater: UpdaterController }) {
+  const { t } = useI18n();
+  const { state } = updater;
+
+  if (state.status === "available") {
+    return (
+      <button className="header-update-button" onClick={() => void updater.install()}>
+        <Download size={15} aria-hidden="true" />
+        {t("update.headerInstall", { version: state.version })}
+      </button>
+    );
+  }
+
+  if (state.status === "downloading") {
+    return (
+      <button className="header-update-button is-busy" disabled aria-live="polite">
+        <RotateCw className="spin" size={15} aria-hidden="true" />
+        {t("update.downloading", { percent: state.progress ?? "…" })}
+      </button>
+    );
+  }
+
+  if (state.status === "restarting") {
+    return (
+      <button className="header-update-button is-busy" disabled aria-live="polite">
+        <RotateCw className="spin" size={15} aria-hidden="true" />
+        {t("update.restartingShort")}
+      </button>
+    );
+  }
+
+  return null;
+}
+
 export function LibraryCard({
   entry,
   active,
@@ -525,7 +559,10 @@ export default function App() {
           <LogoMark size={30} />
           <span>ScreenSway</span>
         </a>
-        <SettingsMenu updater={updater} />
+        <div className="titlebar-actions">
+          <HeaderUpdateButton updater={updater} />
+          <SettingsMenu updater={updater} />
+        </div>
       </header>
 
       <section className="studio">

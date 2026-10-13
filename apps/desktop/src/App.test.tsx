@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LibraryCard, recordingMatches } from "./App";
+import { HeaderUpdateButton, LibraryCard, recordingMatches } from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
@@ -27,6 +27,30 @@ const entry = {
 };
 
 afterEach(cleanup);
+
+describe("header updater", () => {
+  it("installs an available update directly from the title bar", () => {
+    const install = vi.fn().mockResolvedValue(undefined);
+    render(<HeaderUpdateButton updater={{
+      state: { status: "available", version: "0.4.0" },
+      checkNow: vi.fn(),
+      install,
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "update.headerInstall" }));
+    expect(install).toHaveBeenCalledOnce();
+  });
+
+  it("shows progress and prevents another click while downloading", () => {
+    render(<HeaderUpdateButton updater={{
+      state: { status: "downloading", version: "0.4.0", progress: 42 },
+      checkNow: vi.fn(),
+      install: vi.fn(),
+    }} />);
+
+    expect((screen.getByRole("button", { name: "update.downloading" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
 
 describe("recording library", () => {
   it("matches names, localized dates and dimensions", () => {
