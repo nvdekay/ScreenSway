@@ -3,13 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#08080d" />
+    <meta name="theme-color" content="#000000" />
     <meta name="color-scheme" content="dark" />
     <script>
-      // Apply a remembered theme before first paint so the page never flashes the wrong one.
+      // Compose the opening frame before first paint; the app plays the sequence and removes the class.
       try {
-        var theme = localStorage.getItem("screensway.theme");
-        if (theme === "light") document.documentElement.dataset.theme = theme;
+        if (!window.matchMedia || !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          document.documentElement.classList.add("anim");
+          // If the app never starts, do not leave the opening frame hidden.
+          setTimeout(function () {
+            if (!document.documentElement.classList.contains("play")) document.documentElement.classList.remove("anim");
+          }, 6000);
+        }
       } catch (error) {}
     </script>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />

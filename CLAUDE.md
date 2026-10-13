@@ -8,7 +8,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - `apps/desktop` — Tauri 2 shell (`src-tauri/src/lib.rs`) and React UI (`src/`, studio in `src/frame/`). UI strings live in `src/i18n.tsx` (English and Vietnamese, keep both in sync).
 - `native/macos-capture` — Swift sidecar: capture (`ScreenSwayCapture.swift`) and `--export` renderer (`Exporter.swift`). Built into `apps/desktop/src-tauri/binaries/` by `scripts/build-native.mjs`.
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture, WASAPI audio, Media Foundation export and Whisper captions). Shell code shared by both platforms is gated with `cfg(capture)`.
-- `apps/web` — landing page (GitHub Pages), bilingual, light/dark themes via CSS tokens in `src/styles.css`.
+- `apps/web` — landing page (GitHub Pages), bilingual, dark only, CSS tokens in `src/styles.css` (black/violet style with a looping globe video behind the page; see `docs/landing-page.md`).
 - `apps/analytics` — Cloudflare Worker + D1: public event ingestion, token-protected stats API and the private dashboard page. Events, API and deployment: `docs/analytics.md`.
 
 ## Current state
