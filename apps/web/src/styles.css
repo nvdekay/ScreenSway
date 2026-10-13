@@ -309,7 +309,6 @@ main:focus { outline: none; }
 .site-footer { width: var(--content); margin: 80px auto 0; padding: 32px 0 48px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-top: 1px solid var(--hairline); color: var(--text-subtle); font-size: 14px; }
 .site-footer div { display: flex; align-items: center; gap: 22px; }
 .site-footer a:hover { color: var(--text); }
-.site-privacy { width: var(--content); margin: -28px auto 0; padding-bottom: 40px; color: var(--text-subtle); font-size: 12.5px; line-height: 1.5; text-align: center; }
 
 /* Scroll reveal: only hidden once JavaScript confirms it can reveal it again. */
 .reveal-ready [data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out); }
@@ -466,7 +465,7 @@ main:focus { outline: none; }
 .benefits-heading h2, .faq-intro h2, .cta h2, .install-guide h2 { font-weight: 500; letter-spacing: -.03em; line-height: 1.1; }
 .benefits { margin-top: 112px; }
 .benefit-card, .faq-item { background: var(--glass-fill); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-.benefits-heading h2, .faq-intro, .benefits-trust, .site-footer, .site-privacy { text-shadow: 0 1px 14px var(--bg); }
+.benefits-heading h2, .faq-intro, .benefits-trust, .site-footer { text-shadow: 0 1px 14px var(--bg); }
 .benefit-card h3 { font-weight: 600; }
 .faq { margin-top: 104px; }
 .faq-intro > p { margin-top: 18px; }

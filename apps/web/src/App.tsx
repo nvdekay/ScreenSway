@@ -387,7 +387,6 @@ export default function App() {
           <span>© 2026 ScreenSway</span>
         </div>
       </footer>
-      <p className="site-privacy">{t("footer.privacy")}</p>
     </div>
   );
 }
