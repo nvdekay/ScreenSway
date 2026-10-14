@@ -8,7 +8,8 @@
     "core:window:allow-start-dragging",
     "process:allow-restart",
     "updater:allow-check",
-    "updater:allow-download-and-install"
+    "updater:allow-download",
+    "updater:allow-install"
   ]
 }
 
