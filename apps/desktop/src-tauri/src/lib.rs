@@ -1610,6 +1610,18 @@ fn reveal_in_file_manager(path: &std::path::Path) -> std::io::Result<()> {
     std::process::Command::new("open").arg("-R").arg(path).spawn().map(drop)
 }
 
+/// True while a recording, export or caption job runs. Installing an update quits the
+/// app, so the updater waits until this work has finished or been cancelled.
+#[tauri::command]
+fn background_work_active(
+    capture: tauri::State<'_, CaptureManager>,
+    export: tauri::State<'_, ExportManager>,
+    transcription: tauri::State<'_, TranscriptionManager>,
+) -> bool {
+    let recording = capture.state.lock().map(|state| state.status != "idle").unwrap_or(true);
+    recording || export.busy.load(Ordering::SeqCst) || transcription.busy.load(Ordering::SeqCst)
+}
+
 #[tauri::command]
 fn open_screen_recording_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -1723,6 +1735,7 @@ pub fn run() {
             delete_recording,
             reveal_recording,
             open_screen_recording_settings,
+            background_work_active,
             open_microphone_settings,
             export_recording,
             cancel_export,

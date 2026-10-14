@@ -244,6 +244,11 @@ function SettingsMenu({ updater }: { updater: UpdaterController }) {
                 <strong>{t("update.available", { version: updater.state.version })}</strong>
                 <button className="update-button" onClick={() => void updater.install()}><Download size={14} /> {t("update.install")}</button>
               </>
+            ) : updater.state.status === "waiting" ? (
+              <>
+                <span className="update-status">{t("update.waiting", { version: updater.state.version })}</span>
+                <button className="update-button" onClick={() => void updater.install()}><RotateCw size={14} /> {t("update.restartNow")}</button>
+              </>
             ) : updater.state.status === "downloading" ? (
               <span className="update-status">{t("update.downloading", { percent: updater.state.progress ?? "…" })}</span>
             ) : updater.state.status === "restarting" ? (
@@ -273,6 +278,19 @@ export function HeaderUpdateButton({ updater }: { updater: UpdaterController }) 
       <button className="header-update-button" onClick={() => void updater.install()}>
         <Download size={15} aria-hidden="true" />
         {t("update.headerInstall", { version: state.version })}
+      </button>
+    );
+  }
+
+  if (state.status === "waiting") {
+    return (
+      <button
+        className="header-update-button"
+        title={t("update.waiting", { version: state.version })}
+        onClick={() => void updater.install()}
+      >
+        <RotateCw size={15} aria-hidden="true" />
+        {t("update.restartNow")}
       </button>
     );
   }
