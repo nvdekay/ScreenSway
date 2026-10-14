@@ -37,5 +37,9 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD='<password from the password manager>'
 pnpm build:macos
 ```
 
-Do not place these values in `.env` files. The public feed is `https://nvdekay.github.io/ScreenSway/update/latest.json`; it is generated only after updater artifacts for both platforms exist on the latest release.
+Do not place these values in `.env` files. The public feed is `https://nvdekay.github.io/ScreenSway/update/latest.json`; it always describes the release the Worker currently offers.
+
+## Updates and macOS permissions
+
+The macOS app is ad-hoc signed, so its code identity (the designated requirement is a `cdhash`) changes with every build. After an update, macOS may stop honoring the Screen Recording, Microphone and Speech Recognition permissions, even though System Settings still shows them switched on. The in-app permission messages tell users to switch the permission off and on again, or remove and re-add ScreenSway. Developer ID signing would remove this. The updater waits while a recording, export or caption job is running (`background_work_active`): the update downloads, and the user restarts to install it once the job is done.
 
