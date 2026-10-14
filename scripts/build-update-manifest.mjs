@@ -5,8 +5,13 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.resolve(process.argv[2] ?? path.join(root, "apps/web/dist/update/latest.json"));
 const directory = path.dirname(output);
-const version = JSON.parse(readFileSync(path.join(root, "apps/desktop/src-tauri/tauri.conf.json"), "utf8")).version;
-const base = "https://nvdekay.github.io/ScreenSway/update";
+// The release being offered, which can lag behind the version on main while a release
+// is still building. Announcing main's version with older files would loop updates.
+const version = process.env.UPDATE_VERSION?.replace(/^v/, "")
+  ?? JSON.parse(readFileSync(path.join(root, "apps/desktop/src-tauri/tauri.conf.json"), "utf8")).version;
+// Versioned files on the downloads Worker, e.g. https://…workers.dev/v0.3.2
+const base = process.env.UPDATE_BASE_URL?.replace(/\/$/, "");
+if (!base) throw new Error("UPDATE_BASE_URL is required");
 const mac = "ScreenSway-macos-universal.app.tar.gz";
 const windows = "ScreenSway-windows-x64-setup.exe";
 const signature = (name) => readFileSync(path.join(directory, `${name}.sig`), "utf8").trim();

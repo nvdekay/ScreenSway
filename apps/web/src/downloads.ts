@@ -1,9 +1,13 @@
 export type DownloadPlatform = "macos" | "windows";
 
-// Public copies of the private release assets, bundled by the Pages workflow.
+// Public copies of the private release assets, served by the downloads Worker
+// (apps/downloads). Local builds without the variable link to ./download/.
+const BASE = (import.meta.env.VITE_DOWNLOADS_URL as string | undefined)?.replace(/\/$/, "");
+const LATEST = BASE ? `${BASE}/latest` : "./download";
+
 export const DOWNLOADS = {
-  macos: "./download/ScreenSway-macos-universal.dmg",
-  windows: "./download/ScreenSway-windows-x64-setup.exe",
+  macos: `${LATEST}/ScreenSway-macos-universal.dmg`,
+  windows: `${LATEST}/ScreenSway-windows-x64-setup.exe`,
 } as const;
 
 export function preferredPlatform(): DownloadPlatform {

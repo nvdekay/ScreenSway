@@ -1,6 +1,6 @@
 # Landing page
 
-The marketing site lives in `apps/web` and deploys through the existing GitHub Pages workflow. Keep download links relative: the workflow copies the latest DMG, Windows x64 installer and its SHA-256 checksum into `dist/download` because the source repository is private. Both platform downloads are active; keep English and Vietnamese installation guides synchronized.
+The marketing site lives in `apps/web` and deploys through the existing GitHub Pages workflow. Download links point at the downloads Worker's `/latest/` paths (`VITE_DOWNLOADS_URL`, set in `web.yml`; local builds fall back to `./download/`), because the source repository is private and the installers are too large for Pages (see `releasing.md`). Both platform downloads are active; keep English and Vietnamese installation guides synchronized.
 
 ## Product story
 
