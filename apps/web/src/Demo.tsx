@@ -82,7 +82,7 @@ function MockApp() {
         <span>{t("mock.title")}</span>
       </div>
       <aside className="mock-sidebar">
-        <div className="mock-logo"><span /> Acme</div>
+        <div className="mock-logo"><span /> ScreenSway</div>
         <div className="mock-nav overview"><LayoutGrid size={18} /> {t("mock.overview")}</div>
         <div className="mock-nav reports"><FileText size={18} /> {t("mock.reports")}</div>
         <div className="mock-nav"><Users size={18} /> {t("mock.team")}</div>
@@ -91,7 +91,7 @@ function MockApp() {
       <div className="mock-main">
         <header className="mock-header">
           <h4>
-            <span className="title-overview">{t("mock.overview")}</span>
+            <span className="title-overview">{t("mock.greeting")}</span>
             <span className="title-reports">{t("mock.reports")}</span>
           </h4>
           <span className="mock-button"><Plus size={16} /> {t("mock.newReport")}</span>
