@@ -2,22 +2,30 @@
 
 ## Download URL
 
-The repository is private, so GitHub Release assets are not publicly downloadable. The landing page serves both desktop builds itself:
+The repository is private, so GitHub Release assets are not publicly downloadable. A Cloudflare Worker (`apps/downloads`, bucket `screensway-downloads` in R2) serves both desktop builds:
 
 ```text
-https://nvdekay.github.io/ScreenSway/download/ScreenSway-macos-universal.dmg
-https://nvdekay.github.io/ScreenSway/download/ScreenSway-windows-x64-setup.exe
+https://screensway-downloads.visual-lab-dm4.workers.dev/latest/ScreenSway-macos-universal.dmg
+https://screensway-downloads.visual-lab-dm4.workers.dev/latest/ScreenSway-windows-x64-setup.exe
+https://screensway-downloads.visual-lab-dm4.workers.dev/v0.3.2/ScreenSway-macos-universal.app.tar.gz   # one release
+https://screensway-downloads.visual-lab-dm4.workers.dev/current                                     # {"tag": "v0.3.2"}
 ```
 
-The "Deploy landing page" workflow downloads `ScreenSway-macos-universal.dmg`, `ScreenSway-windows-x64-setup.exe` and its `.sha256` checksum from the latest release and publishes it with the site. It runs when a release is published. If you replace the asset of an existing release, re-run the workflow (`gh workflow run web.yml`) so the site picks up the new file.
+GitHub Pages used to host these files, but the Windows installer alone is about 494 MiB, and Pages limits a site to 1 GB and about 100 GB of traffic a month. R2 has no egress fees. The Worker supports range requests (resumable downloads), sends `X-Checksum-Sha256`, and serves only the three known file names.
+
+The "Deploy landing page" workflow runs `scripts/publish-downloads.mjs`. The script copies the latest release's DMG, macOS updater bundle and Windows installer to R2 through the Worker's token-protected multipart upload API. Files whose checksum already matches are skipped, so re-deploys upload nothing. It then makes that release current. Switching keeps the previous release, for clients that are mid-update, and deletes older ones. A release that does not have its Windows installer yet is left alone (exit code 2), and the site keeps offering the current one.
+
+The workflow then builds `update/latest.json` on Pages from the current release's `.sig` files. The feed's version comes from the tag, not from `main`, and its URLs point at the versioned Worker paths. If you replace an asset of the current release, re-run the workflow (`gh workflow run web.yml`).
+
+Secrets: the Worker's `UPLOAD_TOKEN` (`wrangler secret put UPLOAD_TOKEN` in `apps/downloads`) and the GitHub secret `DOWNLOADS_UPLOAD_TOKEN` must hold the same value. Deploy Worker changes with `pnpm --filter @screensway/downloads deploy`. `pnpm --filter @screensway/downloads test:e2e` checks the Worker and the publish script against a local R2 bucket.
 
 ## Publish a release
 
 1. Update the version in the root package, desktop package, `tauri.conf.json`, and `Cargo.toml`.
 2. Commit and push the changes.
 3. Create and push a matching tag, for example `v0.2.0`. The "Release macOS app" workflow refuses a tag that differs from the `tauri.conf.json` version.
-4. The workflow builds the universal DMG and signed updater bundle on a macOS 26 runner, verifies the app, publishes the release, then dispatches `windows.yml` with `publish=true`. The Windows workflow builds and uploads the matching installer, checksum and signed updater bundle, then deploys both downloads and `update/latest.json`.
-5. Download the DMG from the landing page and test it before announcing the release.
+4. The workflow builds the universal DMG and signed updater bundle on a macOS 26 runner, verifies the app, publishes the release with SHA-256 checksums, then dispatches `windows.yml` with `publish=true` on the same tag, so both installers come from the tagged commit. The Windows workflow builds and uploads the matching installer, checksum and signature, then runs the landing deploy, which copies both downloads to R2 and publishes `update/latest.json`.
+5. Download both installers from the landing page and test them before announcing the release, including an in-app update from the previous version on each platform.
 
 Both macOS and Windows x64 are publicly available. Relevant pushes build a Windows test artifact. To replace the Windows release asset, dispatch `windows.yml` with `publish=true`; the app version must have a matching release. The unsigned Windows installer includes the offline speech model (about 494 MiB). Windows 11 has been tested; offline captions require AVX2, FMA, F16C and BMI2.
 

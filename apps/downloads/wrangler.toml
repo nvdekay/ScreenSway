@@ -1,0 +1,12 @@
+name = "screensway-downloads"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Installers and updater bundles, served from R2 instead of GitHub Pages
+# (Pages limits a site to 1 GB and ~100 GB of traffic a month). See docs/releasing.md.
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "screensway-downloads"
+
+# Secret (set with `wrangler secret put`, mirrored in the GitHub secret DOWNLOADS_UPLOAD_TOKEN):
+#   UPLOAD_TOKEN  bearer token for the /admin upload API used by the deploy workflow

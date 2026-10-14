@@ -10,18 +10,19 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture, WASAPI audio, Media Foundation export and Whisper captions). Shell code shared by both platforms is gated with `cfg(capture)`.
 - `apps/web` — landing page (GitHub Pages), bilingual, dark only, CSS tokens in `src/styles.css` (black/violet style with a looping globe video behind the page; see `docs/landing-page.md`).
 - `apps/analytics` — Cloudflare Worker + D1: public event ingestion, token-protected stats API and the private dashboard page. Events, API and deployment: `docs/analytics.md`.
+- `apps/downloads` — Cloudflare Worker + R2 that serves the installers and updater bundles (`/latest/<file>`, `/<tag>/<file>`); the landing deploy uploads releases with `scripts/publish-downloads.mjs`. See `docs/releasing.md`.
 
 ## Current state
 
-- Version `0.3.1`; landing page is live at `https://nvdekay.github.io/ScreenSway/` and serves the latest macOS and Windows installers from its own `download/` path.
+- Version `0.3.1`; landing page is live at `https://nvdekay.github.io/ScreenSway/`; the latest macOS and Windows installers are served by the downloads Worker (R2), and Pages keeps only the site and `update/latest.json`.
 - The landing page groups its message into hero/demo, four benefit cards, five essential FAQs and a compact download CTA; install details stay in the popup.
 - The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
 - The local recording library supports search, inline rename, confirmed permanent deletion and on-demand hover scrubbing.
-- The signed Tauri updater checks the public Pages feed after launch and can download, verify, install and relaunch from Settings. Release CI requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; never commit or rotate the private key casually.
+- The signed Tauri updater checks the public Pages feed after launch and can download, verify, install and relaunch from Settings; it waits while a recording, export or caption job runs. Ad-hoc signing means macOS may need permissions re-granted after an update (see `docs/releasing.md`). Release CI requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; never commit or rotate the private key casually.
 - Windows display/window capture, pointer metadata, pause/resume, thumbnails, shared desktop shell and NSIS CI build are implemented. Windows audio, export and offline captions are implemented and tested locally. The landing page serves both macOS and Windows installers from the latest release, with platform-specific install guides.
 - Windows speech uses optimized MSVC C/C++ kernels and fused attention, with a bundled Whisper model. Keep `.cargo/windows-speech.cmake` and the CI cache key aligned; see `docs/windows-validation.md` for timings, accuracy samples and CPU requirements.
-- GitHub workflows: `web.yml` deploys Pages, `release.yml` publishes macOS tags and dispatches the matching Windows release, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
+- GitHub workflows: `web.yml` deploys Pages and copies the latest complete release to R2, `release.yml` publishes macOS tags and dispatches the matching Windows release from the same tag, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
 
 ## Commands
 
@@ -34,6 +35,7 @@ pnpm dev:desktop                                  # run the app
 pnpm build:macos                                  # universal app + LZMA DMG
 pnpm build:web                                    # landing page
 pnpm --filter @screensway/analytics test:e2e        # analytics API end to end on a local D1
+pnpm --filter @screensway/downloads test:e2e        # downloads Worker + publish script on a local R2
 (cd native/windows-capture && cargo test)          # Windows helper logic (runs on macOS too)
 (cd native/windows-capture && cargo check --target x86_64-pc-windows-msvc)  # type-check the Windows code from a Mac
 pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the build (windows.yml)
@@ -44,7 +46,7 @@ pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the
 - Commits: focused, imperative subject, explanatory body. Never add Claude/Co-Authored-By attribution. Split unrelated changes into separate commits.
 - The app's only network use is opt-in anonymous usage statistics (`src-tauri/src/telemetry.rs`): nothing is sent before the user agrees, and never recording content, file names or paths. Fonts are bundled. New events must be added to the allow-lists on both sides (see `docs/analytics.md`). File access from the UI is restricted to `~/Movies/ScreenSway`.
 - Versions live in four places: root and desktop `package.json`, `tauri.conf.json`, `Cargo.toml`. Release = push a matching `vX.Y.Z` tag; the workflow builds, verifies, publishes and redeploys the landing page with the new DMG.
-- The repository is private: the landing page serves the DMG itself (`download/ScreenSway-macos-universal.dmg`) and must not link to GitHub.
+- The repository is private: the landing page links to the downloads Worker (`…/latest/ScreenSway-macos-universal.dmg`) and must not link to GitHub.
 - Before ending a coding session, keep `CLAUDE.md` and the relevant file in `docs/` aligned with shipped behavior, run proportionate checks, split unrelated work into focused commits, and push `main` when the user asks for a full handoff.
 
 ## Verification notes

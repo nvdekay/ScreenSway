@@ -67,6 +67,9 @@ jobs:
           cp "$UPDATER" ScreenSway-macos-universal.app.tar.gz
           cp "$UPDATER.sig" ScreenSway-macos-universal.app.tar.gz.sig
           shasum -a 256 ScreenSway-macos-universal.dmg | tee checksum.txt
+          for asset in ScreenSway-macos-universal.dmg ScreenSway-macos-universal.app.tar.gz; do
+            shasum -a 256 "$asset" > "$asset.sha256"
+          done
 
       - name: Publish the release
         env:
@@ -76,7 +79,9 @@ jobs:
           sed "s/__CHECKSUM__/$CHECKSUM/" .github/release-notes.md > notes.md
           gh release create "$GITHUB_REF_NAME" \
             ScreenSway-macos-universal.dmg \
+            ScreenSway-macos-universal.dmg.sha256 \
             ScreenSway-macos-universal.app.tar.gz \
+            ScreenSway-macos-universal.app.tar.gz.sha256 \
             ScreenSway-macos-universal.app.tar.gz.sig \
             --title "ScreenSway $GITHUB_REF_NAME" \
             --notes-file notes.md \

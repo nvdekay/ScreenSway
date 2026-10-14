@@ -9,6 +9,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/build-update-manifest.mjs"
+      - "scripts/publish-downloads.mjs"
       - ".github/workflows/web.yml"
   # Re-deploy when a release is published so the site serves the new downloads.
   release:
@@ -19,6 +20,9 @@ permissions:
   contents: read
   pages: write
   id-token: write
+
+env:
+  DOWNLOADS_URL: https://screensway-downloads.visual-lab-dm4.workers.dev
 
 concurrency:
   group: pages
@@ -44,40 +48,53 @@ jobs:
         env:
           # Public URL of the analytics API (apps/analytics); local builds send nothing.
           VITE_ANALYTICS_URL: https://screensway-analytics.visual-lab-dm4.workers.dev
+          # Installers are served by the downloads Worker (apps/downloads), not by Pages:
+          # Pages limits a site to 1 GB and ~100 GB of traffic a month.
+          VITE_DOWNLOADS_URL: ${{ env.DOWNLOADS_URL }}
       # The repository is private, so release assets are not publicly downloadable.
-      # Serve the latest desktop builds from the landing page itself instead.
-      - name: Bundle the latest desktop downloads
+      # Copy the latest complete release to the downloads Worker. While a new release
+      # is still waiting for its Windows installer, keep offering the current one.
+      - name: Publish the latest desktop downloads
+        id: downloads
         env:
           GH_TOKEN: ${{ github.token }}
+          DOWNLOADS_UPLOAD_TOKEN: ${{ secrets.DOWNLOADS_UPLOAD_TOKEN }}
         run: |
-          mkdir -p apps/web/dist/download
-          gh release download --repo "$GITHUB_REPOSITORY" \
-            --pattern ScreenSway-macos-universal.dmg \
-            --pattern ScreenSway-windows-x64-setup.exe \
-            --pattern ScreenSway-windows-x64-setup.exe.sha256 \
-            --dir apps/web/dist/download
-          (cd apps/web/dist/download && sha256sum -c ScreenSway-windows-x64-setup.exe.sha256)
-          ls -l apps/web/dist/download
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          mkdir -p release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.sha256' --dir release || true
+          set +e
+          node scripts/publish-downloads.mjs "$TAG" release
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 2 ]; then
+            TAG=$(curl -fsS "$DOWNLOADS_URL/current" | jq -r .tag)
+            test -n "$TAG" && test "$TAG" != null
+          elif [ "$STATUS" -ne 0 ]; then
+            exit "$STATUS"
+          fi
+          curl -fsSI "$DOWNLOADS_URL/latest/ScreenSway-macos-universal.dmg" > /dev/null
+          curl -fsSI "$DOWNLOADS_URL/latest/ScreenSway-windows-x64-setup.exe" > /dev/null
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - name: Build the signed updater feed
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.downloads.outputs.tag }}
         run: |
           mkdir -p apps/web/dist/update
-          if gh release download --repo "$GITHUB_REPOSITORY" \
-            --pattern ScreenSway-macos-universal.app.tar.gz \
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern ScreenSway-macos-universal.app.tar.gz.sig \
-            --pattern ScreenSway-windows-x64-setup.exe \
             --pattern ScreenSway-windows-x64-setup.exe.sig \
-            --dir apps/web/dist/update; then
-            UPDATE_PUB_DATE=$(gh release view --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)
-            UPDATE_NOTES=$(gh release view --repo "$GITHUB_REPOSITORY" --json name --jq .name)
-            export UPDATE_PUB_DATE UPDATE_NOTES
-            node scripts/build-update-manifest.mjs
-            node -e "JSON.parse(require('fs').readFileSync('apps/web/dist/update/latest.json'))"
-          else
-            echo "The current release predates signed updater artifacts; publishing downloads without an update feed."
-            rm -rf apps/web/dist/update
-          fi
+            --dir apps/web/dist/update
+          UPDATE_PUB_DATE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)
+          UPDATE_NOTES=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+          UPDATE_VERSION="$TAG"
+          UPDATE_BASE_URL="$DOWNLOADS_URL/$TAG"
+          export UPDATE_PUB_DATE UPDATE_NOTES UPDATE_VERSION UPDATE_BASE_URL
+          node scripts/build-update-manifest.mjs
+          rm apps/web/dist/update/*.sig
+          node -e "JSON.parse(require('fs').readFileSync('apps/web/dist/update/latest.json'))"
+          cat apps/web/dist/update/latest.json
       - uses: actions/configure-pages@v6
         with:
           enablement: true
