@@ -1,7 +1,9 @@
 ## Install
-This release adds signed in-app updates. When a newer version is available, use the **Update** button in ScreenSway to download, verify, install and restart without downloading the installer again.
+Updates now wait for a running recording, export or caption job: ScreenSway downloads the update and offers **Restart to update** once the work is done. Installers are served from a faster download host.
 
-**Tiếng Việt:** Bản này bổ sung cập nhật có chữ ký ngay trong ứng dụng. Khi có phiên bản mới, bấm **Cập nhật** trong ScreenSway để tải, xác minh, cài đặt và khởi động lại mà không cần tải lại bộ cài.
+After an in-app update on macOS, screen recording, microphone or speech permissions may need to be switched off and on again in **System Settings › Privacy & Security** (ScreenSway is not notarized yet).
+
+**Tiếng Việt:** Bản cập nhật giờ chờ việc quay, xuất video hoặc tạo phụ đề đang chạy: ScreenSway tải bản mới về và hiện **Khởi động lại để cập nhật** khi xong việc. Bộ cài được tải từ máy chủ nhanh hơn. Sau khi cập nhật trên macOS, có thể cần tắt rồi bật lại quyền ghi màn hình, micro hoặc nhận dạng giọng nói trong **Cài đặt hệ thống › Quyền riêng tư & Bảo mật**.
 
 1. Download **ScreenSway-macos-universal.dmg** from https://nvdekay.github.io/ScreenSway/ (Apple silicon & Intel, macOS 15 or later).
 2. Open it and drag ScreenSway to Applications.
