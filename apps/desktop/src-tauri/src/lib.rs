@@ -1580,6 +1580,14 @@ fn cancel_export(state: tauri::State<'_, ExportManager>) {
 #[tauri::command]
 fn open_export(path: String, reveal: bool) -> Result<(), String> {
     let file = resolve_library_file(&path)?;
+    // Only exported videos and their subtitles are opened, never anything else in the library.
+    let exported = file
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp4") || extension.eq_ignore_ascii_case("srt"));
+    if !exported {
+        return Err("Only exported videos can be opened.".into());
+    }
     if reveal {
         reveal_in_file_manager(&file)
     } else {
