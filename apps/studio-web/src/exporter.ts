@@ -126,13 +126,15 @@ export async function renderExport(
       for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack).buffers(start, end)) {
         checkpoint();
         const gap = timestamp - written;
-        if (gap > 0.01) await audioSource.add(silence(Math.min(gap, end - written), buffer));
+        if (gap > 0.01) await audioSource.add(silence(Math.min(gap, end - written), buffer.sampleRate, buffer.numberOfChannels));
         const kept = keep(buffer, Math.max(timestamp, written), timestamp, end);
         if (kept) {
           await audioSource.add(kept);
           written = Math.max(timestamp, written) + kept.duration;
         }
       }
+      // Sound that ends before the picture is padded too, so both tracks end together.
+      if (end - written > 0.01) await audioSource.add(silence(end - written, audioTrack.sampleRate, audioTrack.numberOfChannels));
       audioSource.close();
     }
     checkpoint();
@@ -141,7 +143,8 @@ export async function renderExport(
     onProgress(100);
     return target instanceof BufferTarget ? new Blob([target.buffer!], { type: "video/mp4" }) : null;
   } catch (error) {
-    if (output && output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => {});
+    // Also waits for a cancel already started by the abort handler to finish closing the file.
+    if (output && output.state !== "finalized") await output.cancel().catch(() => {});
     throw signal.aborted ? new ExportCancelled() : error;
   } finally {
     signal.removeEventListener("abort", cancel);
@@ -163,6 +166,6 @@ function keep(buffer: AudioBuffer, from: number, timestamp: number, end: number)
   return part;
 }
 
-function silence(seconds: number, like: AudioBuffer): AudioBuffer {
-  return new AudioBuffer({ length: Math.max(1, Math.round(seconds * like.sampleRate)), numberOfChannels: like.numberOfChannels, sampleRate: like.sampleRate });
+function silence(seconds: number, sampleRate: number, numberOfChannels: number): AudioBuffer {
+  return new AudioBuffer({ length: Math.max(1, Math.round(seconds * sampleRate)), numberOfChannels, sampleRate });
 }
