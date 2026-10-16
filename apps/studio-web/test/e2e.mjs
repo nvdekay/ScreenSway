@@ -92,6 +92,10 @@ function fakes(options) {
       return write.call(this, data);
     };
   }
+  if (options.failRecordingClose) {
+    // The disk fills up just as the recording's file is committed.
+    FileSystemWritableFileStream.prototype.close = () => Promise.reject(new DOMException("Quota exceeded", "QuotaExceededError"));
+  }
   if (options.failRecorder) {
     window.MediaRecorder = class extends MediaRecorder {
       constructor() {
@@ -171,6 +175,32 @@ const chosenFile = (page) =>
     }
   });
 
+/** The chosen file's MP4, read back and described with mediabunny. */
+async function readExport(page) {
+  const base64 = await page.evaluate(async () => {
+    const file = await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let text = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  });
+  const input = new Input({ source: new BufferSource(Buffer.from(base64, "base64")), formats: ALL_FORMATS });
+  try {
+    const video = await input.getPrimaryVideoTrack();
+    const audio = await input.getPrimaryAudioTrack();
+    return {
+      hasVideo: Boolean(video),
+      hasAudio: Boolean(audio),
+      codec: video?.codec,
+      duration: await input.computeDuration(),
+      videoDuration: video ? await video.computeDuration() : 0,
+      audioDuration: audio ? await audio.computeDuration() : 0,
+    };
+  } finally {
+    input.dispose();
+  }
+}
+
 const storedRecordings = (page) =>
   page.evaluate(async () => {
     const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("recordings", { create: true });
@@ -221,22 +251,11 @@ try {
     await page.locator(".export-done, .export-box .capture-message.error").first().waitFor({ timeout: 120_000 });
     assert.equal(await page.locator(".export-box .capture-message.error").count(), 0, await page.locator(".export-box").textContent());
     assert.equal(await page.getByRole("button", { name: "Download again" }).count(), 0, "a saved file is not offered again");
-    const base64 = await page.evaluate(async () => {
-      const file = await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let text = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      return btoa(text);
-    });
-    const input = new Input({ source: new BufferSource(Buffer.from(base64, "base64")), formats: ALL_FORMATS });
-    const video = await input.getPrimaryVideoTrack();
-    const audio = await input.getPrimaryAudioTrack();
-    const duration = await input.computeDuration();
-    assert.ok(video && audio, "the MP4 has video and sound");
-    assert.equal(video.codec, "avc");
-    assert.ok(duration > 6 && duration < 8.5, `export lasts as long as the recording (${duration.toFixed(2)} s)`);
-    assert.ok(Math.abs((await audio.computeDuration()) - (await video.computeDuration())) < 0.2, "sound and picture end together");
-    input.dispose();
+    const exported = await readExport(page);
+    assert.ok(exported.hasVideo && exported.hasAudio, "the MP4 has video and sound");
+    assert.equal(exported.codec, "avc");
+    assert.ok(exported.duration > 6 && exported.duration < 8.5, `export lasts as long as the recording (${exported.duration.toFixed(2)} s)`);
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.2, "sound and picture end together");
 
     let asked = 0;
     page.on("dialog", (dialog) => {
@@ -292,6 +311,7 @@ try {
         throw new Error(`${what}: ${await page.locator(".export-box").textContent()} (writes: ${await page.evaluate(() => window.__test.writes)})`, { cause: error });
       });
       assert.equal(await chosenFile(page), "ORIGINAL VIDEO", `an export failing ${what} leaves the chosen file as it was`);
+      if (failure !== "failExport") assert.match(await page.locator(".export-box").textContent(), /could not be written to the file/, `a failure ${what} is explained in the page's language`);
       await page.evaluate((key) => (window.__test[key] = undefined), failure);
     }
 
@@ -342,6 +362,41 @@ try {
     assert.deepEqual(await storedRecordings(page), [], "the incomplete file is deleted");
     await page.close();
     console.log("disk full while recording: ok");
+  }
+
+  // 6. A disk that fills up as the recording is committed is reported the same way.
+  {
+    const page = await openApp({ failRecordingClose: true });
+    await record(page, 2_000);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.getByText(/not enough free disk space/).waitFor({ timeout: 20_000 });
+    assert.equal(await page.locator(".preview-section").count(), 0, "no studio for an uncommitted recording");
+    await page.close();
+    console.log("disk full while committing the recording: ok");
+  }
+
+  // 7. A very short recording, trimmed close to both ends, exports exactly the kept part.
+  {
+    const page = await openApp();
+    await record(page, 1_200);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    for (const [handle, key] of [["Start of the video", "ArrowRight"], ["End of the video", "ArrowLeft"]]) {
+      await page.getByRole("slider", { name: handle }).or(page.getByLabel(handle)).first().focus();
+      await page.keyboard.press(key);
+      await page.keyboard.press(key);
+    }
+    const kept = await page.locator(".timeline-title").textContent();
+    const keptSeconds = Number(kept.match(/\((\d+):(\d+(?:\.\d+)?)\)/).slice(1).reduce((minutes, seconds) => minutes * 60 + Number(seconds), 0));
+    assert.match(kept, /Keeping 0:00\.2/, `trimmed at the start (${kept})`);
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.locator(".export-done").waitFor({ timeout: 60_000 });
+    const exported = await readExport(page);
+    assert.ok(Math.abs(exported.duration - keptSeconds) < 0.1, `export is the kept ${keptSeconds} s (${exported.duration.toFixed(3)} s)`);
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, "sound and picture end together");
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("short recording trimmed at both ends: ok");
   }
 
   // 3. A recorder that fails to start must not keep the screen shared.
