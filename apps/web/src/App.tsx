@@ -1,4 +1,4 @@
-import { Apple, Languages } from "lucide-react";
+import { Apple } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { version as appVersion } from "../../desktop/src-tauri/tauri.conf.json";
 import { track, trackDownload, trackPageView } from "./analytics";
@@ -143,27 +143,19 @@ function Logo() {
   );
 }
 
+/** One small button showing the current language; it switches to the other one. */
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
-  const options: { code: Language; label: string }[] = [
-    { code: "en", label: "EN" },
-    { code: "vi", label: "VI" },
-  ];
+  const next: Language = language === "vi" ? "en" : "vi";
   return (
-    <div className="language-switch" role="radiogroup" aria-label={t("nav.language")}>
-      <Languages size={15} aria-hidden="true" />
-      {options.map((option) => (
-        <button
-          key={option.code}
-          role="radio"
-          aria-checked={language === option.code}
-          className={language === option.code ? "selected" : ""}
-          onClick={() => setLanguage(option.code)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <button
+      className="language-switch"
+      aria-label={t("nav.languageSwitch")}
+      title={t("nav.languageSwitch")}
+      onClick={() => setLanguage(next)}
+    >
+      {language.toUpperCase()}
+    </button>
   );
 }
 
