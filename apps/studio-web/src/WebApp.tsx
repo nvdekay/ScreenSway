@@ -1,5 +1,5 @@
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, ArrowRight, Check, Download, Languages, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
@@ -28,13 +28,12 @@ function LandingLink({ className, label, children }: { className?: string; label
   );
 }
 
+/** The landing page's language button: it shows the current language and switches to the other. */
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
-  const next = language === "vi" ? "en" : "vi";
   return (
-    <button className="web-language" aria-label={t("settings.language")} onClick={() => setLanguage(next)}>
-      <Languages size={15} aria-hidden="true" />
-      {next === "vi" ? "VI" : "EN"}
+    <button className="web-language" aria-label={t("web.languageSwitch")} title={t("web.languageSwitch")} onClick={() => setLanguage(language === "vi" ? "en" : "vi")}>
+      {language.toUpperCase()}
     </button>
   );
 }
@@ -165,7 +164,6 @@ export function WebApp() {
         <>
           <section className="web-hero">
             <div className="web-promise">
-              <span className="web-kicker">ScreenSway Web · Beta</span>
               <h1>{t("web.heroTitle")}</h1>
               <p>{t("web.heroCopy")}</p>
               <div className="web-proof">
@@ -204,27 +202,24 @@ export function WebApp() {
                 ) : (
                   <>
                     <div className="recorder-heading">
-                      <div>
-                        <span>{t("web.recorderKicker")}</span>
-                        <h2>{t("web.recorderTitle")}</h2>
-                      </div>
-                      <MonitorUp size={24} aria-hidden="true" />
+                      <h2>{t("web.recorderTitle")}</h2>
+                      <MonitorUp size={20} aria-hidden="true" />
                     </div>
                     <div className="web-audio-options">
-                      <label>
+                      <label title={t("web.audioHint")}>
                         <span>
                           {systemAudio ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
                           <b>{t("audio.label")}</b>
-                          <small>{t("web.audioHint")}</small>
+                          <small className="sr-only">{t("web.audioHint")}</small>
                         </span>
                         <input type="checkbox" role="switch" checked={systemAudio} disabled={status === "starting"} onChange={(event) => setSystemAudio(event.target.checked)} />
                         <i aria-hidden="true" />
                       </label>
-                      <label>
+                      <label title={t("mic.hint")}>
                         <span>
                           {microphone ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />}
                           <b>{t("mic.label")}</b>
-                          <small>{t("mic.hint")}</small>
+                          <small className="sr-only">{t("mic.hint")}</small>
                         </span>
                         <input type="checkbox" role="switch" checked={microphone} disabled={status === "starting"} onChange={(event) => setMicrophone(event.target.checked)} />
                         <i aria-hidden="true" />
