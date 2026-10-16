@@ -186,6 +186,10 @@ export function buildCameraTrack(
   let panTargetY = 0.5;
   let segmentIndex = 0;
   let activeSegment: ZoomSegment | undefined;
+  // Where the pointer settled (browser recordings): while zoomed, the camera moves to each.
+  const focuses = events.filter((event) => event.type === "focus");
+  let focusIndex = 0;
+  let focusArrivesMs = -Infinity;
 
   for (let frame = 0; frame < frameCount; frame++) {
     const timeMs = frame * frameMs;
@@ -200,7 +204,20 @@ export function buildCameraTrack(
     }
     activeSegment = segment;
 
-    if (segment && timeMs >= segment.startMs) {
+    // Like a zoom, a move to a new focus starts slightly early so it arrives in time.
+    while (focusIndex < focuses.length && focuses[focusIndex].timeMs <= timeMs + ZOOM_LEAD_MS) {
+      const focus = focuses[focusIndex++];
+      // Small adjustments are left to the following below, so the camera stays calm.
+      const far = Math.max(Math.abs(focus.x / canvas.width - panTargetX), Math.abs(focus.y / canvas.height - panTargetY)) > PAN_DEAD_ZONE / (2 * (segment?.scale ?? 1));
+      if (segment && focus.timeMs > segment.startMs && far) {
+        panTargetX = focus.x / canvas.width;
+        panTargetY = focus.y / canvas.height;
+        focusArrivesMs = focus.timeMs;
+      }
+    }
+
+    // Until the pointer gets there, following it would pull the camera back.
+    if (segment && timeMs >= segment.startMs && timeMs >= focusArrivesMs) {
       const pointer = samplePointer(events, timeMs);
       if (pointer) {
         const pointerX = pointer.x / canvas.width;
