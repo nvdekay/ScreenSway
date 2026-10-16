@@ -4,20 +4,22 @@
 html.web { --primary: #0a84ff; --primary-strong: #0071e3; --primary-soft: #0a84ff29; --bg: #0a0b0e; --radius-xl: 12px; --radius-lg: 10px; --radius-md: 8px; --radius-sm: 6px; background: #0a0b0e; }
 html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background: #0a0b0e url("./assets/web-background.webp") center top / cover fixed no-repeat; }
 .web-shell { min-height: 100vh; color: #fff; }
-.web-header { position: sticky; top: 10px; z-index: 30; width: fit-content; max-width: calc(100% - 24px); height: 50px; display: flex; align-items: center; justify-content: center; gap: 28px; margin: 10px auto 0; padding: 0 8px 0 12px; border: 1px solid #ffffff18; border-radius: 10px; background: #141519d9; box-shadow: 0 12px 36px #0007; backdrop-filter: blur(22px) saturate(150%); }
+/* Header: a slim full-width bar, translucent over the page, with one hairline below. Its content
+   lines up with the hero (1560 px). The desktop-app link is a quiet outlined button, so the page's
+   only filled call to action stays "Start recording". */
+.web-header { position: sticky; top: 0; z-index: 30; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 max(32px, calc((100% - 1560px) / 2)); border-bottom: 1px solid #ffffff10; background: #0a0b0ebf; backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); }
 .web-brand, .web-header nav, .web-header nav a { display: flex; align-items: center; }
-.web-brand { gap: 8px; color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; }
-.web-brand small { padding: 2px 6px; border: 1px solid #0a84ff55; border-radius: 7px; color: #6cb8ff; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
-.web-header nav { gap: 6px; }
-.web-header nav a { min-height: 34px; gap: 6px; padding: 0 11px; border: 1px solid #0a84ff; border-radius: 8px; background: #0071e3; color: #fff; font-size: 11px; font-weight: 750; text-decoration: none; box-shadow: 0 5px 14px #0071e333; transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease; }
-.web-header nav a svg { color: #fff; transition: transform .18s ease; }
-/* Language toggle (shared LanguageToggle), then a hairline, then the desktop-app button. */
+.web-brand { gap: 10px; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; }
+.web-brand small { margin-left: -4px; color: #8b8e97; font-size: 15px; font-weight: 500; }
+.web-header nav { gap: 12px; }
+.web-header nav a { height: 32px; gap: 7px; padding: 0 12px; border: 1px solid #ffffff24; border-radius: 8px; background: transparent; color: #f2f3f5; font-size: 12px; font-weight: 600; text-decoration: none; transition: background .16s ease, border-color .16s ease; }
+.web-header nav a svg { color: #8b8e97; transition: color .16s ease; }
+.web-header nav a:hover { border-color: #ffffff3d; background: #ffffff0d; }
+.web-header nav a:hover svg { color: #fff; }
+/* A hairline between the language toggle and the link. */
 .web-header nav > .lang-toggle + a { position: relative; margin-left: 13px; }
-.web-header nav > .lang-toggle + a::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: -10px; width: 1px; background: #ffffff1a; }
-.web-header nav a:hover { border-color: #0a84ff; background: #0077ed; color: #fff; box-shadow: 0 8px 20px #0071e34d; transform: translateY(-1px); }
-.web-header nav a:hover svg { color: #fff; transform: translateY(1px); }
-.web-header nav a:active { transform: translateY(0) scale(.98); }
-.web-hero { width: min(1560px, calc(100% - 64px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(460px, 1fr); gap: 28px 72px; margin: 0 auto; padding: 36px 0 64px; align-items: center; }
+.web-header nav > .lang-toggle + a::before { content: ""; position: absolute; top: 7px; bottom: 7px; left: -13px; width: 1px; background: #ffffff1a; }
+.web-hero { width: min(1560px, calc(100% - 64px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(460px, 1fr); gap: 28px 72px; margin: 0 auto; padding: 48px 0 64px; align-items: center; }
 .web-promise h1 { max-width: 720px; margin: 0 0 18px; font-size: clamp(44px, 6vw, 76px); font-weight: 560; line-height: .99; letter-spacing: -.055em; color: #fff; }
 .web-promise > p { max-width: 610px; margin: 0; color: #a8aab3; font-size: 18px; line-height: 1.65; }
 .web-kicker { display: inline-flex; align-items: center; gap: 7px; color: #6cb8ff; font-size: 11px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
@@ -110,7 +112,7 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-compare li svg { width: 14px; flex: none; color: #0a84ff; }
 .web-compare a { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; color: #6cb8ff; font-size: 12px; font-weight: 700; text-decoration: none; }
 .web-compare a svg { width: 14px; }
-.web-studio-section { width: min(1600px, calc(100% - 48px)); padding: 36px 0 70px; }
+.web-studio-section { width: min(1560px, calc(100% - 64px)); padding: 36px 0 70px; }
 .web-studio-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .web-studio-heading h2 { margin: 7px 0 3px; font-size: 30px; letter-spacing: -.04em; }
 .web-studio-heading p { margin: 0; color: #888b94; font-size: 12px; }
@@ -121,7 +123,7 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-studio-surface { padding: 12px; border: 1px solid #ffffff16; border-radius: 12px; background: #141519; box-shadow: 0 40px 100px #0009; }
 .web .web-studio-surface .studio-editor { gap: 12px; }
 .web .web-studio-surface .player, .web .web-studio-surface .editor-panel { border: 1px solid #ffffff12; background: #1a1b20; }
-.web .web-studio-surface .editor-panel { top: 84px; }
+.web .web-studio-surface .editor-panel { top: 72px; }
 .unsupported-screen { min-height: calc(100vh - 84px); display: grid; place-items: center; padding: 40px 20px; }
 .unsupported-card { width: min(560px, 100%); display: flex; flex-direction: column; align-items: center; padding: 42px; border: 1px solid #ffffff17; border-radius: 12px; background: #ffffff08; text-align: center; box-shadow: 0 30px 90px #0009; }
 .unsupported-card h1 { margin: 18px 0 12px; font-size: 40px; }
@@ -148,8 +150,11 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
   .web .web-studio-surface .editor-panel { position: static; max-height: none; }
 }
 @media (max-width: 620px) {
-  .web-header { max-width: calc(100% - 16px); top: 8px; gap: 14px; margin-top: 8px; padding-left: 10px; }
-  .web-header nav a { width: 34px; padding: 0; justify-content: center; font-size: 0; }
+  .web-header { height: 52px; padding: 0 14px; }
+  .web-header nav { gap: 8px; }
+  .web-header nav a { width: 32px; padding: 0; justify-content: center; font-size: 0; }
+  .web-header nav > .lang-toggle + a { margin-left: 9px; }
+  .web-header nav > .lang-toggle + a::before { left: -9px; }
   .web-hero { width: calc(100% - 28px); gap: 28px; padding: 54px 0; }
   .web-promise h1 { font-size: 43px; }
   .web-promise > p { font-size: 15px; }
