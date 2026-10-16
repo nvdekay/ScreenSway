@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# Shared dev tool versions ("catalog:" in package.json).
+catalog:
+  vitest: ^4.1.12
+
 onlyBuiltDependencies:
   - esbuild
   - workerd
