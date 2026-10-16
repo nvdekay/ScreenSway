@@ -214,7 +214,7 @@ const storedRecordings = (page) =>
 
 async function record(page, ms) {
   await page.getByRole("button", { name: "Start recording" }).click();
-  await page.getByText(/Recording ·/).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Stop recording" }).waitFor({ timeout: 15_000 });
   await page.waitForTimeout(ms);
 }
 
@@ -406,7 +406,7 @@ try {
   {
     const page = await openApp({ language: "vi" });
     await page.getByRole("button", { name: "Bắt đầu quay" }).click();
-    await page.getByText(/Đang quay ·/).waitFor({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Dừng quay" }).waitFor({ timeout: 15_000 });
     await page.waitForTimeout(2_000);
     await page.getByRole("button", { name: "Dừng quay" }).click();
     await page.locator(".preview-section").waitFor({ timeout: 30_000 });

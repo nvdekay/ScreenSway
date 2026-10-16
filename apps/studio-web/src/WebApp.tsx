@@ -1,5 +1,5 @@
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, ArrowRight, Check, Download, Languages, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
@@ -8,6 +8,7 @@ import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
 import { EXPORT_SAVED, removeRecording } from "./backend";
 import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
+import { HeroBackdrop } from "../../web/src/HeroBackdrop";
 import { ResultPreview } from "./ResultPreview";
 import { listen } from "./tauri/event";
 
@@ -15,6 +16,9 @@ type Status = "idle" | "starting" | "recording" | "finishing";
 
 /** The landing page with the desktop downloads: the app is served in its app/ folder. */
 const LANDING_URL = "../";
+/** The landing page's globe, from the same site (missing when the app's dev server runs alone). */
+const GLOBE_VIDEO = "../hero/globe.mp4";
+const GLOBE_POSTER = "../hero/globe.jpg";
 
 /** Links away from the app open a new tab: the recording only lives in this one. */
 function LandingLink({ className, label, children }: { className?: string; label?: string; children: ReactNode }) {
@@ -25,13 +29,13 @@ function LandingLink({ className, label, children }: { className?: string; label
   );
 }
 
+/** One small button showing the current language; it switches to the other one. */
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
   const next = language === "vi" ? "en" : "vi";
   return (
-    <button className="web-language" aria-label={t("settings.language")} onClick={() => setLanguage(next)}>
-      <Languages size={15} aria-hidden="true" />
-      {next === "vi" ? "VI" : "EN"}
+    <button className="web-language" aria-label={t("web.languageSwitch")} title={t("web.languageSwitch")} onClick={() => setLanguage(next)}>
+      {language.toUpperCase()}
     </button>
   );
 }
@@ -130,6 +134,7 @@ export function WebApp() {
 
   return (
     <main className="web-shell">
+      <HeroBackdrop src={GLOBE_VIDEO} poster={GLOBE_POSTER} />
       <header className="web-header">
         <a className="web-brand" href="./" aria-label={t("app.home")}>
           <LogoMark size={30} />
@@ -137,11 +142,11 @@ export function WebApp() {
           <small>Web</small>
         </a>
         <nav aria-label={t("web.headerNav")}>
-          <LandingLink label={t("web.desktopApp")}>
+          <LanguageSwitch />
+          <LandingLink className="web-header-download" label={t("web.desktopApp")}>
             <Download size={15} aria-hidden="true" />
             <span>{t("web.desktopApp")}</span>
           </LandingLink>
-          <LanguageSwitch />
         </nav>
       </header>
 
@@ -161,24 +166,16 @@ export function WebApp() {
       ) : (
         <>
           <section className="web-hero">
-            <div className="web-promise">
-              <span className="web-kicker">ScreenSway Web · Beta</span>
-              <h1>{t("web.heroTitle")}</h1>
-              <p>{t("web.heroCopy")}</p>
-              <div className="web-proof">
-                <span><MousePointer2 size={15} aria-hidden="true" />{t("web.proofZoom")}</span>
-                <span><Lock size={15} aria-hidden="true" />{t("web.proofPrivate")}</span>
-              </div>
-            </div>
-
-            <ResultPreview />
+            <span className="web-kicker">ScreenSway Web · Beta</span>
+            <h1>{t("web.heroTitle")}</h1>
+            <p className="web-lede">{t("web.heroCopy")}</p>
 
             <div className={`web-recorder${recording ? " is-live" : ""}`}>
               {status === "recording" ? (
                 <div className="live-panel" aria-live="polite">
                   <span className="live-dot" aria-hidden="true" />
                   <div>
-                    <small>{t("status.recording", { time: elapsed })}</small>
+                    <small>{t("web.liveLabel")}</small>
                     <strong>{elapsed}</strong>
                   </div>
                   <button onClick={() => void stop()}>
@@ -203,7 +200,7 @@ export function WebApp() {
                       <span>{t("web.recorderKicker")}</span>
                       <h2>{t("web.recorderTitle")}</h2>
                     </div>
-                    <MonitorUp size={24} aria-hidden="true" />
+                    <MonitorUp size={22} aria-hidden="true" />
                   </div>
                   <div className="web-audio-options">
                     <label>
@@ -241,35 +238,47 @@ export function WebApp() {
               )}
             </div>
 
-            <ol className="web-steps">
-              {(["1", "2", "3"] as const).map((step) => (
-                <li key={step}>
-                  <b>{step}</b>
-                  <span>
-                    <strong>{t(`web.step${step}`)}</strong>
-                    <small>{t(`web.step${step}Copy`)}</small>
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <div className="web-proof">
+              <span><MousePointer2 size={15} aria-hidden="true" />{t("web.proofZoom")}</span>
+              <span><Lock size={15} aria-hidden="true" />{t("web.proofPrivate")}</span>
+            </div>
+          </section>
 
-            <div className="web-compare">
-              <div>
-                <span>{t("web.browserIncludes")}</span>
-                <ul>
-                  <li><Check aria-hidden="true" />{t("web.includeZoom")}</li>
-                  <li><Check aria-hidden="true" />{t("web.includeStudio")}</li>
-                  <li><Check aria-hidden="true" />{t("web.includeExport")}</li>
-                </ul>
-              </div>
-              <div>
-                <span>{t("web.desktopAdds")}</span>
-                <p>{t("web.desktopLimits")}</p>
-                <LandingLink>
-                  {t("web.viewDesktop")}
-                  <ArrowRight aria-hidden="true" />
-                </LandingLink>
-              </div>
+          <section className="web-how" aria-labelledby="web-how-title">
+            <ResultPreview />
+            <div className="web-how-copy">
+              <span className="web-kicker">{t("web.howKicker")}</span>
+              <h2 id="web-how-title">{t("web.howTitle")}</h2>
+              <ol className="web-steps">
+                {(["1", "2", "3"] as const).map((step) => (
+                  <li key={step}>
+                    <b>{step}</b>
+                    <span>
+                      <strong>{t(`web.step${step}`)}</strong>
+                      <small>{t(`web.step${step}Copy`)}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+
+          <section className="web-compare">
+            <div>
+              <span>{t("web.browserIncludes")}</span>
+              <ul>
+                <li><Check aria-hidden="true" />{t("web.includeZoom")}</li>
+                <li><Check aria-hidden="true" />{t("web.includeStudio")}</li>
+                <li><Check aria-hidden="true" />{t("web.includeExport")}</li>
+              </ul>
+            </div>
+            <div>
+              <span>{t("web.desktopAdds")}</span>
+              <p>{t("web.desktopLimits")}</p>
+              <LandingLink>
+                {t("web.viewDesktop")}
+                <ArrowRight aria-hidden="true" />
+              </LandingLink>
             </div>
           </section>
 
