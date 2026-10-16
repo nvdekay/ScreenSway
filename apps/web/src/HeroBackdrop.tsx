@@ -5,8 +5,8 @@ const GLOBE_FADE = 0.9;
 
 /**
  * The violet globe behind the whole page, fixed while scrolling. A veil in the page colour
- * thickens once the first screen scrolls away (--dim), so content stays readable. Also used
- * by the browser app (apps/studio-web), which is served in this site's app/ folder.
+ * thickens once the first screen scrolls away (--dim), so content stays readable. It is the
+ * landing page's alone: the browser app keeps a still, plain background.
  */
 export function HeroBackdrop({ src, poster }: { src: string; poster: string }) {
   const first = useRef<HTMLVideoElement>(null);

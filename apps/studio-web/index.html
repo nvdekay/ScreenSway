@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0d12" />
     <meta name="color-scheme" content="dark" />
+    <style>
+      /* Moving between the landing page and the browser app (./app/) stays in the tab with a short
+         cross-fade. Declared here, in both pages, so it applies before any script or stylesheet loads. */
+      @view-transition { navigation: auto; }
+      ::view-transition-old(root) { animation: page-out .2s ease both; }
+      ::view-transition-new(root) { animation: page-in .32s ease both; }
+      @keyframes page-out { to { opacity: 0; transform: translateY(-6px); } }
+      @keyframes page-in { from { opacity: 0; transform: translateY(8px); } }
+      @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }
+    </style>
     <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
     <meta name="description" content="Record your screen in the browser with automatic zoom, then style and export an MP4. Nothing is uploaded." />
     <title>ScreenSway Web</title>
