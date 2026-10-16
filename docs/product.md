@@ -25,6 +25,7 @@ Unless noted otherwise, these workflows ship on both macOS and Windows. The floa
 - Captions: on-device speech recognition (Vietnamese and English), balanced caption lines you can edit, three sizes and three looks, burned into the export plus an .srt file next to the video.
 - Export to MP4 at 1080p, 1440p or 4K, 60 fps, with zoom, cursor, frame and audio.
 - A searchable local library with inline rename, confirmed deletion and hover scrubbing; Vietnamese and English UI; Retina/standard display hints.
+- A browser version (beta) at `/app/` for Chrome and Edge on a computer: record a screen, window or tab with tab audio and microphone, automatic zooms where the pointer settles (browsers do not expose clicks), the same Studio styles, frames, timeline and trim, and MP4 export up to 4K (a 60 fps file from a 30 fps capture). No captions, library or pause yet; see [web-studio.md](web-studio.md).
 - Public macOS universal and Windows x64 downloads. Windows provides the same capture, audio, Studio editing, MP4/SRT export and offline editable captions workflow; platform-specific implementation details and requirements are documented in [windows-validation.md](windows-validation.md).
 
 ## Roadmap

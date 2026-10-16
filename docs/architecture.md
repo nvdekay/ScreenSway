@@ -11,6 +11,7 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
 - `native/macos-capture` is a Swift command-line sidecar: ScreenCaptureKit capture (`ScreenSwayCapture.swift`) and the GPU exporter (`Exporter.swift`).
 - `native/windows-capture` is the Windows sidecar in Rust with the same command line (see "Capture (Windows)").
 - `apps/web` is the independent marketing site (GitHub Pages). It imports `@screensway/core` for its live demo.
+- `apps/studio-web` is the browser version (beta), served at `/app/` beside the landing page. It reuses the desktop studio with browser stand-ins for the Tauri commands, records with `getDisplayMedia`, finds the pointer in the video and exports with WebCodecs. See [web-studio.md](web-studio.md).
 
 ## Project bundle
 
@@ -71,7 +72,7 @@ Recording: `list_capture_sources`, `list_microphones`, `start_recording` (with `
 
 ## Privacy boundary
 
-Recordings, audio, captions and exports never leave the computer, and fonts are bundled. The production Content Security Policy permits bundled content, Tauri IPC and local ScreenSway media through the scoped asset protocol; development additionally permits only the local Vite origins needed for hot reload. There are two documented network exceptions: the signed native updater fetches the static `update/latest.json` manifest after launch or on manual request, and optional usage statistics send batched anonymous event names only after the user agrees. Update downloads must match the public key embedded in the app. The landing page counts visits and downloads without cookies through the same analytics API. No recording content or metadata is sent; see `analytics.md` for the event and deployment details.
+Recordings, audio, captions and exports never leave the computer, and fonts are bundled. The production Content Security Policy permits bundled content, Tauri IPC and local ScreenSway media through the scoped asset protocol; development additionally permits only the local Vite origins needed for hot reload. There are two documented network exceptions: the signed native updater fetches the static `update/latest.json` manifest after launch or on manual request, and optional usage statistics send batched anonymous event names only after the user agrees. Update downloads must match the public key embedded in the app. The landing page counts visits and downloads without cookies through the same analytics API. The browser version keeps recordings in the tab and sends nothing. No recording content or metadata is sent; see `analytics.md` for the event and deployment details.
 
 ## Distribution
 
