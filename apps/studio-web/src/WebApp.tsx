@@ -134,7 +134,7 @@ export function WebApp() {
     <main className="web-shell">
       <header className="web-header">
         <a className="web-brand" href="./" aria-label={t("app.home")}>
-          <LogoMark size={30} />
+          <LogoMark size={30} tone="flat" />
           <span>ScreenSway</span>
           <small>Web</small>
         </a>
@@ -150,7 +150,7 @@ export function WebApp() {
       {unsupported ? (
         <section className="unsupported-screen">
           <div className="unsupported-card" role="alert">
-            <LogoMark size={42} />
+            <LogoMark size={42} tone="flat" />
             <span className="web-kicker">ScreenSway Web · Beta</span>
             <h1>{t("web.unsupportedTitle")}</h1>
             <p>{t("web.unsupportedBody")}</p>

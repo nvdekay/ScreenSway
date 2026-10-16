@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 const GLOBE_FADE = 0.9;
 
 /**
- * The violet globe behind the whole page, fixed while scrolling. A veil in the page colour
+ * The globe (violet footage, shifted to blue in CSS) behind the whole page, fixed while scrolling. A veil in the page colour
  * thickens once the first screen scrolls away (--dim), so content stays readable. It is the
  * landing page's alone: the browser app keeps a still, plain background.
  */

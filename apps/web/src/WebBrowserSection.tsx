@@ -1,5 +1,6 @@
 import {
   DEFAULT_FRAME_SETTINGS,
+  WAVE_PRESETS,
   buildCameraTrack,
   generateZoomSegments,
   sampleCameraTrack,
@@ -36,7 +37,8 @@ const SETTINGS: FrameSettings = {
   ...DEFAULT_FRAME_SETTINGS,
   frame: "browser-dark",
   padding: 0.07,
-  background: { kind: "linear", angle: 135, stops: [{ offset: 0, color: "#171024" }, { offset: 1, color: "#7c3aed" }] },
+  // The browser app's sample background: layered blue hills, close to a macOS wallpaper.
+  background: WAVE_PRESETS.find((preset) => preset.id === "ocean")!.background,
 };
 
 function buildScript(): PointerEvent[] {

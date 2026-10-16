@@ -7,8 +7,6 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-header { position: sticky; top: 12px; z-index: 30; width: min(1600px, calc(100% - 48px)); height: 60px; display: flex; align-items: center; justify-content: space-between; margin: 12px auto 0; padding: 0 12px 0 16px; border: 1px solid #ffffff18; border-radius: 10px; background: #141519d9; box-shadow: 0 16px 50px #0007; backdrop-filter: blur(22px) saturate(150%); }
 .web-brand, .web-header nav, .web-header nav a { display: flex; align-items: center; }
 .web-brand { gap: 9px; color: #fff; font-size: 15px; font-weight: 700; text-decoration: none; }
-.web-brand svg > rect:first-of-type { fill: #0071e3; }
-.web-brand svg > rect:nth-of-type(2) { display: none; }
 .web-brand small { padding: 3px 7px; border: 1px solid #0a84ff55; border-radius: 8px; color: #6cb8ff; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .web-header nav { gap: 8px; }
 .web-header nav a { min-height: 38px; gap: 7px; padding: 0 14px; border: 1px solid #0a84ff; border-radius: 8px; background: #0071e3; color: #fff; font-size: 12px; font-weight: 750; text-decoration: none; box-shadow: 0 6px 18px #0071e33d; transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease; }
@@ -70,8 +68,8 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-audio-options svg { width: 17px; flex: none; color: #0a84ff; }
 .web-audio-options b { min-width: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .web-audio-options input { position: absolute; opacity: 0; }
-.web-audio-options label > i { position: relative; flex: none; width: 34px; height: 20px; border-radius: 5px; background: #ffffff20; }
-.web-audio-options label > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 3px; background: #fff; transition: transform .2s; }
+.web-audio-options label > i { position: relative; flex: none; width: 34px; height: 20px; border-radius: 99px; background: #ffffff20; }
+.web-audio-options label > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
 .web-audio-options input:checked+i { background: #0a84ff; }
 .web-audio-options input:checked+i::after { transform: translateX(14px); }
 .web-audio-options input:focus-visible+i { outline: 2px solid #0a84ff; outline-offset: 3px; }
@@ -195,9 +193,8 @@ html.web .trim-handle { background: #d6d3e0; }
 html.web .trim-handle:hover { background: #fff; }
 html.web .export-progress span { background: #0a84ff; }
 
-/* Small, even corners in the shared studio too: its pills and round buttons become soft rectangles. */
+/* Small, even corners in the shared studio too: its pills and round buttons become soft rectangles
+   (on/off switches stay round). */
 html.web :is(.icon-button, .player-button, .record-button, .editor-button, .chip, .zoom-toggle, .secondary-button, .style-delete) { border-radius: 8px; }
 html.web :is(.segmented, .editor-tabs) { border-radius: 9px; }
 html.web :is(.segmented button, .editor-tabs button) { border-radius: 6px; }
-html.web .switch { border-radius: 5px; }
-html.web .switch::after { border-radius: 3px; }

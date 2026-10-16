@@ -9,7 +9,7 @@ import { StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
 import { WebBrowserSection } from "./WebBrowserSection";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
-import { LogoMark } from "./LogoMark";
+import { LogoMark } from "../../desktop/src/LogoMark";
 import { HeroBackdrop } from "./HeroBackdrop";
 import { useI18n, type Language } from "./i18n";
 
@@ -71,7 +71,7 @@ function Logo() {
   const { t } = useI18n();
   return (
     <SectionLink to="top" className="logo" aria-label={t("nav.home")}>
-      <LogoMark size={28} />
+      <LogoMark size={28} tone="flat" />
       <span className="wordmark">ScreenSway</span>
     </SectionLink>
   );
