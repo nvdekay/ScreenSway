@@ -56,7 +56,7 @@ function forgetLastExport() {
   lastExport = null;
 }
 
-/** Deletes a file, or empties it where the browser cannot delete files it was given. */
+/** Deletes one of our own temporary files (never one the user chose), or empties it. */
 async function removeFile(handle: FileSystemFileHandle) {
   const removable = handle as FileSystemFileHandle & { remove?: () => Promise<void> };
   try {
@@ -156,18 +156,17 @@ export const commands: Record<string, Command> = {
     exporting = controller;
     const name = `${fileName}.mp4`;
     let target: FileSystemFileHandle | null = null;
+    let chosen: FileSystemFileHandle | null = null;
     let writable: FileSystemWritableFileStream | null = null;
     try {
       // First, while the click still counts as the user's: the save dialog needs it.
-      const chosen = await chooseFile(name).catch(() => {
+      chosen = await chooseFile(name).catch(() => {
         throw CANCELLED_MESSAGE;
       });
       target = chosen ?? (await temporaryFile());
       writable = target ? await target.createWritable() : null;
       const { renderExport } = await import("./exporter");
       const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable);
-      // Cancelled while the file was being finished, which cannot be interrupted.
-      if (controller.signal.aborted) throw CANCELLED_MESSAGE;
       forgetLastExport();
       if (!chosen) {
         const file = target ? await target.getFile() : blob;
@@ -178,9 +177,10 @@ export const commands: Record<string, Command> = {
       emit(EXPORT_SAVED, projectPath);
       return { outputPath: lastExport && !chosen ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
     } catch (error) {
-      // Nothing half-written is left behind: mediabunny closes rather than discards the file.
+      // A file the user chose keeps its old content (the exporter discards unfinished
+      // writes); only our own temporary file is deleted.
       await writable?.abort().catch(() => {});
-      if (target) await removeFile(target);
+      if (target && !chosen) await removeFile(target);
       if (error === CANCELLED_MESSAGE || controller.signal.aborted) throw CANCELLED_MESSAGE;
       throw error instanceof Error ? error.message : String(error);
     } finally {
