@@ -207,7 +207,7 @@ const en = {
   "web.unsupportedTitle": "Use Chrome or Edge on a computer",
   "web.unsupportedBody": "Recording in the browser needs Google Chrome or Microsoft Edge on a Mac or PC. Safari, Firefox and phones are not supported yet.",
   "web.unsupportedDownload": "Download the desktop app",
-  "web.audioHint": "Sound from the shared tab",
+  "web.audioHint": "Sound from what you share",
   "web.stopHint": "Stop here or with your browser's Stop sharing button.",
   "web.keepTab": "Your recording lives only in this tab until you export it.",
   "web.shareDenied": "Nothing was shared. Click Start recording and choose a screen, window or tab.",
@@ -417,7 +417,7 @@ const vi: Record<MessageKey, string> = {
   "web.unsupportedTitle": "Hãy dùng Chrome hoặc Edge trên máy tính",
   "web.unsupportedBody": "Quay màn hình trên web cần Google Chrome hoặc Microsoft Edge trên máy Mac hoặc PC. Safari, Firefox và điện thoại chưa được hỗ trợ.",
   "web.unsupportedDownload": "Tải ứng dụng máy tính",
-  "web.audioHint": "Âm thanh từ tab được chia sẻ",
+  "web.audioHint": "Âm thanh của nội dung chia sẻ",
   "web.stopHint": "Dừng ở đây hoặc bằng nút Dừng chia sẻ của trình duyệt.",
   "web.keepTab": "Bản quay chỉ nằm trong tab này cho tới khi bạn xuất video.",
   "web.shareDenied": "Bạn chưa chia sẻ gì. Bấm Bắt đầu quay rồi chọn màn hình, cửa sổ hoặc tab.",
@@ -463,7 +463,7 @@ const enWeb: Partial<Record<MessageKey, string>> = {
   "preview.zooms": "{count} zooms where your pointer paused · {time}",
   "preview.zoomsOne": "1 zoom where your pointer paused · {time}",
   "frame.imageNote": "Images stay in this browser tab.",
-  "export.done": "Video downloaded",
+  "export.done": "Video saved",
   "export.open": "Download again",
 };
 
@@ -478,7 +478,7 @@ const viWeb: Partial<Record<MessageKey, string>> = {
   "preview.zooms": "{count} lần zoom ở chỗ con trỏ dừng lại · {time}",
   "preview.zoomsOne": "1 lần zoom ở chỗ con trỏ dừng lại · {time}",
   "frame.imageNote": "Ảnh chỉ nằm trong tab trình duyệt này.",
-  "export.done": "Đã tải video xuống",
+  "export.done": "Đã lưu video",
   "export.open": "Tải lại",
 };
 

@@ -1,7 +1,7 @@
 // The desktop studio talks to the Rust shell through commands; in the browser they are
 // answered here. Nothing leaves the tab: recordings, edits and images live in memory.
 import { emit } from "./tauri/event";
-import { ExportCancelled, renderExport, type ExportJob } from "./exporter";
+import type { ExportJob } from "./exporter";
 
 export interface WebRecording {
   /** Also the projectPath the studio passes back. */
@@ -9,6 +9,8 @@ export interface WebRecording {
   blob: Blob;
   url: string;
   thumbnail: string | null;
+  /** Frees the recording's stored file. */
+  discard: () => void;
 }
 
 interface ExportArgs {
@@ -21,8 +23,11 @@ interface ExportArgs {
 const recordings = new Map<string, WebRecording>();
 const edits = new Map<string, unknown>();
 const images = new Map<string, { image: string; thumbnail: string }>();
-const exports = new Map<string, { url: string; fileName: string }>();
+/** The last export when it could not be saved straight to a file, for "Download again". */
+let lastExport: { url: string; fileName: string } | null = null;
 let exporting: AbortController | null = null;
+/** What the studio shows as a cancelled export (RecordingStudio compares the message). */
+const CANCELLED_MESSAGE = "Export cancelled.";
 let nextImage = 0;
 
 export function addRecording(recording: WebRecording) {
@@ -31,9 +36,37 @@ export function addRecording(recording: WebRecording) {
 
 export function removeRecording(id: string) {
   const recording = recordings.get(id);
-  if (recording) URL.revokeObjectURL(recording.url);
+  if (recording) {
+    URL.revokeObjectURL(recording.url);
+    recording.discard();
+  }
   recordings.delete(id);
   edits.delete(id);
+  forgetLastExport();
+}
+
+function forgetLastExport() {
+  if (lastExport) URL.revokeObjectURL(lastExport.url);
+  lastExport = null;
+}
+
+/** Fired when an export is saved, so the page knows the work is safe. */
+export const EXPORT_SAVED = "web-export-saved";
+
+interface SavePicker {
+  showSaveFilePicker(options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }): Promise<FileSystemFileHandle>;
+}
+
+/** Asks where to save, so a long export goes to disk instead of memory. Null: download instead. */
+async function chooseFile(name: string): Promise<FileSystemFileHandle | null> {
+  const picker = window as unknown as Partial<SavePicker>;
+  if (!picker.showSaveFilePicker) return null;
+  try {
+    return await picker.showSaveFilePicker({ suggestedName: name, types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }] });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    return null;
+  }
 }
 
 function download(url: string, fileName: string) {
@@ -82,22 +115,33 @@ export const commands: Record<string, Command> = {
     exporting?.abort();
     const controller = new AbortController();
     exporting = controller;
+    const name = `${fileName}.mp4`;
+    let file: FileSystemWritableFileStream | null = null;
     try {
-      const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal);
-      const url = URL.createObjectURL(blob);
-      const name = `${fileName}.mp4`;
-      exports.set(url, { url, fileName: name });
-      download(url, name);
-      return { outputPath: url, durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
+      // First, while the click still counts as the user's: the save dialog needs it.
+      const handle = await chooseFile(name).catch(() => {
+        throw CANCELLED_MESSAGE;
+      });
+      file = handle ? await handle.createWritable() : null;
+      const { renderExport } = await import("./exporter");
+      const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, file);
+      forgetLastExport();
+      if (blob) {
+        lastExport = { url: URL.createObjectURL(blob), fileName: name };
+        download(lastExport.url, name);
+      }
+      emit(EXPORT_SAVED, projectPath);
+      return { outputPath: lastExport && blob ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
     } catch (error) {
-      throw error instanceof ExportCancelled ? error.message : error instanceof Error ? error.message : String(error);
+      await file?.abort().catch(() => {});
+      if (error === CANCELLED_MESSAGE || controller.signal.aborted) throw CANCELLED_MESSAGE;
+      throw error instanceof Error ? error.message : String(error);
     } finally {
       if (exporting === controller) exporting = null;
     }
   },
   cancel_export: () => exporting?.abort(),
   open_export: ({ path }) => {
-    const exported = exports.get(String(path));
-    if (exported) download(exported.url, exported.fileName);
+    if (lastExport && lastExport.url === path) download(lastExport.url, lastExport.fileName);
   },
 };
