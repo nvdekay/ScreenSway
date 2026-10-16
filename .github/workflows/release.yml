@@ -5,10 +5,11 @@ on:
     tags:
       - "v*"
 
+# The build job runs third-party build code with the updater key (Tauri signs the
+# updater bundle while bundling), so it only gets a read-only token. The publish job
+# holds the write permissions and runs no project dependencies.
 permissions:
-  contents: write
-  # Needed to start the landing page deploy after the release is published.
-  actions: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,16 +21,19 @@ jobs:
     # with the macOS 26 SDK. Windows is built by the dispatched Windows workflow.
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Check the tag matches the app version
@@ -71,6 +75,32 @@ jobs:
             shasum -a 256 "$asset" > "$asset.sha256"
           done
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-release
+          path: |
+            checksum.txt
+            ScreenSway-macos-universal.dmg
+            ScreenSway-macos-universal.dmg.sha256
+            ScreenSway-macos-universal.app.tar.gz
+            ScreenSway-macos-universal.app.tar.gz.sha256
+            ScreenSway-macos-universal.app.tar.gz.sig
+          if-no-files-found: error
+
+  publish-macos:
+    needs: release-macos
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      # Needed to start the Windows publish, which then deploys the landing page.
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: macos-release
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
