@@ -50,6 +50,8 @@ interface Template {
   h: number;
   /** Pixel offsets of the pointer's pixels inside a frame, most distinctive first. */
   offsets: Int32Array;
+  /** The same pixels as x, y pairs inside the template, to rebuild offsets for another frame width. */
+  points: Int16Array;
   values: Uint8Array;
   hotX: number;
   hotY: number;
@@ -70,12 +72,14 @@ export interface PointerPosition {
 }
 
 export class PointerTracker {
-  private readonly cw: number;
-  private readonly ch: number;
+  private cw = 0;
+  private ch = 0;
   private previous: Uint8Array | null = null;
-  private readonly changed: Uint8Array;
-  private readonly cells: Uint16Array;
-  private readonly label: Int32Array;
+  /** The frame before the previous one, reused for the next frame to avoid allocating. */
+  private spare: Uint8Array | null = null;
+  private changed = new Uint8Array(0);
+  private cells = new Uint16Array(0);
+  private label = new Int32Array(0);
   private templates: Template[] = [];
   private chains: Chain[] = [];
   private frame = 0;
@@ -84,10 +88,18 @@ export class PointerTracker {
   private box: Box | null = null;
   private position: PointerPosition | null = null;
 
-  readonly width: number;
-  readonly height: number;
+  width = 0;
+  height = 0;
 
   constructor(width: number, height: number) {
+    this.resize(width, height);
+  }
+
+  /**
+   * Continues on frames of another size (a shared window was resized) at the same scale:
+   * the learned pointer shapes are kept, only where the pointer is has to be found again.
+   */
+  resize(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.cw = Math.ceil(width / CELL);
@@ -95,11 +107,20 @@ export class PointerTracker {
     this.changed = new Uint8Array(width * height);
     this.cells = new Uint16Array(this.cw * this.ch);
     this.label = new Int32Array(this.cw * this.ch);
+    this.previous = null;
+    this.spare = null;
+    this.chains = [];
+    this.box = null;
+    this.position = null;
+    for (const template of this.templates) {
+      template.offsets = Int32Array.from({ length: template.points.length / 2 }, (_, i) => template.points[i * 2 + 1] * width + template.points[i * 2]);
+    }
   }
 
   /** Feeds one RGBA frame of width × height; returns the pointer hotspot, once known. */
   push(rgba: Uint8Array | Uint8ClampedArray): PointerPosition | null {
-    const gray = new Uint8Array(this.width * this.height);
+    const gray = this.spare ?? new Uint8Array(this.width * this.height);
+    this.spare = null;
     for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (rgba[j] * 77 + rgba[j + 1] * 150 + rgba[j + 2] * 29) >> 8;
     const previous = this.previous;
     this.previous = gray;
@@ -128,6 +149,8 @@ export class PointerTracker {
         this.lost = 0;
       }
     }
+    // Compared with; its memory takes the next frame.
+    this.spare = previous;
     return this.position;
   }
 
@@ -305,6 +328,7 @@ export class PointerTracker {
       w: tw,
       h: th,
       offsets: Int32Array.from(order, (i) => mask[i]),
+      points: Int16Array.from(order.flatMap((i) => [mask[i] % w, Math.floor(mask[i] / w)])),
       values: Uint8Array.from(order, (i) => pixels[i]),
       hotX,
       hotY,

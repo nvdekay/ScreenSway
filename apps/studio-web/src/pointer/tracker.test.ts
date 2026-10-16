@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PointerTracker } from "./tracker";
 
-const W = 480, H = 300;
+const H = 300;
 
 // A macOS-like arrow: black fill with a white outline, hotspot at the tip (0, 0).
 const ARROW = [
@@ -23,7 +23,7 @@ const ARROW = [
 ];
 
 /** A screen with soft gradients and static shapes, the pointer at (px, py) and a pulsing dot. */
-function frame(px: number, py: number, index: number): Uint8ClampedArray {
+function frame(px: number, py: number, index: number, W = 480): Uint8ClampedArray {
   const data = new Uint8ClampedArray(W * H * 4);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -38,7 +38,7 @@ function frame(px: number, py: number, index: number): Uint8ClampedArray {
   }
   // Something animated that stays in place, like a spinner or a video thumbnail.
   const pulse = index % 6 < 3 ? 250 : 20;
-  for (let y = 250; y < 262; y++) for (let x = 400; x < 412; x++) data.fill(pulse, (y * W + x) * 4, (y * W + x) * 4 + 3);
+  for (let y = 250; y < 262; y++) for (let x = W - 80; x < W - 68; x++) data.fill(pulse, (y * W + x) * 4, (y * W + x) * 4 + 3);
   ARROW.forEach((row, dy) => {
     [...row].forEach((cell, dx) => {
       const x = px + dx, y = py + dy;
@@ -62,7 +62,7 @@ function position(index: number): [number, number] {
 
 describe("PointerTracker", () => {
   it("learns an unknown pointer from its motion and follows it, also while it rests", () => {
-    const tracker = new PointerTracker(W, H);
+    const tracker = new PointerTracker(480, H);
     let firstLock = -1;
     const errors: number[] = [];
     for (let index = 0; index < 150; index++) {
@@ -76,8 +76,23 @@ describe("PointerTracker", () => {
     expect(errors.filter((error) => error <= 2).length / errors.length).toBeGreaterThan(0.95);
   });
 
+  it("keeps what it learned when the shared window is resized", () => {
+    const tracker = new PointerTracker(480, H);
+    for (let index = 0; index < 60; index++) tracker.push(frame(...position(index), index));
+    tracker.resize(400, H);
+    let found = -1;
+    for (let index = 60; index < 100; index++) {
+      const [x, y] = position(index);
+      const hit = tracker.push(frame(Math.min(x, 380), y, index, 400));
+      if (hit && Math.hypot(hit.x - Math.min(x, 380), hit.y - y) <= 2 && found < 0) found = index;
+    }
+    // Found again within a second at 30 fps, without having to learn the shape again.
+    expect(found).toBeGreaterThan(59);
+    expect(found).toBeLessThan(90);
+  });
+
   it("does not mistake animated content that stays in place for the pointer", () => {
-    const tracker = new PointerTracker(W, H);
+    const tracker = new PointerTracker(480, H);
     for (let index = 0; index < 60; index++) expect(tracker.push(frame(-50, -50, index))).toBeNull();
   });
 });
