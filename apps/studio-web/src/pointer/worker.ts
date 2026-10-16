@@ -8,6 +8,7 @@ import { MOTION_HEIGHT, MOTION_WIDTH, motionBetween, type MotionSample } from ".
 const ANALYSIS_WIDTH = 1600;
 
 export type WorkerRequest = { type: "start"; frames: ReadableStream<VideoFrame> } | { type: "finish" };
+/** Pointer positions are fractions of the frame (0…1), so a window resized mid-recording keeps them right. */
 export type WorkerResponse = { type: "samples"; samples: PointerSample[]; motion: MotionSample[] };
 
 let samples: PointerSample[] = [];
@@ -31,8 +32,13 @@ async function follow(frames: ReadableStream<VideoFrame>) {
       const height = frame.displayHeight;
       // A captured window can change size; start over at the new size.
       if (!tracker || Math.round(width * scale) !== tracker.width || Math.round(height * scale) !== tracker.height) {
-        scale = Math.min(1, ANALYSIS_WIDTH / width);
-        tracker = new PointerTracker(Math.round(width * scale), Math.round(height * scale));
+        const nextScale = Math.min(1, ANALYSIS_WIDTH / width);
+        // At the same scale the pointer looks the same, so what was learned still applies.
+        if (tracker && Math.abs(nextScale - scale) < 0.02) tracker.resize(Math.round(width * scale), Math.round(height * scale));
+        else {
+          scale = nextScale;
+          tracker = new PointerTracker(Math.round(width * scale), Math.round(height * scale));
+        }
         context = new OffscreenCanvas(tracker.width, tracker.height).getContext("2d", { willReadFrequently: true });
       }
       if (!context) continue;
@@ -46,7 +52,7 @@ async function follow(frames: ReadableStream<VideoFrame>) {
       context.drawImage(frame, 0, 0, tracker.width, tracker.height);
       const position = tracker.push(context.getImageData(0, 0, tracker.width, tracker.height).data);
       if (!position) continue;
-      const sample = { timeMs, x: position.x / scale, y: position.y / scale };
+      const sample = { timeMs, x: position.x / tracker.width, y: position.y / tracker.height };
       // Every move, and a still pointer now and then, so pauses can be measured.
       if (!last || sample.x !== last.x || sample.y !== last.y || sample.timeMs - last.timeMs >= 100) {
         samples.push(sample);

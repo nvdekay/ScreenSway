@@ -1,5 +1,4 @@
 import { generateZoomSegments } from "@screensway/core";
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
 import { AlertCircle, Download, Languages, Lock, Mic, MicOff, MousePointer2, Square, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LogoMark } from "../../desktop/src/LogoMark";
@@ -7,76 +6,11 @@ import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
-import { addRecording, removeRecording } from "./backend";
-import { MOTION_HEIGHT, MOTION_WIDTH, motionBetween, timelineMatch, type MotionSample } from "./pointer/align";
-import { pointerEvents } from "./pointer/focus";
-import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, unsupportedReason, type CapturedRecording } from "./recorder";
+import { EXPORT_SAVED, removeRecording } from "./backend";
+import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, unsupportedReason } from "./recorder";
+import { listen } from "./tauri/event";
 
 type Status = "idle" | "starting" | "recording" | "finishing";
-
-/** Seconds of the recording compared to line up the pointer's clock. */
-const ALIGN_SECONDS = 20;
-
-/** Size, length and a still of the recording, read from the file the browser wrote. */
-async function prepare(captured: CapturedRecording): Promise<RecordingResult> {
-  const input = new Input({ source: new BlobSource(captured.blob), formats: ALL_FORMATS });
-  const video = await input.getPrimaryVideoTrack();
-  if (!video) throw new Error("The recording has no video.");
-  const width = video.displayWidth;
-  const height = video.displayHeight;
-  const durationMs = (await video.computeDuration()) * 1_000;
-
-  let thumbnail: string | null = null;
-  try {
-    const still = await new CanvasSink(video, { width: 640, height: Math.round((640 * height) / width) }).getCanvas(Math.min(0.5, durationMs / 2_000));
-    if (still) {
-      const canvas = still.canvas;
-      const blob = canvas instanceof OffscreenCanvas ? await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 }) : await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
-      if (blob) thumbnail = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    }
-  } catch {
-    // The magic background falls back to the default without a still.
-  }
-
-  // Line the pointer up with the recording, using the first seconds of screen motion.
-  let offsetMs = 0;
-  try {
-    const recorded: MotionSample[] = [];
-    let previous: Uint8ClampedArray | null = null;
-    const sink = new CanvasSink(video, { width: MOTION_WIDTH, height: MOTION_HEIGHT, fit: "fill" });
-    for await (const { canvas, timestamp } of sink.canvases(0, ALIGN_SECONDS)) {
-      const context = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-      if (!context) break;
-      const pixels = context.getImageData(0, 0, MOTION_WIDTH, MOTION_HEIGHT).data;
-      if (previous) recorded.push({ timeMs: timestamp * 1_000, motion: motionBetween(previous, pixels) });
-      previous = pixels;
-    }
-    const match = timelineMatch(recorded, captured.motion.filter((sample) => sample.timeMs <= ALIGN_SECONDS * 1_000 + 2_000));
-    console.debug(`ScreenSway: pointer timeline offset ${match?.offset} ms (agreement ${match?.score.toFixed(2)}, ${recorded.length}/${captured.motion.length} frames)`);
-    if (match && match.score >= 0.5) offsetMs = match.offset;
-  } catch {
-    // Without alignment the pointer is at most a fraction of a second off.
-  }
-  const samples = captured.samples.map((sample) => ({ ...sample, timeMs: sample.timeMs + offsetMs }));
-
-  const id = `recording-${Date.now()}`;
-  const url = URL.createObjectURL(captured.blob);
-  addRecording({ id, blob: captured.blob, url, thumbnail });
-  return {
-    projectPath: id,
-    videoPath: url,
-    pointerEventsPath: "",
-    durationMs,
-    width,
-    height,
-    pointerEvents: pointerEvents(samples, width),
-  };
-}
 
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
@@ -98,6 +32,8 @@ export function WebApp() {
   const [now, setNow] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RecordingResult | null>(null);
+  // Whether the open recording has been exported since it was made, so leaving loses nothing.
+  const [exported, setExported] = useState(false);
   const recordingRef = useRef<ScreenRecording | null>(null);
   const previewRef = useRef<HTMLElement>(null);
   const recording = status === "recording" || status === "finishing";
@@ -108,16 +44,21 @@ export function WebApp() {
     return () => window.clearInterval(timer);
   }, [status]);
 
-  // A recording only exists in this tab, so leaving it asks first.
   useEffect(() => {
-    if (!result && !recording) return;
+    const unlisten = listen<string>(EXPORT_SAVED, () => setExported(true));
+    return () => void unlisten.then((dispose) => dispose());
+  }, []);
+
+  // A recording only exists in this tab, so leaving it asks first, unless it was exported.
+  useEffect(() => {
+    if (!recording && (!result || exported)) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = t("web.leave");
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [recording, result, t]);
+  }, [exported, recording, result, t]);
 
   useEffect(() => {
     if (result) previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -134,6 +75,8 @@ export function WebApp() {
       setNow(performance.now());
       setStatus("recording");
     } catch (startError) {
+      // start() already releases the screen and microphone; this is a second guard.
+      session.cancel();
       recordingRef.current = null;
       setStatus("idle");
       if (startError instanceof ShareCancelledError) setError(t("web.shareDenied"));
@@ -148,7 +91,13 @@ export function WebApp() {
     recordingRef.current = null;
     setStatus("finishing");
     try {
-      const prepared = await prepare(await session.stop());
+      const captured = await session.stop();
+      const { prepare } = await import("./prepare");
+      const prepared = await prepare(session.id, captured).catch((error) => {
+        captured.discard();
+        throw error;
+      });
+      setExported(false);
       setResult((previous) => {
         if (previous) removeRecording(previous.projectPath);
         return prepared;
