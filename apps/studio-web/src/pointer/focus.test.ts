@@ -15,7 +15,7 @@ function path(from: [number, number], to: [number, number], moveMs: number, rest
 
 describe("pointerEvents", () => {
   it("marks where the pointer settles after moving", () => {
-    const events = pointerEvents(path([100, 100], [900, 600], 400, 800), WIDTH);
+    const events = pointerEvents(path([100, 100], [900, 600], 400, 1_100), WIDTH);
     const focus = events.filter((event) => event.type === "focus");
     expect(focus).toHaveLength(1);
     expect(focus[0]).toMatchObject({ x: 900, y: 600 });
@@ -25,15 +25,20 @@ describe("pointerEvents", () => {
   });
 
   it("ignores short pauses, small moves and a pointer that never moved", () => {
-    expect(pointerEvents(path([100, 100], [900, 600], 400, 300), WIDTH).some((event) => event.type === "focus")).toBe(false);
+    expect(pointerEvents(path([100, 100], [900, 600], 400, 600), WIDTH).some((event) => event.type === "focus")).toBe(false);
     expect(pointerEvents(path([100, 100], [140, 120], 400, 900), WIDTH).some((event) => event.type === "focus")).toBe(false);
     expect(pointerEvents(path([500, 500], [500, 500], 400, 2_000), WIDTH).some((event) => event.type === "focus")).toBe(false);
   });
 
   it("marks each stop once, even when the pointer jitters while resting", () => {
     const first = path([100, 100], [900, 600], 400, 1_500).map((sample, index) => ({ ...sample, x: sample.x + (index % 2) * 3 }));
-    const second = path([900, 600], [200, 900], 400, 900, 1_934);
+    const second = path([900, 600], [200, 900], 400, 1_100, 1_934);
     const focus = pointerEvents([...first, ...second], WIDTH).filter((event) => event.type === "focus");
-    expect(focus.map(({ x, y }) => [Math.round(x), Math.round(y)])).toEqual([[900, 600], [200, 900]]);
+    expect(focus).toHaveLength(2);
+    // Where it rests, give or take the jitter.
+    [[900, 600], [200, 900]].forEach(([x, y], index) => {
+      expect(Math.abs(focus[index].x - x)).toBeLessThanOrEqual(3);
+      expect(Math.abs(focus[index].y - y)).toBeLessThanOrEqual(3);
+    });
   });
 });

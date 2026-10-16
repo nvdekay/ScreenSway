@@ -9,7 +9,6 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
-  QUALITY_HIGH,
   VideoSampleSink,
   canEncodeAudio,
 } from "mediabunny";
@@ -52,11 +51,14 @@ export async function renderExport(
   const canvas = new OffscreenCanvas(job.width, job.height);
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new Error("Canvas is not available.");
+  context.imageSmoothingQuality = "high";
   const base = await createImageBitmap(await (await fetch(baseLayer)).blob());
 
   const target = new BufferTarget();
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
-  const videoSource = new CanvasSource(canvas, { codec: "avc", bitrate: QUALITY_HIGH });
+  // The desktop exporter's bitrate (Exporter.swift): sharp text when zoomed.
+  const bitrate = Math.round(Math.min(100_000_000, Math.max(8_000_000, job.width * job.height * job.fps * 0.12)));
+  const videoSource = new CanvasSource(canvas, { codec: "avc", bitrate });
   output.addVideoTrack(videoSource, { frameRate: job.fps });
   const audioCodec = (await canEncodeAudio("aac")) ? "aac" : "opus";
   const audioSource = audioTrack ? new AudioBufferSource({ codec: audioCodec, bitrate: 160_000 }) : null;

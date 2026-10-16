@@ -2,14 +2,16 @@
 // the page is in the background (which is the usual case: the user records another app).
 import { PointerTracker } from "./tracker";
 import type { PointerSample } from "./focus";
+import { MOTION_HEIGHT, MOTION_WIDTH, motionBetween, type MotionSample } from "./align";
 
 /** Frames are analysed at most this wide; the pointer stays ~10 px tall or more. */
 const ANALYSIS_WIDTH = 1600;
 
 export type WorkerRequest = { type: "start"; frames: ReadableStream<VideoFrame> } | { type: "finish" };
-export type WorkerResponse = { type: "samples"; samples: PointerSample[] };
+export type WorkerResponse = { type: "samples"; samples: PointerSample[]; motion: MotionSample[] };
 
 let samples: PointerSample[] = [];
+let motion: MotionSample[] = [];
 let finished = false;
 
 async function follow(frames: ReadableStream<VideoFrame>) {
@@ -19,6 +21,8 @@ async function follow(frames: ReadableStream<VideoFrame>) {
   let scale = 1;
   let firstTimestamp: number | null = null;
   let last: PointerSample | null = null;
+  const tiny = new OffscreenCanvas(MOTION_WIDTH, MOTION_HEIGHT).getContext("2d", { willReadFrequently: true })!;
+  let previousTiny: Uint8ClampedArray | null = null;
   while (!finished) {
     const { value: frame, done } = await reader.read();
     if (done || !frame) break;
@@ -33,10 +37,16 @@ async function follow(frames: ReadableStream<VideoFrame>) {
       }
       if (!context) continue;
       firstTimestamp ??= frame.timestamp;
+      const timeMs = (frame.timestamp - firstTimestamp) / 1_000;
+      // How much the screen changed, to line this clock up with the recording afterwards.
+      tiny.drawImage(frame, 0, 0, MOTION_WIDTH, MOTION_HEIGHT);
+      const small = tiny.getImageData(0, 0, MOTION_WIDTH, MOTION_HEIGHT).data;
+      if (previousTiny) motion.push({ timeMs, motion: motionBetween(previousTiny, small) });
+      previousTiny = small;
       context.drawImage(frame, 0, 0, tracker.width, tracker.height);
       const position = tracker.push(context.getImageData(0, 0, tracker.width, tracker.height).data);
       if (!position) continue;
-      const sample = { timeMs: (frame.timestamp - firstTimestamp) / 1_000, x: position.x / scale, y: position.y / scale };
+      const sample = { timeMs, x: position.x / scale, y: position.y / scale };
       // Every move, and a still pointer now and then, so pauses can be measured.
       if (!last || sample.x !== last.x || sample.y !== last.y || sample.timeMs - last.timeMs >= 100) {
         samples.push(sample);
@@ -53,10 +63,11 @@ async function follow(frames: ReadableStream<VideoFrame>) {
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   if (event.data.type === "start") {
     samples = [];
+    motion = [];
     finished = false;
     void follow(event.data.frames);
   } else {
     finished = true;
-    self.postMessage({ type: "samples", samples } satisfies WorkerResponse);
+    self.postMessage({ type: "samples", samples, motion } satisfies WorkerResponse);
   }
 };

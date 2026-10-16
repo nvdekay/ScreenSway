@@ -1,3 +1,4 @@
+import type { MotionSample } from "./pointer/align";
 import type { PointerSample } from "./pointer/focus";
 import type { WorkerRequest, WorkerResponse } from "./pointer/worker";
 
@@ -9,6 +10,8 @@ export interface RecordingOptions {
 export interface CapturedRecording {
   blob: Blob;
   samples: PointerSample[];
+  /** Screen motion on the samples' clock, to line them up with the recording. */
+  motion: MotionSample[];
 }
 
 /** Containers in order of preference: MP4 is seekable and plays everywhere once exported. */
@@ -60,7 +63,8 @@ export class ScreenRecording {
     let display: MediaStream;
     try {
       display = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 30 }, width: { max: 2560 }, height: { max: 1600 }, cursor: "always" },
+        // Full resolution up to 4K-class screens: zooms magnify the recording, so every pixel counts.
+        video: { frameRate: { ideal: 30, max: 30 }, width: { max: 3840 }, height: { max: 2400 }, cursor: "always" },
         audio: options.systemAudio,
         // Chromium hints: offer the whole screen, never this tab, and no surface switching.
         selfBrowserSurface: "exclude",
@@ -89,7 +93,10 @@ export class ScreenRecording {
     const hasAudio = tracks.length > 1;
     const mimeType = MIME_TYPES.map(([withAudio, withoutAudio]) => (hasAudio ? withAudio : withoutAudio)).find((type) => MediaRecorder.isTypeSupported(type));
 
-    this.recorder = new MediaRecorder(new MediaStream(tracks), { mimeType, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 160_000 });
+    // Screen text needs far more than a camera's bitrate, as in the desktop helper.
+    const { width = 1920, height = 1080 } = video.getSettings();
+    const videoBitsPerSecond = Math.round(Math.min(60_000_000, Math.max(10_000_000, width * height * 30 * 0.2)));
+    this.recorder = new MediaRecorder(new MediaStream(tracks), { mimeType, videoBitsPerSecond, audioBitsPerSecond: 160_000 });
     this.chunks = [];
     this.recorder.ondataavailable = (event) => {
       if (event.data.size > 0) this.chunks.push(event.data);
@@ -111,7 +118,7 @@ export class ScreenRecording {
     const samples = this.collectSamples();
     if (recorder.state !== "inactive") recorder.stop();
     await this.stopped;
-    const result = { blob: new Blob(this.chunks, { type: recorder.mimeType.split(";")[0] }), samples: await samples };
+    const result = { blob: new Blob(this.chunks, { type: recorder.mimeType.split(";")[0] }), ...(await samples) };
     this.release();
     return result;
   }
@@ -122,14 +129,15 @@ export class ScreenRecording {
     this.release();
   }
 
-  private collectSamples(): Promise<PointerSample[]> {
+  private collectSamples(): Promise<{ samples: PointerSample[]; motion: MotionSample[] }> {
     const worker = this.worker;
-    if (!worker) return Promise.resolve([]);
+    const none = { samples: [], motion: [] };
+    if (!worker) return Promise.resolve(none);
     return new Promise((resolve) => {
-      const timeout = window.setTimeout(() => resolve([]), 5_000);
+      const timeout = window.setTimeout(() => resolve(none), 5_000);
       worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
         window.clearTimeout(timeout);
-        resolve(event.data.samples);
+        resolve({ samples: event.data.samples, motion: event.data.motion });
       };
       worker.postMessage({ type: "finish" } satisfies WorkerRequest);
     });
