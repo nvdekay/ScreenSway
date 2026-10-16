@@ -91,7 +91,13 @@ class ChunkStore {
   async finish(type: string): Promise<Blob> {
     await this.writing;
     if (this.failed) throw new StorageFullError("There is not enough free disk space for this recording.");
-    await this.writable!.close();
+    try {
+      await this.writable!.close();
+    } catch {
+      // Committing the file can fail for the same reason as a write: no space left.
+      this.failed = true;
+      throw new StorageFullError("There is not enough free disk space for this recording.");
+    }
     this.writable = null;
     const file = await this.handle!.getFile();
     return file.slice(0, file.size, type);
