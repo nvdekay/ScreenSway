@@ -23,8 +23,11 @@ interface ExportArgs {
 const recordings = new Map<string, WebRecording>();
 const edits = new Map<string, unknown>();
 const images = new Map<string, { image: string; thumbnail: string }>();
-/** The last export when it could not be saved straight to a file, for "Download again". */
-let lastExport: { url: string; fileName: string } | null = null;
+/**
+ * The last export when the browser had no save dialog: written to its private storage and
+ * downloaded from there, so it never sits in memory. Kept for "Download again".
+ */
+let lastExport: { url: string; fileName: string; file: FileSystemFileHandle | null } | null = null;
 let exporting: AbortController | null = null;
 /** What the studio shows as a cancelled export (RecordingStudio compares the message). */
 const CANCELLED_MESSAGE = "Export cancelled.";
@@ -46,8 +49,44 @@ export function removeRecording(id: string) {
 }
 
 function forgetLastExport() {
-  if (lastExport) URL.revokeObjectURL(lastExport.url);
+  if (lastExport) {
+    URL.revokeObjectURL(lastExport.url);
+    if (lastExport.file) void removeFile(lastExport.file);
+  }
   lastExport = null;
+}
+
+/** Deletes a file, or empties it where the browser cannot delete files it was given. */
+async function removeFile(handle: FileSystemFileHandle) {
+  const removable = handle as FileSystemFileHandle & { remove?: () => Promise<void> };
+  try {
+    if (removable.remove) {
+      await removable.remove();
+      return;
+    }
+  } catch {
+    // Not allowed here; empty it instead.
+  }
+  try {
+    const writable = await handle.createWritable();
+    await writable.truncate(0);
+    await writable.close();
+  } catch {
+    // Already gone.
+  }
+}
+
+/** A file in the browser's private storage for an export that will be downloaded. */
+async function temporaryFile(): Promise<FileSystemFileHandle | null> {
+  try {
+    const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("exports", { create: true });
+    for await (const [name] of (folder as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) {
+      await folder.removeEntry(name).catch(() => {});
+    }
+    return await folder.getFileHandle(`export-${Date.now()}.mp4`, { create: true });
+  } catch {
+    return null;
+  }
 }
 
 /** Fired when an export is saved, so the page knows the work is safe. */
@@ -116,24 +155,32 @@ export const commands: Record<string, Command> = {
     const controller = new AbortController();
     exporting = controller;
     const name = `${fileName}.mp4`;
-    let file: FileSystemWritableFileStream | null = null;
+    let target: FileSystemFileHandle | null = null;
+    let writable: FileSystemWritableFileStream | null = null;
     try {
       // First, while the click still counts as the user's: the save dialog needs it.
-      const handle = await chooseFile(name).catch(() => {
+      const chosen = await chooseFile(name).catch(() => {
         throw CANCELLED_MESSAGE;
       });
-      file = handle ? await handle.createWritable() : null;
+      target = chosen ?? (await temporaryFile());
+      writable = target ? await target.createWritable() : null;
       const { renderExport } = await import("./exporter");
-      const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, file);
+      const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable);
+      // Cancelled while the file was being finished, which cannot be interrupted.
+      if (controller.signal.aborted) throw CANCELLED_MESSAGE;
       forgetLastExport();
-      if (blob) {
-        lastExport = { url: URL.createObjectURL(blob), fileName: name };
+      if (!chosen) {
+        const file = target ? await target.getFile() : blob;
+        if (!file) throw new Error("The export is empty.");
+        lastExport = { url: URL.createObjectURL(file), fileName: name, file: target };
         download(lastExport.url, name);
       }
       emit(EXPORT_SAVED, projectPath);
-      return { outputPath: lastExport && blob ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
+      return { outputPath: lastExport && !chosen ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
     } catch (error) {
-      await file?.abort().catch(() => {});
+      // Nothing half-written is left behind: mediabunny closes rather than discards the file.
+      await writable?.abort().catch(() => {});
+      if (target) await removeFile(target);
       if (error === CANCELLED_MESSAGE || controller.signal.aborted) throw CANCELLED_MESSAGE;
       throw error instanceof Error ? error.message : String(error);
     } finally {
