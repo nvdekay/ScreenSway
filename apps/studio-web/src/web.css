@@ -4,14 +4,17 @@ html.web { --primary: #a78bfa; --primary-strong: #8b5cf6; --bg: #050506; backgro
 html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background: #050506; }
 .web-shell { min-height: 100vh; color: #fff; }
 .web-header { position: sticky; top: 12px; z-index: 30; width: min(1180px, calc(100% - 32px)); height: 60px; display: flex; align-items: center; justify-content: space-between; margin: 12px auto 0; padding: 0 12px 0 16px; border: 1px solid #ffffff18; border-radius: 18px; background: #0a0a0dc7; box-shadow: 0 16px 50px #0007; backdrop-filter: blur(22px) saturate(150%); }
-.web-brand, .web-header nav, .web-header nav a, .web-language { display: flex; align-items: center; }
+.web-brand, .web-header nav, .web-header nav a { display: flex; align-items: center; }
 .web-brand { gap: 9px; color: #fff; font-size: 15px; font-weight: 700; text-decoration: none; }
 .web-brand small { padding: 3px 7px; border: 1px solid #a78bfa55; border-radius: 99px; color: #c4b5fd; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .web-header nav { gap: 8px; }
-.web-header nav a, .web-language { min-height: 38px; gap: 7px; padding: 0 13px; border: 1px solid #ffffff17; border-radius: 99px; background: #ffffff09; color: #d8d6df; font-size: 12px; font-weight: 650; text-decoration: none; }
-.web-language:hover, .web-header nav a:hover { border-color: #ffffff30; background: #ffffff12; color: #fff; }
+.web-header nav a { min-height: 38px; gap: 7px; padding: 0 13px; border: 1px solid #ffffff17; border-radius: 99px; background: #ffffff09; color: #d8d6df; font-size: 12px; font-weight: 650; text-decoration: none; }
+/* Same as the landing page's .language-switch. */
+.web-language { width: 40px; height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid #2a2a32; border-radius: 11px; background: #18181d; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .04em; transition: background .18s ease, border-color .18s ease; }
+.web-language:hover { border-color: #3a3a44; background: #222229; }
+.web-header nav a:hover { border-color: #ffffff30; background: #ffffff12; color: #fff; }
 .web-hero { width: min(1120px, calc(100% - 40px)); display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); gap: 28px 52px; margin: 0 auto; padding: 36px 0 64px; align-items: center; }
-.web-promise h1 { max-width: 680px; margin: 18px 0; font-size: clamp(44px, 6vw, 76px); font-weight: 560; line-height: .99; letter-spacing: -.055em; color: #fff; }
+.web-promise h1 { max-width: 680px; margin: 0 0 18px; font-size: clamp(44px, 6vw, 76px); font-weight: 560; line-height: .99; letter-spacing: -.055em; color: #fff; }
 .web-promise > p { max-width: 610px; margin: 0; color: #aaa6b5; font-size: 18px; line-height: 1.65; }
 .web-kicker { display: inline-flex; align-items: center; gap: 7px; color: #c4b5fd; font-size: 11px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
 .web-kicker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 15px #a78bfa; }
@@ -51,29 +54,27 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .result-timeline i { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: #8b5cf680; }
 .result-timeline span { position: absolute; inset: 0; background: #ffffff59; transform: scaleX(0); transform-origin: left; }
 .web-try { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.web-recorder { padding: 18px; border: 1px solid #ffffff1b; border-radius: 22px; background: #0f0e14; box-shadow: 0 32px 90px #0009; }
-.recorder-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.recorder-heading span { color: #9c97a8; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.recorder-heading h2 { margin: 5px 0 0; font-size: 22px; letter-spacing: -.03em; }
+.web-recorder { padding: 14px; border: 1px solid #ffffff1b; border-radius: 20px; background: #0f0e14; box-shadow: 0 32px 90px #0009; }
+.recorder-heading { display: flex; align-items: center; justify-content: space-between; margin: 2px 2px 10px; }
+.recorder-heading h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
 .recorder-heading > svg { color: #a78bfa; }
-.web-audio-options { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.web-audio-options label { min-width: 0; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 11px 14px; border: 1px solid #ffffff13; border-radius: 16px; background: #ffffff06; cursor: pointer; }
-.web-audio-options label > span { min-width: 0; display: grid; grid-template-columns: 24px 1fr; align-items: center; column-gap: 8px; }
-.web-audio-options svg { width: 18px; color: #a78bfa; grid-row: 1/3; }
-.web-audio-options b { font-size: 13px; }
-.web-audio-options small { overflow: hidden; color: #898594; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.web-audio-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.web-audio-options label { min-width: 0; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 9px 10px 9px 12px; border: 1px solid #ffffff13; border-radius: 13px; background: #ffffff06; cursor: pointer; }
+.web-audio-options label > span { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.web-audio-options svg { width: 17px; flex: none; color: #a78bfa; }
+.web-audio-options b { min-width: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .web-audio-options input { position: absolute; opacity: 0; }
-.web-audio-options label > i { position: relative; width: 38px; height: 22px; border-radius: 99px; background: #ffffff20; }
-.web-audio-options label > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.web-audio-options label > i { position: relative; flex: none; width: 34px; height: 20px; border-radius: 99px; background: #ffffff20; }
+.web-audio-options label > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
 .web-audio-options input:checked+i { background: #8b5cf6; }
-.web-audio-options input:checked+i::after { transform: translateX(16px); }
+.web-audio-options input:checked+i::after { transform: translateX(14px); }
 .web-audio-options input:focus-visible+i { outline: 2px solid #a78bfa; outline-offset: 3px; }
-.web-start { width: 100%; min-height: 58px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; border: 0; border-radius: 17px; background: #a78bfa; color: #0a0710; font-size: 15px; font-weight: 800; box-shadow: none; }
+.web-start { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; border: 0; border-radius: 17px; background: #a78bfa; color: #0a0710; font-size: 15px; font-weight: 800; box-shadow: none; }
 .web-start svg { margin-left: auto; }
 .web-start .record-dot { margin-left: auto; background: #2e1065; box-shadow: 0 0 0 4px #2e10651f; }
 .web-start:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
 .web-start:disabled { opacity: .65; }
-.requirements { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0 0; color: #777381; font-size: 11px; }
+.requirements { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0 0; color: #777381; font-size: 11px; }
 .web-error { display: flex; gap: 8px; margin-top: 12px; padding: 11px; border: 1px solid #f2586f44; border-radius: 12px; background: #f2586f12; color: #ff9aab; font-size: 12px; }
 .web-error svg { flex: none; }
 .live-panel { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; min-height: 110px; }
@@ -125,6 +126,10 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
   0% { transform: translateX(-110%); }
   50% { transform: translateX(80%); }
   100% { transform: translateX(250%); }
+}
+/* Two columns but a narrow right one: the toggles stack so their labels fit. */
+@media (min-width: 901px) and (max-width: 1140px) {
+  .web-audio-options { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .web-hero { grid-template-columns: 1fr; padding-top: 70px; }
