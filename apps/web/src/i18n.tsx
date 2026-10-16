@@ -177,6 +177,7 @@ const en = {
   "guide.why": "Why the extra step? ScreenSway is free and works offline; this build hasn't been through Apple's paid notarization yet.",
   "guide.gotIt": "Got it",
   "hero.howToInstall": "How to install",
+  "hero.web": "Or record right in Chrome or Edge, nothing to install (beta) →",
 
   "cta.title": "Make every click worth watching.",
   "cta.copy": "Download ScreenSway and turn your next screen recording into something people actually enjoy watching.",
@@ -362,6 +363,7 @@ const vi: Record<MessageKey, string> = {
   "guide.why": "Vì sao có bước này? ScreenSway miễn phí và chạy offline; bản này chưa qua quy trình chứng nhận trả phí của Apple.",
   "guide.gotIt": "Đã hiểu",
   "hero.howToInstall": "Hướng dẫn cài đặt",
+  "hero.web": "Hoặc quay ngay trên Chrome, Edge mà không cần cài (beta) →",
 
   "cta.title": "Biến mỗi cú click thành khoảnh khắc đáng xem.",
   "cta.copy": "Tải ScreenSway và biến bản quay màn hình tiếp theo thành video mà mọi người thật sự muốn xem.",

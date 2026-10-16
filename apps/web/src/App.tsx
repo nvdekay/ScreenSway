@@ -355,6 +355,9 @@ export default function App() {
               </h1>
               <p className="hero-copy">{t("hero.copy")}</p>
               <DownloadActions centered placement="hero" />
+              <p className="hero-web">
+                <a href="./app/">{t("hero.web")}</a>
+              </p>
               <p className="hero-note">
                 v{appVersion} · {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
                 <button className="link-button" onClick={() => { track("guide_open", { placement: "hero" }); openInstallGuide(preferredPlatform()); }}>{t("hero.howToInstall")}</button>
