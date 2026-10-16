@@ -37,6 +37,7 @@ pnpm dev:desktop                                  # run the app
 pnpm build:macos                                  # universal app + LZMA DMG
 pnpm build:web                                    # landing page
 pnpm dev:studio-web / pnpm build:studio-web        # browser version (served at /app/ by web.yml)
+pnpm --filter @screensway/studio-web test:e2e       # browser version end to end in Edge (BROWSER=chrome)
 pnpm --filter @screensway/analytics test:e2e        # analytics API end to end on a local D1
 pnpm --filter @screensway/downloads test:e2e        # downloads Worker + publish script on a local R2
 (cd native/windows-capture && cargo test)          # Windows helper logic (runs on macOS too)

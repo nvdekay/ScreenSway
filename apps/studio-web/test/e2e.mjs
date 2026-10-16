@@ -1,0 +1,221 @@
+// End to end in a real Chromium browser (Edge by default, BROWSER=chrome for Chrome): record,
+// prepare, edit and export, with the shared screen replaced by an animated canvas that has a
+// pointer moving between stops, plus a tone as system audio. The save dialog writes to the
+// browser's private storage, where the test reads the MP4 back.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
+import { chromium } from "playwright-core";
+
+const dist = fileURLToPath(new URL("../dist/", import.meta.url));
+const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2" };
+const server = createServer((request, response) => {
+  const pathname = new URL(request.url, "http://local").pathname;
+  const path = pathname === "/" ? "index.html" : pathname;
+  try {
+    const body = readFileSync(join(dist, path));
+    response.writeHead(200, { "Content-Type": types[extname(path)] ?? "application/octet-stream" });
+    response.end(body);
+  } catch {
+    response.writeHead(404);
+    response.end();
+  }
+}).listen(0);
+const base = `http://127.0.0.1:${server.address().port}/`;
+const browser = await chromium.launch({ channel: process.env.BROWSER ?? "msedge", args: ["--autoplay-policy=no-user-gesture-required"] });
+
+/** Runs in the page before the app: fake screen sharing, save dialog and a record of worker output. */
+function fakes(options) {
+  if (location.protocol !== "http:") return;
+  localStorage.setItem("screensway.language", "en");
+  window.__test = { tracks: [], samples: null };
+  navigator.mediaDevices.getDisplayMedia = async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1280;
+    canvas.height = 800;
+    const context = canvas.getContext("2d");
+    const started = performance.now();
+    const stops = [[200, 150], [900, 300], [400, 600], [1000, 650], [600, 200], [300, 500]];
+    const draw = () => {
+      const t = performance.now() - started;
+      // A window resized mid-recording.
+      if (options.resizeAtMs && t > options.resizeAtMs && canvas.width === 1280) canvas.width = 960;
+      const { width, height } = canvas;
+      context.fillStyle = "#1d2230";
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = "#e8eaf2";
+      for (let row = 0; row < 8; row++) context.fillRect(60, 60 + row * 80, width * 0.4, 18);
+      // The pointer moves for 0.6 s, then rests for 1.4 s at each stop.
+      const leg = Math.floor(t / 2_000) % (stops.length - 1);
+      const k = Math.min(1, (t % 2_000) / 600);
+      // Whole pixels, like a real pointer, so its edges look the same wherever it is.
+      const x = Math.round(((stops[leg][0] + (stops[leg + 1][0] - stops[leg][0]) * k) * width) / 1280) + 0.5;
+      const y = Math.round(stops[leg][1] + (stops[leg + 1][1] - stops[leg][1]) * k) + 0.5;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x, y + 22);
+      context.lineTo(x + 6, y + 17);
+      context.lineTo(x + 11, y + 26);
+      context.lineTo(x + 15, y + 24);
+      context.lineTo(x + 10, y + 15);
+      context.lineTo(x + 17, y + 15);
+      context.closePath();
+      context.fillStyle = "#000";
+      context.strokeStyle = "#fff";
+      context.lineWidth = 2;
+      context.fill();
+      context.stroke();
+      requestAnimationFrame(draw);
+    };
+    draw();
+    const stream = canvas.captureStream(30);
+    const audio = new AudioContext();
+    const tone = audio.createOscillator();
+    const destination = audio.createMediaStreamDestination();
+    tone.connect(destination);
+    tone.start();
+    stream.addTrack(destination.stream.getAudioTracks()[0]);
+    window.__test.tracks.push(...stream.getTracks());
+    return stream;
+  };
+  if (options.failRecorder) {
+    window.MediaRecorder = class extends MediaRecorder {
+      constructor() {
+        throw new Error("encoder unavailable");
+      }
+    };
+  }
+  window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4", { create: true });
+  const Original = window.Worker;
+  window.Worker = class extends Original {
+    constructor(...args) {
+      super(...args);
+      this.addEventListener("message", (event) => {
+        if (event.data?.type === "samples") window.__test.samples = event.data.samples;
+      });
+    }
+  };
+}
+
+async function openApp(options = {}) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on("pageerror", (error) => console.error("page error:", error.message));
+  await page.addInitScript(fakes, options);
+  await page.goto(base);
+  return page;
+}
+
+const storedRecordings = (page) =>
+  page.evaluate(async () => {
+    const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("recordings", { create: true });
+    const names = [];
+    // Chromium keeps writes in a ".crswap" file until they are closed.
+    for await (const [name] of folder.entries()) if (!name.endsWith(".crswap")) names.push(name);
+    return names;
+  });
+
+async function record(page, ms) {
+  await page.getByRole("button", { name: "Start recording" }).click();
+  await page.getByText(/Recording ·/).waitFor({ timeout: 15_000 });
+  await page.waitForTimeout(ms);
+}
+
+try {
+  // 1. Record with sound, resize the shared window (frames keep the first size, with bars),
+  //    stop from the browser's own controls, export to a file and leave without being asked.
+  {
+    const page = await openApp({ resizeAtMs: Number(process.env.RESIZE_AT ?? 3_500) });
+    await record(page, 7_000);
+    assert.equal((await storedRecordings(page)).length, 1, "the recording is written to disk while recording");
+    await page.evaluate(() => window.__test.tracks.find((track) => track.kind === "video").dispatchEvent(new Event("ended")));
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    if (process.env.SAVE_RECORDING) {
+      const recorded = await page.evaluate(async () => {
+        const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("recordings");
+        for await (const [name, entry] of folder.entries()) {
+          if (name.endsWith(".crswap")) continue;
+          const bytes = new Uint8Array(await (await entry.getFile()).arrayBuffer());
+          let text = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          return btoa(text);
+        }
+      });
+      (await import("node:fs")).writeFileSync(process.env.SAVE_RECORDING, Buffer.from(recorded, "base64"));
+    }
+    const heading = await page.locator(".preview-section .section-heading span").first().textContent();
+    assert.match(heading, /[1-9]\d* zooms? where your pointer paused/, heading);
+    const samples = await page.evaluate(() => window.__test.samples);
+    assert.ok(samples.length > 50, `pointer followed (${samples.length} samples)`);
+    assert.ok(samples.every((s) => s.x >= 0 && s.x <= 1 && s.y >= 0 && s.y <= 1), "positions are fractions of the frame");
+
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.locator(".export-done, .export-box .capture-message.error").first().waitFor({ timeout: 120_000 });
+    assert.equal(await page.locator(".export-box .capture-message.error").count(), 0, await page.locator(".export-box").textContent());
+    assert.equal(await page.getByRole("button", { name: "Download again" }).count(), 0, "a saved file is not offered again");
+    const base64 = await page.evaluate(async () => {
+      const file = await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let text = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(text);
+    });
+    const input = new Input({ source: new BufferSource(Buffer.from(base64, "base64")), formats: ALL_FORMATS });
+    const video = await input.getPrimaryVideoTrack();
+    const audio = await input.getPrimaryAudioTrack();
+    const duration = await input.computeDuration();
+    assert.ok(video && audio, "the MP4 has video and sound");
+    assert.equal(video.codec, "avc");
+    assert.ok(duration > 6 && duration < 8.5, `export lasts as long as the recording (${duration.toFixed(2)} s)`);
+    assert.ok(Math.abs((await audio.computeDuration()) - (await video.computeDuration())) < 0.2, "sound and picture end together");
+    input.dispose();
+
+    let asked = 0;
+    page.on("dialog", (dialog) => {
+      asked++;
+      void dialog.accept();
+    });
+    await page.goto("about:blank");
+    assert.equal(asked, 0, "leaving after an export does not warn");
+    await page.close();
+    console.log("record, resize, stop sharing, export: ok");
+  }
+
+  // 2. Cancel an export, then close the recording: nothing is left behind.
+  {
+    const page = await openApp();
+    await record(page, 4_000);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Export video" }).waitFor({ timeout: 10_000 });
+    assert.equal(await page.locator(".export-done").count(), 0, "a cancelled export is not reported as saved");
+    const size = await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile()).size);
+    assert.equal(size, 0, "a cancelled export leaves no file content");
+    await page.getByRole("button", { name: "Close preview" }).click();
+    await page.waitForTimeout(300);
+    assert.deepEqual(await storedRecordings(page), [], "closing a recording deletes its stored file");
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("cancel export and close: ok");
+  }
+
+  // 3. A recorder that fails to start must not keep the screen shared.
+  {
+    const page = await openApp({ failRecorder: true });
+    await page.getByRole("button", { name: "Start recording" }).click();
+    await page.locator(".capture-message.error").waitFor({ timeout: 15_000 });
+    const states = await page.evaluate(() => window.__test.tracks.map((track) => track.readyState));
+    assert.ok(states.length > 0 && states.every((state) => state === "ended"), `capture stopped (${states})`);
+    assert.equal(await page.getByRole("button", { name: "Start recording" }).isEnabled(), true);
+    await page.close();
+    console.log("failed start releases the screen: ok");
+  }
+  console.log("studio-web e2e: ok");
+} finally {
+  await browser.close();
+  server.close();
+}
