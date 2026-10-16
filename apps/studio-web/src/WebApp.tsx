@@ -1,6 +1,7 @@
 import { generateZoomSegments } from "@screensway/core";
 import { AlertCircle, ArrowRight, Check, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { LanguageToggle } from "../../desktop/src/LanguageToggle";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
@@ -28,14 +29,10 @@ function LandingLink({ className, label, children }: { className?: string; label
   );
 }
 
-/** The landing page's language button: it shows the current language and switches to the other. */
+/** The landing page's language control: both languages side by side, the current one lit. */
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
-  return (
-    <button className="web-language" aria-label={t("web.languageSwitch")} title={t("web.languageSwitch")} onClick={() => setLanguage(language === "vi" ? "en" : "vi")}>
-      {language.toUpperCase()}
-    </button>
-  );
+  return <LanguageToggle language={language} onChange={setLanguage} label={t("web.language")} />;
 }
 
 export function WebApp() {
@@ -139,11 +136,11 @@ export function WebApp() {
           <small>Web</small>
         </a>
         <nav aria-label={t("web.headerNav")}>
+          <LanguageSwitch />
           <LandingLink label={t("web.desktopApp")}>
             <Download size={15} aria-hidden="true" />
             <span>{t("web.desktopApp")}</span>
           </LandingLink>
-          <LanguageSwitch />
         </nav>
       </header>
 

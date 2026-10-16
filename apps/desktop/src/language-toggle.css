@@ -1,0 +1,6 @@
+/* Shared by the landing page and the browser app headers (see LanguageToggle.tsx). */
+.lang-toggle { flex: none; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: #ffffff0f; }
+.lang-toggle button { min-width: 30px; height: 26px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: #ffffff80; font: inherit; font-size: 11px; font-weight: 650; letter-spacing: .05em; line-height: 1; cursor: pointer; transition: background .16s ease, color .16s ease; }
+.lang-toggle button:hover:not([aria-pressed="true"]) { color: #ffffffd9; }
+.lang-toggle button[aria-pressed="true"] { background: #ffffff21; color: #fff; cursor: default; }
+.lang-toggle button:focus-visible { outline: 2px solid #0a84ff; outline-offset: 1px; }

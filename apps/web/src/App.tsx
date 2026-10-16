@@ -9,6 +9,7 @@ import { StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
 import { WebBrowserSection } from "./WebBrowserSection";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
+import { LanguageToggle } from "../../desktop/src/LanguageToggle";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { HeroBackdrop } from "./HeroBackdrop";
 import { useI18n, type Language } from "./i18n";
@@ -77,20 +78,10 @@ function Logo() {
   );
 }
 
-/** One small button showing the current language; it switches to the other one. */
+/** Both languages side by side; the current one is lit. */
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
-  const next: Language = language === "vi" ? "en" : "vi";
-  return (
-    <button
-      className="language-switch"
-      aria-label={t("nav.languageSwitch")}
-      title={t("nav.languageSwitch")}
-      onClick={() => setLanguage(next)}
-    >
-      {language.toUpperCase()}
-    </button>
-  );
+  return <LanguageToggle language={language} onChange={setLanguage} label={t("nav.language")} />;
 }
 
 function DownloadActions({ centered = false, placement }: { centered?: boolean; placement: "hero" | "cta" }) {
