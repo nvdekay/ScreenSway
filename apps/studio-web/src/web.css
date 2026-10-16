@@ -72,10 +72,11 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-audio-options input:checked+i { background: #8b5cf6; }
 .web-audio-options input:checked+i::after { transform: translateX(14px); }
 .web-audio-options input:focus-visible+i { outline: 2px solid #a78bfa; outline-offset: 3px; }
-.web-start { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; border: 0; border-radius: 17px; background: #a78bfa; color: #0a0710; font-size: 15px; font-weight: 800; box-shadow: none; }
+.web-start { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; border: 1px solid #ffffff; border-radius: 17px; background: #f7f7f8; color: #17151d; font-size: 15px; font-weight: 800; box-shadow: 0 8px 24px #00000042; transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
 .web-start svg { margin-left: auto; }
-.web-start .record-dot { margin-left: auto; background: #2e1065; box-shadow: 0 0 0 4px #2e10651f; }
-.web-start:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.web-start .record-dot { margin-left: auto; background: #ef4444; box-shadow: 0 0 0 4px #ef444426; }
+.web-start:hover:not(:disabled) { border-color: #e5e5e7; background: #e9e9ec; box-shadow: 0 10px 26px #00000052; transform: translateY(-1px); }
+.web-start:hover:not(:disabled) .record-dot { animation: pulse 1.2s ease-in-out infinite; }
 .web-start:disabled { opacity: .65; }
 .requirements { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0 0; color: #777381; font-size: 11px; }
 .web-error { display: flex; gap: 8px; margin-top: 12px; padding: 11px; border: 1px solid #f2586f44; border-radius: 12px; background: #f2586f12; color: #ff9aab; font-size: 12px; }
@@ -170,7 +171,7 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
   .unsupported-card h1 { font-size: 32px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .live-dot, .preparing-panel > i span { animation: none !important; }
+  .live-dot, .preparing-panel > i span, .web-start .record-dot { animation: none !important; }
 }
 
 /* The shared studio, flat: single colours instead of the desktop app's glossy gradients.
