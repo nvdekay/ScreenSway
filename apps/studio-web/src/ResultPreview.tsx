@@ -1,5 +1,6 @@
 import {
   DEFAULT_FRAME_SETTINGS,
+  WAVE_PRESETS,
   buildCameraTrack,
   computeLayout,
   generateZoomSegments,
@@ -61,8 +62,8 @@ export function ResultPreview() {
   const settings = useMemo(() => ({
     ...DEFAULT_FRAME_SETTINGS,
     frame: "browser-dark" as const,
-    // A single flat colour, like the rest of the page.
-    background: { kind: "solid" as const, color: "#5b3fc4" },
+    // The "ocean" hills, close to a macOS wallpaper, behind the sample window.
+    background: WAVE_PRESETS.find((preset) => preset.id === "ocean")!.background,
     // Fractions of the canvas, as in the built-in styles.
     padding: 0.07,
     radius: 0.016,
