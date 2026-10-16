@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from "@screensway/core";
 import { BarChart3, FileText, LayoutGrid, Pause, Play, Plus, Settings, Users } from "lucide-react";
+import { HandPointer } from "../../desktop/src/HandPointer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "./i18n";
 import { RecordingFrame } from "./RecordingFrame";
@@ -262,15 +263,7 @@ export function Demo({ showCaptions = false, settings = DEFAULT_FRAME_SETTINGS }
                 <MockApp />
                 <span className="demo-ripple" ref={rippleRef} />
                 <div className="demo-cursor" ref={cursorRef}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M4.5 2.8v16.6c0 .6.7.9 1.1.4l3.9-4.2 2.6 6.1c.2.4.6.6 1 .4l2.2-.9c.4-.2.6-.6.4-1l-2.6-6h5.7c.6 0 .9-.7.5-1.1L5.6 2.4c-.4-.4-1.1-.1-1.1.4z"
-                      fill="#111"
-                      stroke="#fff"
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <HandPointer size={26} />
                 </div>
               </div>
             </div>

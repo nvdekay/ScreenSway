@@ -1,8 +1,8 @@
 import { forwardRef } from "react";
 
 /**
- * A macOS-style pointing hand for illustrations (the browser app's sample and the landing
- * page's browser section): white with a dark outline. The click point is the index fingertip,
+ * A macOS-style pointing hand for illustrations (the landing page demo, its browser section and
+ * the browser app's sample): white with a dark outline. The click point is the index fingertip,
  * so callers translate it by (-34%, -11%) to put the tip on the pointer position.
  */
 export const HandPointer = forwardRef<SVGSVGElement, { size?: number; className?: string }>(function HandPointer({ size = 26, className }, ref) {
