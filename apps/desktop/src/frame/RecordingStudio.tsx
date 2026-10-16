@@ -502,9 +502,12 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
                 <p className="export-done-note"><Captions size={13} aria-hidden="true" /> {t("captions.srtSaved")}</p>
               )}
               <div className="export-done-actions">
-                <button className="editor-button accent" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
-                  {isWeb ? <Download size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />} {t("export.open")}
-                </button>
+                {/* The browser version saved straight to a file has nothing left to download again. */}
+                {(!isWeb || exportState.result.outputPath) && (
+                  <button className="editor-button accent" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
+                    {isWeb ? <Download size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />} {t("export.open")}
+                  </button>
+                )}
                 {!isWeb && (
                   <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: true })}>
                     <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
