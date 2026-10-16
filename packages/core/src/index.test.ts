@@ -73,6 +73,33 @@ describe("buildCameraTrack", () => {
   });
 });
 
+describe("buildCameraTrack with focus points", () => {
+  const canvas = { width: 1_000, height: 1_000 };
+  // The pointer settles top-left, then moves to the bottom right within the same zoom.
+  const events: PointerEvent[] = [
+    { timeMs: 0, type: "move", x: 250, y: 250 },
+    { timeMs: 1_000, type: "focus", x: 250, y: 250 },
+    { timeMs: 2_000, type: "move", x: 250, y: 250 },
+    { timeMs: 2_300, type: "move", x: 700, y: 700 },
+    { timeMs: 2_300, type: "focus", x: 700, y: 700 },
+  ];
+  const segments = generateZoomSegments(events);
+  const track = buildCameraTrack(events, segments, canvas, 8_000);
+
+  it("keeps one zoom and moves the camera to where the pointer settled next", () => {
+    expect(segments).toHaveLength(1);
+    expect(sampleCameraTrack(track, 1_900).x).toBeLessThan(0.33);
+    expect(sampleCameraTrack(track, 3_500).x).toBeGreaterThan(0.6);
+    expect(sampleCameraTrack(track, 3_500).scale).toBeGreaterThan(1.75);
+  });
+
+  it("does not move for clicks, which keep the desktop behaviour", () => {
+    const clicks = events.map((event) => (event.type === "focus" ? { ...event, type: "leftClick" as const } : event));
+    const clickTrack = buildCameraTrack(clicks, generateZoomSegments(clicks), canvas, 8_000);
+    expect(sampleCameraTrack(clickTrack, 3_500).x).toBeLessThan(sampleCameraTrack(track, 3_500).x);
+  });
+});
+
 describe("edits", () => {
   const zoom = (id: string, startMs: number, endMs: number, scale = 1.8) =>
     ({ id, startMs, endMs, centerX: 100, centerY: 100, scale });
