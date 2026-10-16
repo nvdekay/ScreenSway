@@ -4,7 +4,6 @@ import {
   AudioBufferSink,
   AudioBufferSource,
   BlobSource,
-  BufferTarget,
   CanvasSource,
   Input,
   Mp4OutputFormat,
@@ -40,8 +39,8 @@ export class ExportCancelled extends Error {
  * Renders the framed, zoomed video with the desktop helper's layout and camera plan: the
  * painted base layer, then the cropped recording inside the rounded video area, encoded to
  * H.264 MP4 with the recording's sound. Runs faster than real time and keeps working in a
- * background tab. With `file`, the MP4 is written straight to disk as it is made and only
- * replaces the file's content if the export completes; otherwise it is returned in memory.
+ * background tab. The MP4 is written straight to `file` as it is made and only replaces the
+ * file's content if the export completes.
  */
 export async function renderExport(
   recording: Blob,
@@ -49,8 +48,10 @@ export async function renderExport(
   baseLayer: string,
   onProgress: (percent: number) => void,
   signal: AbortSignal,
-  file: FileSystemWritableFileStream | null,
-): Promise<Blob | null> {
+  file: FileSystemWritableFileStream,
+  /** Called when the file starts being committed: from then on the export can no longer be cancelled. */
+  onCommit: () => void,
+): Promise<void> {
   const checkpoint = () => {
     if (signal.aborted) throw new ExportCancelled();
   };
@@ -59,16 +60,12 @@ export async function renderExport(
   if (!(await canEncodeVideo("avc", { width: job.width, height: job.height, bitrate }))) {
     throw new Error(`This browser cannot encode ${job.width} × ${job.height} video. Choose a lower export quality.`);
   }
-  // Only reached when the browser offers no file to write to: keep memory use bounded.
-  if (!file && (bitrate / 8) * (job.frames.length / job.fps) > MEMORY_LIMIT_BYTES) {
-    throw new Error("This browser cannot save long exports. Choose a lower quality or trim the recording, or use the desktop app.");
-  }
 
   const input = new Input({ source: new BlobSource(recording), formats: ALL_FORMATS });
   let output: Output | null = null;
   let base: ImageBitmap | null = null;
   let failed = false;
-  const destination = file ? transactional(file, () => !failed && !signal.aborted) : null;
+  const destination = transactional(file, () => !failed && !signal.aborted, onCommit);
   // Cancelling stops decoding and encoding at once. Completing the file cannot be
   // interrupted, but a cancel during it discards the result when the file is closed.
   const cancel = () => void output?.cancel().catch(() => {});
@@ -86,8 +83,8 @@ export async function renderExport(
     base = await createImageBitmap(await (await fetch(baseLayer)).blob());
     checkpoint();
 
-    const target = destination ? new StreamTarget(destination.stream, { chunked: true }) : new BufferTarget();
-    output = new Output({ format: new Mp4OutputFormat({ fastStart: destination ? false : "in-memory" }), target });
+    const target = new StreamTarget(destination.stream, { chunked: true });
+    output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target });
     const videoSource = new CanvasSource(canvas, { codec: "avc", bitrate });
     output.addVideoTrack(videoSource, { frameRate: job.fps });
     const audioCodec = (await canEncodeAudio("aac")) ? "aac" : "opus";
@@ -149,17 +146,17 @@ export async function renderExport(
     // The last step: writing the file's index and closing it.
     onProgress(99);
     await output.finalize();
-    // A cancel that arrived while the file was being completed discarded it; once it was
-    // kept, the export is done even if Cancel was pressed a moment later.
-    if (destination ? destination.outcome() !== "kept" : signal.aborted) throw new ExportCancelled();
+    // A cancel before the file was committed discarded it. Once committing started (the
+    // point of no return, where Cancel is no longer offered) the export completes.
+    if (destination.writeError()) throw new Error("The video could not be written to the file. Check the free disk space and try again.");
+    if (destination.outcome() !== "kept") throw new ExportCancelled();
     onProgress(100);
-    return target instanceof BufferTarget ? new Blob([target.buffer!], { type: "video/mp4" }) : null;
   } catch (error) {
     failed = true;
     // Also waits for a cancel already started by the abort handler to finish closing the file.
     if (output && output.state !== "finalized") await output.cancel().catch(() => {});
-    await file?.abort().catch(() => {});
-    throw signal.aborted ? new ExportCancelled() : error;
+    if (destination.outcome() !== "kept") await file.abort().catch(() => {});
+    throw signal.aborted && !destination.writeError() ? new ExportCancelled() : error;
   } finally {
     signal.removeEventListener("abort", cancel);
     base?.close();
@@ -167,31 +164,48 @@ export async function renderExport(
   }
 }
 
-/** Largest export built in memory when the browser has no file to write to. */
-const MEMORY_LIMIT_BYTES = 400 * 1024 * 1024;
-
 /**
- * A stream into `file` that replaces the file's content only if `keep()` holds when it is
- * closed. Browsers keep a file's old content until its writable stream is closed, and
- * mediabunny closes the stream on cancel too, so a cancelled or failed export would
- * otherwise overwrite a file the user chose with a partial one.
+ * A stream into `file` that replaces the file's content only if the export completed.
+ * Browsers keep a file's old content until its writable stream is closed, and mediabunny
+ * closes the stream on cancel too, so a cancelled or failed export would otherwise overwrite
+ * a file the user chose with a partial one. Closing is the point of no return: once the
+ * file is being committed it cannot be rolled back, so `onCommit` lets the page stop
+ * offering Cancel first.
  */
-function transactional(file: FileSystemWritableFileStream, keep: () => boolean) {
-  let outcome: "open" | "kept" | "discarded" = "open";
+function transactional(file: FileSystemWritableFileStream, keep: () => boolean, onCommit: () => void) {
+  let outcome: "open" | "committing" | "kept" | "discarded" = "open";
+  // A failed write is remembered here so that, however the error travels through
+  // mediabunny, a file with a missing piece is never committed.
+  let writeError: unknown = null;
   const discard = async () => {
     outcome = "discarded";
     await file.abort().catch(() => {});
   };
   const stream = new WritableStream<StreamTargetChunk>({
-    write: (chunk) => file.write(chunk),
+    write: async (chunk) => {
+      try {
+        await file.write(chunk);
+      } catch (error) {
+        writeError ??= error;
+        throw error;
+      }
+    },
     close: async () => {
-      if (!keep()) return discard();
+      if (writeError || !keep()) return discard();
+      outcome = "committing";
+      onCommit();
+      try {
+        await file.close();
+      } catch (error) {
+        // Not committed: the browser leaves the old content in place.
+        outcome = "discarded";
+        throw error;
+      }
       outcome = "kept";
-      await file.close();
     },
     abort: discard,
   });
-  return { stream, outcome: () => outcome };
+  return { stream, outcome: () => outcome, writeError: () => writeError };
 }
 
 /** The part of an audio buffer that starts at `from` (seconds) and ends before `end`. */
