@@ -12,6 +12,26 @@ export type WorkerRequest = { type: "start"; frames: ReadableStream<VideoFrame> 
 export type WorkerResponse = { type: "samples"; samples: PointerSample[]; motion: MotionSample[] };
 
 let samples: PointerSample[] = [];
+/** Reused for every frame: reading pixels with getImageData allocates ~6 MB a frame. */
+let rgba = new Uint8ClampedArray(0);
+let copyWorks = true;
+
+/** The analysis canvas's pixels, copied into the reused buffer where the browser allows it. */
+async function pixels(context: OffscreenCanvasRenderingContext2D, width: number, height: number): Promise<Uint8ClampedArray> {
+  if (copyWorks) {
+    if (rgba.length !== width * height * 4) rgba = new Uint8ClampedArray(width * height * 4);
+    const frame = new VideoFrame(context.canvas, { timestamp: 0 });
+    try {
+      await frame.copyTo(rgba, { format: "RGBA", colorSpace: "srgb" } as VideoFrameCopyToOptions);
+      return rgba;
+    } catch {
+      copyWorks = false;
+    } finally {
+      frame.close();
+    }
+  }
+  return context.getImageData(0, 0, width, height).data;
+}
 let motion: MotionSample[] = [];
 let finished = false;
 
@@ -50,7 +70,7 @@ async function follow(frames: ReadableStream<VideoFrame>) {
       if (previousTiny) motion.push({ timeMs, motion: motionBetween(previousTiny, small) });
       previousTiny = small;
       context.drawImage(frame, 0, 0, tracker.width, tracker.height);
-      const position = tracker.push(context.getImageData(0, 0, tracker.width, tracker.height).data);
+      const position = tracker.push(await pixels(context, tracker.width, tracker.height));
       if (!position) continue;
       const sample = { timeMs, x: position.x / tracker.width, y: position.y / tracker.height };
       // Every move, and a still pointer now and then, so pauses can be measured.
