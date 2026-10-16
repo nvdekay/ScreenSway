@@ -99,13 +99,38 @@ function fakes(options) {
       }
     };
   }
-  window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4", { create: true });
+  // A save dialog that returns a file like one outside the browser: the page cannot delete
+  // it, and the test can slow its writes to hold an export in its last step.
+  window.showSaveFilePicker = async () => {
+    const real = await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4", { create: true });
+    return {
+      kind: "file",
+      name: real.name,
+      getFile: () => real.getFile(),
+      createWritable: async (writeOptions) => {
+        const writable = await real.createWritable(writeOptions);
+        return {
+          write: async (chunk) => {
+            if (window.__test.slowWrites) await new Promise((resolve) => setTimeout(resolve, 300));
+            return writable.write(chunk);
+          },
+          close: () => writable.close(),
+          abort: (reason) => writable.abort(reason),
+        };
+      },
+    };
+  };
+  const createImageBitmap = window.createImageBitmap;
+  window.createImageBitmap = (...args) => (window.__test.failExport ? Promise.reject(new Error("export broke")) : createImageBitmap(...args));
   const Original = window.Worker;
   window.Worker = class extends Original {
     constructor(...args) {
       super(...args);
       this.addEventListener("message", (event) => {
-        if (event.data?.type === "samples") window.__test.samples = event.data.samples;
+        if (event.data?.type === "samples") {
+          window.__test.samples = event.data.samples;
+          window.__test.analysedFrames = event.data.motion.length;
+        }
       });
     }
   };
@@ -118,6 +143,23 @@ async function openApp(options = {}) {
   await page.goto(base);
   return page;
 }
+
+/** Puts recognisable content in the file the save dialog returns, as if it already existed. */
+const seed = (page) =>
+  page.evaluate(async () => {
+    const writable = await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4", { create: true })).createWritable();
+    await writable.write("ORIGINAL VIDEO");
+    await writable.close();
+  });
+
+const chosenFile = (page) =>
+  page.evaluate(async () => {
+    try {
+      return await (await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile()).text();
+    } catch {
+      return null;
+    }
+  });
 
 const storedRecordings = (page) =>
   page.evaluate(async () => {
@@ -161,6 +203,9 @@ try {
     const samples = await page.evaluate(() => window.__test.samples);
     assert.ok(samples.length > 50, `pointer followed (${samples.length} samples)`);
     assert.ok(samples.every((s) => s.x >= 0 && s.x <= 1 && s.y >= 0 && s.y <= 1), "positions are fractions of the frame");
+    const analysed = await page.evaluate(() => window.__test.analysedFrames);
+    assert.ok(analysed >= 7 * 30 * 0.8, `the worker keeps up with 30 fps (${analysed} frames in 7 s)`);
+    await seed(page);
 
     await page.getByRole("button", { name: "Export video" }).click();
     await page.locator(".export-done, .export-box .capture-message.error").first().waitFor({ timeout: 120_000 });
@@ -194,22 +239,16 @@ try {
     console.log("record, resize, stop sharing, export: ok");
   }
 
-  // 2. Cancel a large export mid-way and at its very end, then close the recording:
-  //    nothing is left behind (mediabunny closes rather than discards a cancelled file).
+  // 2. Cancel a large export mid-way and while its file is being completed, and make one
+  //    fail: the file the user chose keeps its old content every time. Then close the
+  //    recording: its stored file is deleted.
   {
     const page = await openApp();
     await record(page, 6_000);
     await page.getByRole("button", { name: "Stop recording" }).click();
     await page.locator(".preview-section").waitFor({ timeout: 30_000 });
     await page.getByRole("button", { name: "4K", exact: true }).click();
-    const exportFile = () =>
-      page.evaluate(async () => {
-        try {
-          return (await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile()).size;
-        } catch {
-          return null;
-        }
-      });
+    await seed(page);
     const cancelAt = async (percent) => {
       await page.getByRole("button", { name: "Export video" }).click();
       // Clicked from the page as soon as the progress reaches it, before the export can finish.
@@ -218,6 +257,8 @@ try {
         const check = () => {
           const shown = Number(document.querySelector(".export-progress")?.getAttribute("aria-valuenow") ?? -1);
           if (shown >= target) {
+            // At 99% the file is being completed: slow its writes so the cancel lands during that step.
+            if (target >= 99) window.__test.slowWrites = true;
             [...document.querySelectorAll(".export-box button")].find((button) => button.textContent.includes("Cancel"))?.click();
             clearTimeout(giveUp);
             resolve();
@@ -226,18 +267,25 @@ try {
         check();
       }), percent);
       await page.getByRole("button", { name: "Export video" }).waitFor({ timeout: 60_000 });
+      await page.evaluate(() => (window.__test.slowWrites = false));
       assert.equal(await page.locator(".export-done").count(), 0, `an export cancelled at ${percent}% is not reported as saved`);
-      assert.equal(await exportFile(), null, `an export cancelled at ${percent}% leaves no file`);
+      assert.equal(await chosenFile(page), "ORIGINAL VIDEO", `an export cancelled at ${percent}% leaves the chosen file as it was`);
     };
     await cancelAt(60);
-    // With sound, 95% is the end of the picture: what follows is the sound and completing the file.
-    await cancelAt(95);
+    await cancelAt(99);
+
+    await page.evaluate(() => (window.__test.failExport = true));
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.getByText("Export failed").waitFor({ timeout: 30_000 });
+    assert.equal(await chosenFile(page), "ORIGINAL VIDEO", "a failed export leaves the chosen file as it was");
+    await page.evaluate(() => (window.__test.failExport = false));
+
     await page.getByRole("button", { name: "Close preview" }).click();
     await page.waitForTimeout(300);
     assert.deepEqual(await storedRecordings(page), [], "closing a recording deletes its stored file");
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
-    console.log("cancel exports and close: ok");
+    console.log("cancel, fail and close keep the chosen file: ok");
   }
 
   // 4. Stopping sharing while the app is still starting cancels the start.
