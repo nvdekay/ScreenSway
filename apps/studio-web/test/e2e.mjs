@@ -79,8 +79,19 @@ function fakes(options) {
     tone.start();
     stream.addTrack(destination.stream.getAudioTracks()[0]);
     window.__test.tracks.push(...stream.getTracks());
+    // Stop sharing from the browser's bar while the app is still starting.
+    if (options.endImmediately) setTimeout(() => stream.getVideoTracks()[0].dispatchEvent(new Event("ended")), 0);
     return stream;
   };
+  if (options.failWritesAfter !== undefined) {
+    // A disk that fills up while recording (only the recording folder's writes fail).
+    const write = FileSystemWritableFileStream.prototype.write;
+    let writes = 0;
+    FileSystemWritableFileStream.prototype.write = function (data) {
+      if (data instanceof Blob && ++writes > options.failWritesAfter) return Promise.reject(new DOMException("Quota exceeded", "QuotaExceededError"));
+      return write.call(this, data);
+    };
+  }
   if (options.failRecorder) {
     window.MediaRecorder = class extends MediaRecorder {
       constructor() {
@@ -183,24 +194,73 @@ try {
     console.log("record, resize, stop sharing, export: ok");
   }
 
-  // 2. Cancel an export, then close the recording: nothing is left behind.
+  // 2. Cancel a large export mid-way and at its very end, then close the recording:
+  //    nothing is left behind (mediabunny closes rather than discards a cancelled file).
   {
     const page = await openApp();
-    await record(page, 4_000);
+    await record(page, 6_000);
     await page.getByRole("button", { name: "Stop recording" }).click();
     await page.locator(".preview-section").waitFor({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Export video" }).click();
-    await page.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("button", { name: "Export video" }).waitFor({ timeout: 10_000 });
-    assert.equal(await page.locator(".export-done").count(), 0, "a cancelled export is not reported as saved");
-    const size = await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile()).size);
-    assert.equal(size, 0, "a cancelled export leaves no file content");
+    await page.getByRole("button", { name: "4K", exact: true }).click();
+    const exportFile = () =>
+      page.evaluate(async () => {
+        try {
+          return (await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile()).size;
+        } catch {
+          return null;
+        }
+      });
+    const cancelAt = async (percent) => {
+      await page.getByRole("button", { name: "Export video" }).click();
+      // Clicked from the page as soon as the progress reaches it, before the export can finish.
+      await page.evaluate((target) => new Promise((resolve, reject) => {
+        const giveUp = setTimeout(() => reject(new Error(`export never reached ${target}%: ${document.querySelector(".export-box")?.textContent}`)), 90_000);
+        const check = () => {
+          const shown = Number(document.querySelector(".export-progress")?.getAttribute("aria-valuenow") ?? -1);
+          if (shown >= target) {
+            [...document.querySelectorAll(".export-box button")].find((button) => button.textContent.includes("Cancel"))?.click();
+            clearTimeout(giveUp);
+            resolve();
+          } else requestAnimationFrame(check);
+        };
+        check();
+      }), percent);
+      await page.getByRole("button", { name: "Export video" }).waitFor({ timeout: 60_000 });
+      assert.equal(await page.locator(".export-done").count(), 0, `an export cancelled at ${percent}% is not reported as saved`);
+      assert.equal(await exportFile(), null, `an export cancelled at ${percent}% leaves no file`);
+    };
+    await cancelAt(60);
+    // With sound, 95% is the end of the picture: what follows is the sound and completing the file.
+    await cancelAt(95);
     await page.getByRole("button", { name: "Close preview" }).click();
     await page.waitForTimeout(300);
     assert.deepEqual(await storedRecordings(page), [], "closing a recording deletes its stored file");
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
-    console.log("cancel export and close: ok");
+    console.log("cancel exports and close: ok");
+  }
+
+  // 4. Stopping sharing while the app is still starting cancels the start.
+  {
+    const page = await openApp({ endImmediately: true });
+    await page.getByRole("button", { name: "Start recording" }).click();
+    await page.getByText("Nothing was shared").waitFor({ timeout: 15_000 });
+    const states = await page.evaluate(() => window.__test.tracks.map((track) => track.readyState));
+    assert.ok(states.every((state) => state === "ended"), `capture stopped (${states})`);
+    assert.deepEqual(await storedRecordings(page), [], "no recording file is kept");
+    await page.close();
+    console.log("stop sharing while starting: ok");
+  }
+
+  // 5. A disk that fills up stops the recording and says so, instead of a cut-short recording.
+  {
+    const page = await openApp({ failWritesAfter: 2 });
+    await page.getByRole("button", { name: "Start recording" }).click();
+    await page.getByText(/not enough free disk space/).waitFor({ timeout: 20_000 });
+    assert.equal(await page.locator(".preview-section").count(), 0, "no studio for an incomplete recording");
+    assert.deepEqual(await storedRecordings(page), [], "the incomplete file is deleted");
+    await page.close();
+    console.log("disk full while recording: ok");
   }
 
   // 3. A recorder that fails to start must not keep the screen shared.
