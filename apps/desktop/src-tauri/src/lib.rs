@@ -861,6 +861,30 @@ fn resolve_project(project_path: &str) -> Result<std::path::PathBuf, String> {
     Ok(project)
 }
 
+/// Resolves a file named by project.json. The name must be a plain relative path, and the
+/// file it reaches (after symlinks) must be a regular file inside the project, so a
+/// tampered manifest cannot point the helpers at files elsewhere on the disk.
+fn project_member(project: &std::path::Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    let name = std::path::Path::new(relative);
+    let plain = !relative.is_empty()
+        && name.components().all(|component| matches!(component, std::path::Component::Normal(_)));
+    if !plain {
+        return Err("The project file refers to a file outside the recording.".into());
+    }
+    let root = project
+        .canonicalize()
+        .map_err(|_| "This recording no longer exists.".to_string())?;
+    let file = project.join(name);
+    let target = file
+        .canonicalize()
+        .map_err(|_| "A file of this recording is missing.".to_string())?;
+    if !target.starts_with(&root) || !target.is_file() {
+        return Err("The project file refers to a file outside the recording.".into());
+    }
+    // The path keeps the form the caller gave (no \\?\ prefix on Windows) for the UI.
+    Ok(file)
+}
+
 fn read_manifest(project: &std::path::Path) -> Result<ProjectManifest, String> {
     let data = std::fs::read(project.join("project.json"))
         .map_err(|error| format!("Could not read the project file: {error}"))?;
@@ -944,9 +968,9 @@ async fn list_recordings() -> Result<Vec<RecordingEntry>, String> {
             .filter(|path| path.extension().is_some_and(|extension| extension == "screensway"))
             .filter_map(|project| {
                 let manifest = read_manifest(&project).ok()?;
-                let video = project.join(&manifest.media.screen);
+                let video = project_member(&project, &manifest.media.screen).ok()?;
                 let thumbnail = project.join("media").join("thumbnail.jpg");
-                video.is_file().then(|| RecordingEntry {
+                Some(RecordingEntry {
                     project_path: project.to_string_lossy().into_owned(),
                     video_path: video.to_string_lossy().into_owned(),
                     thumbnail_path: thumbnail
@@ -972,14 +996,19 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
     tauri::async_runtime::spawn_blocking(move || {
         let project = resolve_project(&project_path)?;
         let manifest = read_manifest(&project)?;
-        let pointer_events_path = project.join(&manifest.pointer_events);
-        let pointer_events = std::fs::read(&pointer_events_path)
+        let video_path = project_member(&project, &manifest.media.screen)?;
+        // Pointer data is optional: a recording without it plays without auto zooms.
+        let pointer_events_path = project_member(&project, &manifest.pointer_events);
+        let pointer_events = pointer_events_path
+            .as_ref()
             .ok()
+            .and_then(|path| std::fs::read(path).ok())
             .and_then(|data| serde_json::from_slice(&data).ok())
             .unwrap_or_default();
+        let pointer_events_path = pointer_events_path.unwrap_or_else(|_| project.join("metadata").join("pointer-events.json"));
         Ok(CaptureSummary {
             project_path: project.to_string_lossy().into_owned(),
-            video_path: project.join(&manifest.media.screen).to_string_lossy().into_owned(),
+            video_path: video_path.to_string_lossy().into_owned(),
             pointer_events_path: pointer_events_path.to_string_lossy().into_owned(),
             duration_ms: manifest.duration_ms,
             width: manifest.canvas.width,
@@ -1102,7 +1131,7 @@ fn transcribe_blocking(app: &tauri::AppHandle, project_path: &str, locale: &str)
         let manifest = read_manifest(&project)?;
         let mut child = helper_command()?
             .arg("--transcribe")
-            .arg(project.join(&manifest.media.screen))
+            .arg(project_member(&project, &manifest.media.screen)?)
             .arg("--locale")
             .arg(locale)
             .arg("--output")
@@ -1323,7 +1352,7 @@ fn export_recording_blocking(
 
         let fields = job.as_object_mut().ok_or("The export plan is invalid.")?;
         let path = |path: &std::path::Path| serde_json::Value::String(path.to_string_lossy().into_owned());
-        fields.insert("source".into(), path(&project.join(&manifest.media.screen)));
+        fields.insert("source".into(), path(&project_member(&project, &manifest.media.screen)?));
         fields.insert("output".into(), path(&output));
         fields.insert("baseLayer".into(), path(&base_path));
         fields.insert("cursor".into(), path(&cursor_path));
@@ -1806,6 +1835,35 @@ mod tests {
         std::fs::write(project.join(EDITS_FILE), b"{ broken").unwrap();
         assert_eq!(read_edits(&project), None);
         std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn manifest_files_must_stay_inside_the_project() {
+        let base = std::env::temp_dir().join(format!("screensway-member-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let project = base.join("Recording-1.screensway");
+        std::fs::create_dir_all(project.join("media")).unwrap();
+        std::fs::write(project.join("media/screen.mp4"), b"video").unwrap();
+        std::fs::write(base.join("private.mp4"), b"secret").unwrap();
+
+        assert_eq!(project_member(&project, "media/screen.mp4").unwrap(), project.join("media/screen.mp4"));
+        for name in ["", "../private.mp4", "media/../../private.mp4", "media", "media/missing.mp4"] {
+            assert!(project_member(&project, name).is_err(), "{name:?} was accepted");
+        }
+        let absolute = base.join("private.mp4");
+        assert!(project_member(&project, absolute.to_str().unwrap()).is_err());
+        #[cfg(windows)]
+        for name in [r"C:\Windows\win.ini", r"C:private.mp4", r"\\server\share\file.mp4", r"\private.mp4"] {
+            assert!(project_member(&project, name).is_err(), "{name:?} was accepted");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(base.join("private.mp4"), project.join("media/link.mp4")).unwrap();
+            assert!(project_member(&project, "media/link.mp4").is_err());
+            std::os::unix::fs::symlink(&base, project.join("media/outside")).unwrap();
+            assert!(project_member(&project, "media/outside/private.mp4").is_err());
+        }
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
