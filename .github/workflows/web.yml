@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      - "apps/studio-web/**"
+      # The browser version reuses the desktop studio.
+      - "apps/desktop/src/**"
       - "packages/core/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -51,6 +54,10 @@ jobs:
           # Installers are served by the downloads Worker (apps/downloads), not by Pages:
           # Pages limits a site to 1 GB and ~100 GB of traffic a month.
           VITE_DOWNLOADS_URL: ${{ env.DOWNLOADS_URL }}
+      # The browser version is served next to the landing page, at /app/.
+      - run: |
+          pnpm --filter @screensway/studio-web build
+          cp -R apps/studio-web/dist apps/web/dist/app
       # The repository is private, so release assets are not publicly downloadable.
       # Copy the latest complete release to the downloads Worker. While a new release
       # is still waiting for its Windows installer, keep offering the current one.

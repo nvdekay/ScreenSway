@@ -9,12 +9,14 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - `native/macos-capture` — Swift sidecar: capture (`ScreenSwayCapture.swift`) and `--export` renderer (`Exporter.swift`). Built into `apps/desktop/src-tauri/binaries/` by `scripts/build-native.mjs`.
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture, WASAPI audio, Media Foundation export and Whisper captions). Shell code shared by both platforms is gated with `cfg(capture)`.
 - `apps/web` — landing page (GitHub Pages), bilingual, dark only, CSS tokens in `src/styles.css` (black/violet style with a looping globe video behind the page; see `docs/landing-page.md`).
+- `apps/studio-web` — browser version (beta) at `/app/`: reuses the desktop studio through `@tauri-apps/api` aliases (`src/tauri/`, `src/backend.ts`) and `isWeb`, records with `getDisplayMedia`, finds the pointer in the video (`src/pointer/`) and exports with mediabunny/WebCodecs. See `docs/web-studio.md`.
 - `apps/analytics` — Cloudflare Worker + D1: public event ingestion, token-protected stats API and the private dashboard page. Events, API and deployment: `docs/analytics.md`.
 - `apps/downloads` — Cloudflare Worker + R2 that serves the installers and updater bundles (`/latest/<file>`, `/<tag>/<file>`); the landing deploy uploads releases with `scripts/publish-downloads.mjs`. See `docs/releasing.md`.
 
 ## Current state
 
 - Version `0.3.2`; landing page is live at `https://nvdekay.github.io/ScreenSway/`; the latest macOS and Windows installers are served by the downloads Worker (R2), and Pages keeps only the site and `update/latest.json`.
+- The browser version (Chrome/Edge on a computer) records a screen, window or tab, zooms where the pointer settles, offers the desktop styles/timeline/trim and downloads an MP4; no captions, library, pause or statistics. Desktop studio changes ship to it too, so check both.
 - The landing page groups its message into hero/demo, four benefit cards, five essential FAQs and a compact download CTA; install details stay in the popup.
 - The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
@@ -22,7 +24,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - The signed Tauri updater checks the public Pages feed after launch and can download, verify, install and relaunch from Settings; it waits while a recording, export or caption job runs. Ad-hoc signing means macOS may need permissions re-granted after an update (see `docs/releasing.md`). Release CI requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; never commit or rotate the private key casually.
 - Windows display/window capture, pointer metadata, pause/resume, thumbnails, shared desktop shell and NSIS CI build are implemented. Windows audio, export and offline captions are implemented and tested locally. The landing page serves both macOS and Windows installers from the latest release, with platform-specific install guides.
 - Windows speech uses optimized MSVC C/C++ kernels and fused attention, with a bundled Whisper model. Keep `.cargo/windows-speech.cmake` and the CI cache key aligned; see `docs/windows-validation.md` for timings, accuracy samples and CPU requirements.
-- GitHub workflows: `web.yml` deploys Pages and copies the latest complete release to R2, `release.yml` publishes macOS tags and dispatches the matching Windows release from the same tag, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
+- GitHub workflows: `web.yml` deploys Pages (landing plus the browser version at `/app/`) and copies the latest complete release to R2, `release.yml` publishes macOS tags and dispatches the matching Windows release from the same tag, and `windows.yml` tests/builds the unsigned Windows installer on relevant pushes and publishes it when requested.
 
 ## Commands
 
@@ -34,6 +36,7 @@ pnpm test:capture:macos                           # real screen/window/audio cap
 pnpm dev:desktop                                  # run the app
 pnpm build:macos                                  # universal app + LZMA DMG
 pnpm build:web                                    # landing page
+pnpm dev:studio-web / pnpm build:studio-web        # browser version (served at /app/ by web.yml)
 pnpm --filter @screensway/analytics test:e2e        # analytics API end to end on a local D1
 pnpm --filter @screensway/downloads test:e2e        # downloads Worker + publish script on a local R2
 (cd native/windows-capture && cargo test)          # Windows helper logic (runs on macOS too)

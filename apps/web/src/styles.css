@@ -140,7 +140,10 @@ main:focus { outline: none; }
 .button-primary:active { transform: none; }
 .hero-stage .button-primary { background: #fdfdfd; color: #050505; }
 .hero-stage .button-primary:hover { background: #fff; }
-.hero-note { margin-top: 18px; color: #c6c6ce; font-size: 13.5px; text-wrap: balance; text-shadow: 0 1px 14px #000; }
+.hero-web { margin-top: 16px; font-size: 14px; font-weight: 500; text-shadow: 0 1px 14px #000; }
+.hero-web a { color: #c4b5fd; text-decoration: underline; text-decoration-color: #c4b5fd66; text-underline-offset: 3px; transition: color .18s ease; }
+.hero-web a:hover { color: #ede9fe; }
+.hero-note { margin-top: 10px; color: #c6c6ce; font-size: 13.5px; text-wrap: balance; text-shadow: 0 1px 14px #000; }
 .link-button { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .link-button:hover { color: var(--text); }
 .hero-stage .link-button { color: #ededed; }
