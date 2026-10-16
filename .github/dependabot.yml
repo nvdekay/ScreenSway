@@ -1,0 +1,10 @@
+# Workflows pin every action to a full commit SHA; Dependabot proposes the SHA updates.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
