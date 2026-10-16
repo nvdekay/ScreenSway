@@ -13,11 +13,8 @@ import { listen } from "./tauri/event";
 
 type Status = "idle" | "starting" | "recording" | "finishing";
 
-/**
- * The landing page with the desktop downloads. The app is served at /app/ next to it; the
- * dev server serves the app at its root, where "../" would be the app itself.
- */
-const LANDING_URL = import.meta.env.DEV ? "https://nvdekay.github.io/ScreenSway/" : "../";
+/** The landing page with the desktop downloads: the app is served in its app/ folder. */
+const LANDING_URL = "../";
 
 /** Links away from the app open a new tab: the recording only lives in this one. */
 function LandingLink({ className, label, children }: { className?: string; label?: string; children: ReactNode }) {
