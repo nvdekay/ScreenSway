@@ -1,6 +1,6 @@
 [package]
 name = "screensway-capture"
-version = "0.3.2"
+version = "0.3.3"
 description = "ScreenSway capture and export helper for Windows"
 edition = "2021"
 license = "Proprietary"
