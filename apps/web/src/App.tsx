@@ -7,6 +7,7 @@ import { CONTACT_MAILTO } from "./contact";
 import { Benefits } from "./Benefits";
 import { StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
+import { WebBrowserSection } from "./WebBrowserSection";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
 import { useI18n, type Language } from "./i18n";
@@ -356,7 +357,7 @@ export default function App() {
               <p className="hero-copy">{t("hero.copy")}</p>
               <DownloadActions centered placement="hero" />
               <p className="hero-web">
-                <a href="./app/">{t("hero.web")}</a>
+                <a href="./app/"><span>{t("hero.webBeta")}</span>{t("hero.web")}<ArrowIcon /></a>
               </p>
               <p className="hero-note">
                 v{appVersion} · {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
@@ -370,6 +371,8 @@ export default function App() {
         </section>
 
         <Benefits />
+
+        <WebBrowserSection />
 
         <Faq />
 

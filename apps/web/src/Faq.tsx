@@ -8,7 +8,7 @@ const QUESTIONS: [MessageKey, MessageKey][] = [
   ["faq.q2", "faq.a2"],
   ["faq.q3", "faq.a3"],
   ["faq.q7", "faq.a7"],
-  ["faq.q8", "faq.a8"],
+  ["faq.q9", "faq.a9"],
 ];
 
 export function Faq() {
