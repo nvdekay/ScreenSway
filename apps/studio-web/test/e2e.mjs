@@ -30,7 +30,7 @@ const browser = await chromium.launch({ channel: process.env.BROWSER ?? "msedge"
 /** Runs in the page before the app: fake screen sharing, save dialog and a record of worker output. */
 function fakes(options) {
   if (location.protocol !== "http:") return;
-  localStorage.setItem("screensway.language", "en");
+  localStorage.setItem("screensway.language", options.language ?? "en");
   window.__test = { tracks: [], samples: null };
   navigator.mediaDevices.getDisplayMedia = async () => {
     const canvas = document.createElement("canvas");
@@ -112,6 +112,7 @@ function fakes(options) {
       name: real.name,
       getFile: () => real.getFile(),
       createWritable: async (writeOptions) => {
+        if (window.__test.failOpen) throw new DOMException("The request is not allowed by the user agent", "NotAllowedError");
         const writable = await real.createWritable(writeOptions);
         let writes = 0;
         return {
@@ -125,6 +126,7 @@ function fakes(options) {
           },
           close: async () => {
             window.__test.closing = true;
+            window.__test.closes = (window.__test.closes ?? 0) + 1;
             if (window.__test.slowClose) await new Promise((resolve) => setTimeout(resolve, 1_500));
             if (window.__test.failClose) throw new DOMException("Commit failed", "InvalidStateError");
             return writable.close();
@@ -397,6 +399,28 @@ try {
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
     console.log("short recording trimmed at both ends: ok");
+  }
+
+  // 8. In Vietnamese, a file that refuses to open is explained in Vietnamese, not in the
+  //    browser's technical English, and the chosen file is untouched.
+  {
+    const page = await openApp({ language: "vi" });
+    await page.getByRole("button", { name: "Bắt đầu quay" }).click();
+    await page.getByText(/Đang quay ·/).waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(2_000);
+    await page.getByRole("button", { name: "Dừng quay" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    await seed(page);
+    await page.evaluate(() => (window.__test.failOpen = true));
+    await page.getByRole("button", { name: "Xuất video" }).click();
+    await page.getByText("Xuất thất bại").waitFor({ timeout: 30_000 });
+    const message = await page.locator(".export-box").textContent();
+    assert.match(message, /Không ghi được video vào file/, message);
+    assert.doesNotMatch(message, /not allowed/i, "no technical browser wording");
+    assert.equal(await chosenFile(page), "ORIGINAL VIDEO", "the chosen file is untouched");
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("Vietnamese export error when the file cannot be opened: ok");
   }
 
   // 3. A recorder that fails to start must not keep the screen shared.
