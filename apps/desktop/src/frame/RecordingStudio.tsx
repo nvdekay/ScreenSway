@@ -478,9 +478,12 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
               </div>
               <div className="export-row">
                 <span className="export-status"><Loader2 size={15} className="spin" aria-hidden="true" /> {t("export.running", { percent: exportState.progress })}</span>
-                <button className="editor-button" onClick={() => void invoke("cancel_export")}>
-                  <X size={15} aria-hidden="true" /> {t("export.cancel")}
-                </button>
+                {/* At 100% the file is being completed and can no longer be cancelled. */}
+                {exportState.progress < 100 && (
+                  <button className="editor-button" onClick={() => void invoke("cancel_export")}>
+                    <X size={15} aria-hidden="true" /> {t("export.cancel")}
+                  </button>
+                )}
               </div>
             </>
           ) : (

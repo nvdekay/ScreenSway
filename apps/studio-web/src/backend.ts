@@ -1,5 +1,6 @@
 // The desktop studio talks to the Rust shell through commands; in the browser they are
-// answered here. Nothing leaves the tab: recordings, edits and images live in memory.
+// answered here. Nothing leaves this browser: edits and images stay in the tab's memory,
+// recordings and downloaded exports in its private file storage (OPFS).
 import { emit } from "./tauri/event";
 import type { ExportJob } from "./exporter";
 
@@ -29,6 +30,7 @@ const images = new Map<string, { image: string; thumbnail: string }>();
  */
 let lastExport: { url: string; fileName: string; file: FileSystemFileHandle | null } | null = null;
 let exporting: AbortController | null = null;
+let exportCancel = () => exporting?.abort();
 /** What the studio shows as a cancelled export (RecordingStudio compares the message). */
 const CANCELLED_MESSAGE = "Export cancelled.";
 let nextImage = 0;
@@ -164,18 +166,27 @@ export const commands: Record<string, Command> = {
         throw CANCELLED_MESSAGE;
       });
       target = chosen ?? (await temporaryFile());
-      writable = target ? await target.createWritable() : null;
+      // Exports are only ever streamed to a file, never built in memory.
+      if (!target) throw new Error("This browser cannot save files here. Use a normal (not private) window, or the desktop app.");
+      writable = await target.createWritable();
       const { renderExport } = await import("./exporter");
-      const blob = await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable);
+      let committing = false;
+      // From the commit on, Cancel is no longer offered (progress 100 hides it) and is ignored.
+      const commit = () => {
+        committing = true;
+        emit("export-progress", 100);
+      };
+      exportCancel = () => {
+        if (!committing) controller.abort();
+      };
+      await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable, commit);
       forgetLastExport();
       if (!chosen) {
-        const file = target ? await target.getFile() : blob;
-        if (!file) throw new Error("The export is empty.");
-        lastExport = { url: URL.createObjectURL(file), fileName: name, file: target };
+        lastExport = { url: URL.createObjectURL(await target.getFile()), fileName: name, file: target };
         download(lastExport.url, name);
       }
       emit(EXPORT_SAVED, projectPath);
-      return { outputPath: lastExport && !chosen ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
+      return { outputPath: !chosen && lastExport ? lastExport.url : "", durationMs: (job.frames.length / job.fps) * 1_000, width: job.width, height: job.height, fps: job.fps };
     } catch (error) {
       // A file the user chose keeps its old content (the exporter discards unfinished
       // writes); only our own temporary file is deleted.
@@ -184,10 +195,13 @@ export const commands: Record<string, Command> = {
       if (error === CANCELLED_MESSAGE || controller.signal.aborted) throw CANCELLED_MESSAGE;
       throw error instanceof Error ? error.message : String(error);
     } finally {
-      if (exporting === controller) exporting = null;
+      if (exporting === controller) {
+        exporting = null;
+        exportCancel = () => exporting?.abort();
+      }
     }
   },
-  cancel_export: () => exporting?.abort(),
+  cancel_export: () => exportCancel(),
   open_export: ({ path }) => {
     if (lastExport && lastExport.url === path) download(lastExport.url, lastExport.fileName);
   },
