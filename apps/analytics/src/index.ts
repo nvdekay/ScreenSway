@@ -14,6 +14,8 @@ export interface Env {
   DASHBOARD_TOKEN?: string;
   ACTOR_SALT?: string;
   TZ_OFFSET_MINUTES?: string;
+  /** Cloudflare rate limiter for POST /v1/events, keyed by client address (wrangler.toml). */
+  INGEST_LIMITER?: RateLimit;
 }
 
 type Source = "web" | "app";
@@ -110,9 +112,23 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Compares secrets without returning early, so response time does not reveal a matching prefix. */
+function sameSecret(given: string, expected: string): boolean {
+  const a = new TextEncoder().encode(given), b = new TextEncoder().encode(expected);
+  let difference = a.length ^ b.length;
+  for (let index = 0; index < b.length; index++) difference |= b[index] ^ (a[index] ?? 0);
+  return difference === 0;
+}
+
 async function ingest(request: Request, env: Env): Promise<Response> {
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return json({ error: "payload too large" }, 413);
+  const address = request.headers.get("CF-Connecting-IP") ?? "";
+  if (env.INGEST_LIMITER && !(await env.INGEST_LIMITER.limit({ key: address || "unknown" })).success) {
+    return json({ error: "too many requests" }, 429);
+  }
+  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY_BYTES) return json({ error: "payload too large" }, 413);
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > MAX_BODY_BYTES) return json({ error: "payload too large" }, 413);
+  const text = new TextDecoder().decode(bytes);
   let body: Record<string, unknown>;
   try {
     body = JSON.parse(text) as Record<string, unknown>;
@@ -130,11 +146,12 @@ async function ingest(request: Request, env: Env): Promise<Response> {
     if (typeof body.installId !== "string" || !INSTALL_ID.test(body.installId)) return json({ error: "invalid installId" }, 400);
     actor = body.installId;
   } else {
+    // Without the salt the visitor hash would be an unsalted digest of address and browser.
+    if (!env.ACTOR_SALT) return json({ error: "ACTOR_SALT is not configured" }, 503);
     // A visitor is "the same address and browser on the same day". The hash cannot be
     // reversed or linked across days, and the address itself is never stored.
-    const address = request.headers.get("CF-Connecting-IP") ?? "";
     const agent = request.headers.get("User-Agent") ?? "";
-    actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT ?? ""}`)).slice(0, 32);
+    actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT}`)).slice(0, 32);
   }
 
   const country = shortText((request as Request<unknown, IncomingRequestCfProperties>).cf?.country);
@@ -164,7 +181,7 @@ const keyCounts = (result: D1Result<unknown>) =>
 
 async function stats(request: Request, env: Env): Promise<Response> {
   if (!env.DASHBOARD_TOKEN) return json({ error: "DASHBOARD_TOKEN is not configured" }, 503);
-  if (request.headers.get("Authorization") !== `Bearer ${env.DASHBOARD_TOKEN}`) return json({ error: "unauthorized" }, 401);
+  if (!sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`)) return json({ error: "unauthorized" }, 401);
 
   const url = new URL(request.url);
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));

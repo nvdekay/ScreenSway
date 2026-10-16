@@ -53,7 +53,7 @@ Adding an event takes three edits: the allow-list in `apps/analytics/src/index.t
   "events": [{ "name": "export_finished", "props": { "quality": "4k", "captions": true } }] }
 ```
 
-`source: "web"` needs no `installId`. Up to 50 events and 16 KiB per request; the response is `202 {"accepted": n}`.
+`source: "web"` needs no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 60 requests a minute (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
 
 `GET /v1/stats?days=30` (header `Authorization: Bearer <DASHBOARD_TOKEN>`, `days` 1–365) returns one JSON document:
 
@@ -72,7 +72,7 @@ The API sends CORS headers, so another page or script can read it with the same 
 
 ## Dashboard
 
-The Worker serves the dashboard at `/`. It asks for the token once, keeps it in the browser's local storage, refreshes every minute and offers 7, 30, 90 and 365-day ranges. Append `?api=https://…` to read a different deployment.
+The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every minute and offers 7, 30, 90 and 365-day ranges. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
 
 ## Running and deploying
 
@@ -102,6 +102,6 @@ Then point the clients at the deployed URL:
 
 ## Limits
 
-- The ingestion endpoint is public, as any client-side analytics endpoint is. The allow-lists keep junk out of the reports but a determined sender can inflate counts; add a Cloudflare rate-limiting rule if that happens.
+- The ingestion endpoint is public, as any client-side analytics endpoint is. The allow-lists keep junk out of the reports but a determined sender can still inflate counts within the per-address rate limit.
 - A download is counted when the button is clicked, not when the file finishes downloading.
 - D1's free tier (5 GB, 100k writes per day at the time of writing) is far above current needs; reports aggregate at query time, so add rollup tables if the events table grows into millions of rows.

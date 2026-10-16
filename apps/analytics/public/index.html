@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
+<!-- The script hash must match the inline script below; test/e2e.mjs checks it. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sNHVt/nENhL0KWW/5wa7xdF+hbbfL1yKnvSlyM1Z9BU='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
 <title>ScreenSway Analytics</title>
 <style>
   :root {
@@ -177,11 +179,13 @@
   </div>
 </div>
 <script>
-const API = new URLSearchParams(location.search).get("api") || "";
+// The token only ever goes to this page's own Worker, and lives only for this tab's session.
 const TOKEN_KEY = "screensway.analytics.token", DAYS_KEY = "screensway.analytics.days";
 const $ = (selector) => document.querySelector(selector);
-const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
-let token = store.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
+const keep = (area) => ({ get: (k) => { try { return area().getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? area().removeItem(k) : area().setItem(k, v); } catch {} } });
+const store = keep(() => localStorage), session = keep(() => sessionStorage);
+store.set(TOKEN_KEY, null); // left by older versions of this page
+let token = session.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
 const VIEW_NAMES = { overview: "Tổng quan", acquisition: "Thu hút & tải", audience: "Người dùng", product: "Sản phẩm", activity: "Hoạt động" };
 let currentView = VIEW_NAMES[location.hash.slice(1)] ? location.hash.slice(1) : "overview";
 
@@ -418,7 +422,7 @@ async function load() {
   if (!token) return showLogin();
   document.querySelectorAll("#range button").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.days) === days)));
   try {
-    const response = await fetch(`${API}/v1/stats?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`/v1/stats?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
     if (response.status === 401) return showLogin("Mã truy cập không đúng.");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     $("#login").hidden = true; $("#app").hidden = false;
@@ -429,10 +433,10 @@ async function load() {
   }
 }
 function showLogin(message = "") {
-  token = null; store.set(TOKEN_KEY, null);
+  token = null; session.set(TOKEN_KEY, null);
   $("#app").hidden = true; $("#login").hidden = false; $("#login-error").textContent = message;
 }
-$("#login-form").addEventListener("submit", (event) => { event.preventDefault(); token = $("#token").value.trim(); store.set(TOKEN_KEY, token); void load(); });
+$("#login-form").addEventListener("submit", (event) => { event.preventDefault(); token = $("#token").value.trim(); session.set(TOKEN_KEY, token); void load(); });
 document.querySelector(".side-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-nav]");
   if (button) showView(button.dataset.nav);
