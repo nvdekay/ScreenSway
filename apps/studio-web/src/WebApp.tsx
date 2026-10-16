@@ -7,7 +7,7 @@ import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
 import { EXPORT_SAVED, removeRecording } from "./backend";
-import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, unsupportedReason } from "./recorder";
+import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
 import { listen } from "./tauri/event";
 
 type Status = "idle" | "starting" | "recording" | "finishing";
@@ -81,6 +81,7 @@ export function WebApp() {
       setStatus("idle");
       if (startError instanceof ShareCancelledError) setError(t("web.shareDenied"));
       else if (startError instanceof MicrophoneBlockedError) setError(t("web.micDenied"));
+      else if (startError instanceof StorageUnavailableError) setError(t("web.noStorage"));
       else setError(t("web.failed", { message: startError instanceof Error ? startError.message : String(startError) }));
     }
   }

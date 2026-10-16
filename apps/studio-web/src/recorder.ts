@@ -41,6 +41,8 @@ export function unsupportedReason(): string | null {
 }
 
 export class MicrophoneBlockedError extends Error {}
+/** The browser has no private file storage for the recording (some private windows). */
+export class StorageUnavailableError extends Error {}
 /** Writing the recording failed (the disk is full); what was written is not usable. */
 export class StorageFullError extends Error {}
 export class ShareCancelledError extends Error {}
@@ -50,14 +52,14 @@ const STORAGE_FOLDER = "recordings";
 const STALE_MS = 12 * 60 * 60 * 1_000;
 
 /**
- * Where MediaRecorder's chunks go while recording. The browser's private file storage keeps
- * a long Retina recording (several GB) on disk instead of in memory; without it, memory.
+ * Where MediaRecorder's chunks go while recording: a file in the browser's private storage,
+ * so a long Retina recording (several GB) stays on disk instead of in memory. Without that
+ * storage (some private windows) the page does not record at all.
  */
 class ChunkStore {
   private writable: FileSystemWritableFileStream | null = null;
   private handle: FileSystemFileHandle | null = null;
   private folder: FileSystemDirectoryHandle | null = null;
-  private memory: Blob[] = [];
   private writing: Promise<void> = Promise.resolve();
   failed = false;
 
@@ -70,17 +72,13 @@ class ChunkStore {
       this.handle = await this.folder.getFileHandle(this.name, { create: true });
       this.writable = await this.handle.createWritable();
     } catch {
-      this.writable = null;
+      throw new StorageUnavailableError("This browser cannot store recordings here.");
     }
   }
 
   add(chunk: Blob, onFailure: () => void) {
-    if (this.failed) return;
     const writable = this.writable;
-    if (!writable) {
-      this.memory.push(chunk);
-      return;
-    }
+    if (this.failed || !writable) return;
     this.writing = this.writing.then(() => writable.write(chunk)).catch(() => {
       // Out of space: a chunk is missing, so the recording is stopped and reported, not shown cut short.
       if (!this.failed) {
@@ -93,20 +91,18 @@ class ChunkStore {
   async finish(type: string): Promise<Blob> {
     await this.writing;
     if (this.failed) throw new StorageFullError("There is not enough free disk space for this recording.");
-    if (this.writable && this.handle) {
-      await this.writable.close();
-      const file = await this.handle.getFile();
-      return file.slice(0, file.size, type);
-    }
-    return new Blob(this.memory, { type });
+    await this.writable!.close();
+    this.writable = null;
+    const file = await this.handle!.getFile();
+    return file.slice(0, file.size, type);
   }
 
-  /** Deletes the file once any open write is abandoned, so the delete is not refused. */
+  /** Abandons any open write first (a stuck write cannot hold it up), then deletes the file. */
   async discard() {
-    this.memory = [];
-    await this.writing.catch(() => {});
-    await this.writable?.abort().catch(() => {});
+    const writable = this.writable;
     this.writable = null;
+    await writable?.abort().catch(() => {});
+    await Promise.race([this.writing.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 2_000))]);
     if (this.folder) await this.folder.removeEntry(this.name).catch(() => {});
   }
 }

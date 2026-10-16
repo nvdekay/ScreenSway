@@ -214,6 +214,7 @@ const en = {
   "web.micDenied": "The microphone is blocked. Allow it from the address bar, or record without it.",
   "web.failed": "Recording failed: {message}",
   "web.preparing": "Preparing the studio…",
+  "web.noStorage": "This browser window cannot store recordings (private windows often cannot). Use a normal window, or the desktop app.",
   "web.diskFull": "The recording stopped: there is not enough free disk space. Free some space and record again.",
   "web.leave": "Leave? Your recording has not been exported.",
 };
@@ -425,6 +426,7 @@ const vi: Record<MessageKey, string> = {
   "web.micDenied": "Micro đang bị chặn. Hãy cho phép ở thanh địa chỉ, hoặc quay không có micro.",
   "web.failed": "Quay thất bại: {message}",
   "web.preparing": "Đang chuẩn bị studio…",
+  "web.noStorage": "Cửa sổ trình duyệt này không lưu được bản quay (cửa sổ ẩn danh thường không lưu được). Hãy dùng cửa sổ thường, hoặc ứng dụng máy tính.",
   "web.diskFull": "Đã dừng quay vì ổ đĩa không còn đủ chỗ trống. Hãy giải phóng bớt dung lượng rồi quay lại.",
   "web.leave": "Rời trang? Bản quay chưa được xuất.",
 };
