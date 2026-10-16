@@ -1,0 +1,19 @@
+/* The desktop styles assume a native window; here the page scrolls under a solid header. */
+.titlebar {
+  padding-left: 18px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.titlebar a.secondary-button { text-decoration: none; }
+.permission-actions a.permission-primary { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* Phones only see the "use a computer" card, but it must fit them. */
+body { min-width: 0; }
+@media (max-width: 600px) {
+  .studio { width: calc(100% - 32px); padding-top: 24px; }
+  .studio-intro h1 { font-size: 36px; }
+  .titlebar { padding-right: 12px; }
+  .titlebar-actions .secondary-button { padding-inline: 10px; }
+  .header-label { display: none; }
+}
