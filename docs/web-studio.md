@@ -2,6 +2,8 @@
 
 `apps/studio-web` lets people record and edit without installing anything. It is served next to the landing page at `/app/` (`web.yml` builds it into `apps/web/dist/app`), and the hero links to it. It needs Chrome or Edge on a computer; other browsers and phones see a card that points to the desktop app.
 
+The web shell is a full product page rather than the desktop window dropped onto a blank canvas: a black/violet hero shows a live sample (`ResultPreview.tsx`): the real frame painter, a pointer path whose pauses become focus events through the same `pointerEvents()` rules as a recording, and the core camera springs zooming and panning to them, with a timeline of the resulting zooms (a still zoomed frame under reduced motion), the recorder is the primary glass card, and a three-step strip explains sharing, presenting and export. Live recording has an elapsed timer and large Stop control; preparation has an explicit progress state. A short comparison names the browser limits (focus rather than click zooms; no captions, library or pause) and links back to the desktop downloads. Links to the landing page open in a new tab, because a recording only lives in its tab (in dev, where the app is served at the root, they point at the live landing page). The finished Studio gets its own recording summary and local-tab callout. All Studio restyling is scoped under `html.web`, which `main.tsx` adds before React renders, so the desktop app remains unchanged.
+
 ## What it reuses
 
 The studio is the desktop one. `src/main.tsx` renders the desktop `I18nProvider`, styles and `RecordingStudio` (preview, styles, backgrounds, frames, timeline, trim, zoom editing, export button). `vite.config.ts` aliases `@tauri-apps/api/core` and `@tauri-apps/api/event` to `src/tauri/`, so the studio's commands are answered in the browser by `src/backend.ts`, and it defines `__SCREENSWAY_WEB__`, which sets `isWeb` in `apps/desktop/src/platform.ts`. With `isWeb`:
@@ -9,6 +11,7 @@ The studio is the desktop one. `src/main.tsx` renders the desktop `I18nProvider`
 - the preview does not draw a cursor or click ripples, because the real pointer is already in the video;
 - the captions panel and "Show in Finder" are hidden and export results show the file's frame rate; "Download again" appears only for downloaded exports (see Export);
 - `enWeb`/`viWeb` in `i18n.tsx` replace wording about the Mac, clicks and folders. New `web.*` strings live there too; keep English and Vietnamese in sync.
+- unsupported browsers and phones get a full-screen alternative instead of a half-rendered recorder.
 
 Edits and background images stay in memory for the tab. While recording, MediaRecorder's chunks are written to a file in the browser's private storage (OPFS, `recordings/`), so a long Retina recording does not fill memory; a window without that storage (some private windows) is told so instead of recording into memory; the file is deleted when the recording is closed, and files older than 12 hours (closed tabs, crashes) when the next recording starts. If a write fails (the disk is full) the recording stops, the incomplete file is deleted and the page says why; stopping sharing while the app is still starting cancels the start. Leaving the page asks first until the recording has been exported (`beforeunload`).
 

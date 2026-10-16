@@ -1,6 +1,6 @@
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, Download, Languages, Lock, Mic, MicOff, MousePointer2, Square, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, ArrowRight, Check, Download, Languages, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
@@ -8,16 +8,33 @@ import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
 import { EXPORT_SAVED, removeRecording } from "./backend";
 import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
+import { ResultPreview } from "./ResultPreview";
 import { listen } from "./tauri/event";
 
 type Status = "idle" | "starting" | "recording" | "finishing";
+
+/**
+ * The landing page with the desktop downloads. The app is served at /app/ next to it; the
+ * dev server serves the app at its root, where "../" would be the app itself.
+ */
+const LANDING_URL = import.meta.env.DEV ? "https://nvdekay.github.io/ScreenSway/" : "../";
+
+/** Links away from the app open a new tab: the recording only lives in this one. */
+function LandingLink({ className, label, children }: { className?: string; label?: string; children: ReactNode }) {
+  return (
+    <a className={className} href={LANDING_URL} target="_blank" rel="noopener" aria-label={label}>
+      {children}
+    </a>
+  );
+}
 
 function LanguageSwitch() {
   const { language, setLanguage, t } = useI18n();
   const next = language === "vi" ? "en" : "vi";
   return (
-    <button className="secondary-button compact" aria-label={t("settings.language")} onClick={() => setLanguage(next)}>
-      <Languages size={15} aria-hidden="true" /> {next === "vi" ? "Tiếng Việt" : "English"}
+    <button className="web-language" aria-label={t("settings.language")} onClick={() => setLanguage(next)}>
+      <Languages size={15} aria-hidden="true" />
+      {next === "vi" ? "VI" : "EN"}
     </button>
   );
 }
@@ -94,9 +111,9 @@ export function WebApp() {
     try {
       const captured = await session.stop();
       const { prepare } = await import("./prepare");
-      const prepared = await prepare(session.id, captured).catch((error) => {
-        captured.discard();
-        throw error;
+      const prepared = await prepare(session.id, captured).catch((prepareError) => {
+        void captured.discard();
+        throw prepareError;
       });
       setExported(false);
       setResult((previous) => {
@@ -112,123 +129,182 @@ export function WebApp() {
   }
 
   const zoomCount = useMemo(() => (result ? generateZoomSegments(result.pointerEvents).length : 0), [result]);
-  const statusLabel = {
-    idle: t("status.idle"),
-    starting: t("status.idle"),
-    recording: t("status.recording", { time: formatDuration(now - startedAt) }),
-    finishing: t("web.preparing"),
-  }[status];
+  const elapsed = formatDuration(Math.max(0, now - startedAt));
 
   return (
-    <main className="app-shell">
-      <header className="titlebar">
-        <a className="brand" href="./" aria-label={t("app.home")}>
+    <main className="web-shell">
+      <header className="web-header">
+        <a className="web-brand" href="./" aria-label={t("app.home")}>
           <LogoMark size={30} />
           <span>ScreenSway</span>
+          <small>Web</small>
         </a>
-        <div className="titlebar-actions">
-          <a className="secondary-button compact" href="../" aria-label={t("web.desktopApp")}>
-            <Download size={15} aria-hidden="true" /> <span className="header-label">{t("web.desktopApp")}</span>
-          </a>
+        <nav aria-label={t("web.headerNav")}>
+          <LandingLink label={t("web.desktopApp")}>
+            <Download size={15} aria-hidden="true" />
+            <span>{t("web.desktopApp")}</span>
+          </LandingLink>
           <LanguageSwitch />
-        </div>
+        </nav>
       </header>
 
-      <section className="studio">
-        <div className="studio-intro reveal">
-          <span className="eyebrow"><span className="eyebrow-dot" aria-hidden="true" /> {t("welcome.eyebrow")}</span>
-          <h1>{t("welcome.title")}</h1>
-          <p>{t("welcome.subtitle")}</p>
-          <ul className="highlights">
-            <li><span><ZoomIn size={16} aria-hidden="true" /></span>{t("highlight.zoom")}</li>
-            <li><span><MousePointer2 size={16} aria-hidden="true" /></span>{t("highlight.cursor")}</li>
-            <li><span><Lock size={16} aria-hidden="true" /></span>{t("highlight.private")}</li>
-          </ul>
-        </div>
-
-        {unsupported ? (
-          <div className="recorder glass reveal">
-            <div className="permission-card" role="alert">
-              <span className="permission-icon" aria-hidden="true"><AlertCircle size={20} /></span>
-              <strong>{t("web.unsupportedTitle")}</strong>
-              <p>{t("web.unsupportedBody")}</p>
-              <div className="permission-actions">
-                <a className="permission-primary" href="../">{t("web.unsupportedDownload")}</a>
-              </div>
-            </div>
+      {unsupported ? (
+        <section className="unsupported-screen">
+          <div className="unsupported-card" role="alert">
+            <LogoMark size={42} />
+            <span className="web-kicker">ScreenSway Web · Beta</span>
+            <h1>{t("web.unsupportedTitle")}</h1>
+            <p>{t("web.unsupportedBody")}</p>
+            <LandingLink>
+              {t("web.unsupportedDownload")}
+              <ArrowRight size={16} aria-hidden="true" />
+            </LandingLink>
           </div>
-        ) : (
-          <div className={`recorder glass reveal${recording ? " is-recording" : ""}`}>
-            <label className={`audio-toggle${recording ? " disabled" : ""}`}>
-              <span className="audio-icon" aria-hidden="true">{systemAudio ? <Volume2 size={17} /> : <VolumeX size={17} />}</span>
-              <span className="audio-text">
-                <strong>{t("audio.label")}</strong>
-                <small>{t("web.audioHint")}</small>
-              </span>
-              <input type="checkbox" role="switch" checked={systemAudio} disabled={recording || status === "starting"} onChange={(event) => setSystemAudio(event.target.checked)} />
-              <span className="switch" aria-hidden="true" />
-            </label>
-            <label className={`audio-toggle${recording ? " disabled" : ""}`}>
-              <span className="audio-icon" aria-hidden="true">{microphone ? <Mic size={17} /> : <MicOff size={17} />}</span>
-              <span className="audio-text">
-                <strong>{t("mic.label")}</strong>
-                <small>{t("mic.hint")}</small>
-              </span>
-              <input type="checkbox" role="switch" checked={microphone} disabled={recording || status === "starting"} onChange={(event) => setMicrophone(event.target.checked)} />
-              <span className="switch" aria-hidden="true" />
-            </label>
-
-            <div className="recorder-status" aria-live="polite">
-              <span className={`status-dot ${status === "starting" ? "idle" : status}`} aria-hidden="true" />
-              <span>{statusLabel}</span>
-            </div>
-
-            <div className={`record-controls${recording ? " active" : ""}`}>
-              <button
-                className={`record-button${recording ? " stop" : ""}`}
-                onClick={recording ? () => void stop() : () => void start()}
-                disabled={status === "starting" || status === "finishing"}
-              >
-                {recording ? <Square size={12} fill="currentColor" aria-hidden="true" /> : <span className="record-dot" aria-hidden="true" />}
-                {recording ? (status === "finishing" ? t("action.saving") : t("action.stop")) : t("action.start")}
-              </button>
-            </div>
-
-            {!error && <p className="record-hint">{t(recording ? "web.stopHint" : "record.hint")}</p>}
-            {error && (
-              <div className="capture-message error" role="alert">
-                <AlertCircle size={18} aria-hidden="true" />
-                <span><small>{error}</small></span>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {result && (
-        <section className="preview-section reveal" ref={previewRef}>
-          <div className="section-heading">
-            <div>
-              <h2>{t("preview.title")}</h2>
-              <span>
-                {t(zoomCount === 1 ? "preview.zoomsOne" : "preview.zooms", { count: zoomCount, time: formatDuration(result.durationMs) })}
-                {" · "}
-                {t("web.keepTab")}
-              </span>
-            </div>
-            <button
-              className="icon-button"
-              aria-label={t("preview.close")}
-              onClick={() => {
-                removeRecording(result.projectPath);
-                setResult(null);
-              }}
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <RecordingStudio recording={result} key={result.videoPath} />
         </section>
+      ) : (
+        <>
+          <section className="web-hero">
+            <div className="web-promise">
+              <span className="web-kicker">ScreenSway Web · Beta</span>
+              <h1>{t("web.heroTitle")}</h1>
+              <p>{t("web.heroCopy")}</p>
+              <div className="web-proof">
+                <span><MousePointer2 size={15} aria-hidden="true" />{t("web.proofZoom")}</span>
+                <span><Lock size={15} aria-hidden="true" />{t("web.proofPrivate")}</span>
+              </div>
+            </div>
+
+            <ResultPreview />
+
+            <div className={`web-recorder${recording ? " is-live" : ""}`}>
+              {status === "recording" ? (
+                <div className="live-panel" aria-live="polite">
+                  <span className="live-dot" aria-hidden="true" />
+                  <div>
+                    <small>{t("status.recording", { time: elapsed })}</small>
+                    <strong>{elapsed}</strong>
+                  </div>
+                  <button onClick={() => void stop()}>
+                    <Square size={13} fill="currentColor" aria-hidden="true" />
+                    {t("action.stop")}
+                  </button>
+                  <p>{t("web.stopHint")}</p>
+                </div>
+              ) : status === "finishing" ? (
+                <div className="preparing-panel" role="status">
+                  <span className="preparing-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>{t("web.preparing")}</strong>
+                    <small>{t("web.preparingHint")}</small>
+                  </div>
+                  <i aria-hidden="true"><span /></i>
+                </div>
+              ) : (
+                <>
+                  <div className="recorder-heading">
+                    <div>
+                      <span>{t("web.recorderKicker")}</span>
+                      <h2>{t("web.recorderTitle")}</h2>
+                    </div>
+                    <MonitorUp size={24} aria-hidden="true" />
+                  </div>
+                  <div className="web-audio-options">
+                    <label>
+                      <span>
+                        {systemAudio ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+                        <b>{t("audio.label")}</b>
+                        <small>{t("web.audioHint")}</small>
+                      </span>
+                      <input type="checkbox" role="switch" checked={systemAudio} disabled={status === "starting"} onChange={(event) => setSystemAudio(event.target.checked)} />
+                      <i aria-hidden="true" />
+                    </label>
+                    <label>
+                      <span>
+                        {microphone ? <Mic aria-hidden="true" /> : <MicOff aria-hidden="true" />}
+                        <b>{t("mic.label")}</b>
+                        <small>{t("mic.hint")}</small>
+                      </span>
+                      <input type="checkbox" role="switch" checked={microphone} disabled={status === "starting"} onChange={(event) => setMicrophone(event.target.checked)} />
+                      <i aria-hidden="true" />
+                    </label>
+                  </div>
+                  <button className="web-start" onClick={() => void start()} disabled={status === "starting"}>
+                    <span className="record-dot" aria-hidden="true" />
+                    {status === "starting" ? t("web.openingPicker") : t("action.start")}
+                    <ArrowRight size={18} aria-hidden="true" />
+                  </button>
+                  {error && (
+                    <div className="capture-message error web-error" role="alert">
+                      <AlertCircle size={18} aria-hidden="true" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  <p className="requirements"><Lock size={13} aria-hidden="true" />{t("web.requirements")}</p>
+                </>
+              )}
+            </div>
+
+            <ol className="web-steps">
+              {(["1", "2", "3"] as const).map((step) => (
+                <li key={step}>
+                  <b>{step}</b>
+                  <span>
+                    <strong>{t(`web.step${step}`)}</strong>
+                    <small>{t(`web.step${step}Copy`)}</small>
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="web-compare">
+              <div>
+                <span>{t("web.browserIncludes")}</span>
+                <ul>
+                  <li><Check aria-hidden="true" />{t("web.includeZoom")}</li>
+                  <li><Check aria-hidden="true" />{t("web.includeStudio")}</li>
+                  <li><Check aria-hidden="true" />{t("web.includeExport")}</li>
+                </ul>
+              </div>
+              <div>
+                <span>{t("web.desktopAdds")}</span>
+                <p>{t("web.desktopLimits")}</p>
+                <LandingLink>
+                  {t("web.viewDesktop")}
+                  <ArrowRight aria-hidden="true" />
+                </LandingLink>
+              </div>
+            </div>
+          </section>
+
+          {result && (
+            <section className="preview-section web-studio-section" ref={previewRef}>
+              <div className="web-studio-heading">
+                <div>
+                  <span className="web-kicker">ScreenSway Studio</span>
+                  <h2>{t("preview.title")}</h2>
+                  <p>{t(zoomCount === 1 ? "preview.zoomsOne" : "preview.zooms", { count: zoomCount, time: formatDuration(result.durationMs) })}</p>
+                </div>
+                <button
+                  className="icon-button"
+                  aria-label={t("preview.close")}
+                  onClick={() => {
+                    removeRecording(result.projectPath);
+                    setResult(null);
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tab-callout">
+                <Lock size={16} aria-hidden="true" />
+                <span><strong>{t("web.tabNoticeTitle")}</strong>{t("web.keepTab")}</span>
+              </div>
+              <div className="web-studio-surface">
+                <RecordingStudio recording={result} key={result.videoPath} />
+              </div>
+            </section>
+          )}
+        </>
       )}
     </main>
   );

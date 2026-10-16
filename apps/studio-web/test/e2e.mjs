@@ -240,7 +240,7 @@ try {
       });
       (await import("node:fs")).writeFileSync(process.env.SAVE_RECORDING, Buffer.from(recorded, "base64"));
     }
-    const heading = await page.locator(".preview-section .section-heading span").first().textContent();
+    const heading = await page.locator(".preview-section .web-studio-heading p").textContent();
     assert.match(heading, /[1-9]\d* zooms? where your pointer paused/, heading);
     const samples = await page.evaluate(() => window.__test.samples);
     assert.ok(samples.length > 50, `pointer followed (${samples.length} samples)`);

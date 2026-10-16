@@ -5,6 +5,8 @@ import "../../desktop/src/styles.css";
 import "./web.css";
 import { WebApp } from "./WebApp";
 
+document.documentElement.classList.add("web");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <I18nProvider>
