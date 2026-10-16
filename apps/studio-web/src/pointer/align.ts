@@ -32,11 +32,15 @@ const STEP_MS = 10;
  */
 export function timelineOffset(recorded: MotionSample[], live: MotionSample[]): number {
   const match = timelineMatch(recorded, live);
-  return match && match.score >= 0.5 ? match.offset : 0;
+  return match && match.score >= 0.5 && match.margin >= 0.1 ? match.offset : 0;
 }
 
-/** The best offset and how well the two timelines agree there (correlation, -1…1). */
-export function timelineMatch(recorded: MotionSample[], live: MotionSample[]): { offset: number; score: number } | null {
+/**
+ * The best offset, how well the two timelines agree there (correlation, -1…1) and by how
+ * much it beats the best offset more than 200 ms away. Repeating motion (a spinner, a
+ * looping video) agrees at many offsets; then the margin is small and nothing is moved.
+ */
+export function timelineMatch(recorded: MotionSample[], live: MotionSample[]): { offset: number; score: number; margin: number } | null {
   if (recorded.length < 10 || live.length < 10) return null;
   // Motion at a time: what changed since the previous frame, so take the next frame at or after it.
   const at = (series: MotionSample[], timeMs: number) => {
@@ -57,7 +61,7 @@ export function timelineMatch(recorded: MotionSample[], live: MotionSample[]): {
   const spreadA = Math.sqrt(a.reduce((sum, v) => sum + (v - meanA) ** 2, 0));
   if (spreadA === 0) return null;
 
-  let best = { offset: 0, score: -Infinity };
+  const scores: { offset: number; score: number }[] = [];
   for (let offset = -SEARCH_MS; offset <= SEARCH_MS; offset += STEP_MS) {
     const b = times.map((t) => at(live, t - offset));
     const meanB = b.reduce((sum, v) => sum + v, 0) / b.length;
@@ -66,8 +70,11 @@ export function timelineMatch(recorded: MotionSample[], live: MotionSample[]): {
       product += (a[i] - meanA) * (b[i] - meanB);
       spreadB += (b[i] - meanB) ** 2;
     }
-    const score = spreadB > 0 ? product / (spreadA * Math.sqrt(spreadB)) : -Infinity;
-    if (score > best.score) best = { offset, score };
+    scores.push({ offset, score: spreadB > 0 ? product / (spreadA * Math.sqrt(spreadB)) : -1 });
   }
-  return best;
+  // Among near ties, the smallest correction.
+  const top = Math.max(...scores.map((s) => s.score));
+  const best = scores.filter((s) => s.score >= top - 0.005).sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0];
+  const rival = Math.max(-1, ...scores.filter((s) => Math.abs(s.offset - best.offset) > 200).map((s) => s.score));
+  return { offset: best.offset, score: best.score, margin: best.score - rival };
 }

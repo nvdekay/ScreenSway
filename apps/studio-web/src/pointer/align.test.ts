@@ -20,6 +20,15 @@ describe("timelineOffset", () => {
     expect(Math.abs(timelineOffset(series(0), series(-180)) + 180)).toBeLessThanOrEqual(40);
   });
 
+  it("does not guess when the motion repeats, like a spinner", () => {
+    const spinner = (shiftMs: number): MotionSample[] => {
+      const samples: MotionSample[] = [];
+      for (let t = 0; t < 8_000; t += 33) samples.push({ timeMs: t, motion: (t + shiftMs) % 500 < 100 ? 12 : 0 });
+      return samples;
+    };
+    expect(timelineOffset(spinner(0), spinner(330))).toBe(0);
+  });
+
   it("leaves still recordings alone", () => {
     const still = series(0).map((sample) => ({ ...sample, motion: 0 }));
     expect(timelineOffset(still, series(300))).toBe(0);
