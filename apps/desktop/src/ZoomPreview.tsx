@@ -18,6 +18,7 @@ import { CURSOR_PATH, paintFrameBase } from "./frame/paint";
 import { Timeline } from "./frame/Timeline";
 import { loadCaptionFont, paintCaption, type CaptionStyle } from "./frame/captionPaint";
 import { useI18n } from "./i18n";
+import { isWeb } from "./platform";
 
 export interface RecordingResult {
   projectPath: string;
@@ -93,7 +94,8 @@ export function ZoomPreview({
   const [durationMs, setDurationMs] = useState(recording.durationMs);
 
   const { pointerEvents: events, width, height } = recording;
-  const clicks = useMemo(() => events.filter((event) => event.type !== "move"), [events]);
+  // In the browser version the real pointer is part of the video and clicks are unknown.
+  const clicks = useMemo(() => (isWeb ? [] : events.filter((event) => event.type !== "move")), [events]);
   const track = useMemo(
     () => buildCameraTrack(events, zooms, { width, height }, durationMs + 1_000),
     [events, zooms, width, height, durationMs],
@@ -195,7 +197,7 @@ export function ZoomPreview({
       // content's transform shows a stretched low-resolution copy in Chromium (WebView2).
       const toStageX = (x: number) => (offsetX / 100) * videoWidth + (x / width) * videoWidth * camera.scale;
       const toStageY = (y: number) => (offsetY / 100) * videoHeight + (y / height) * videoHeight * camera.scale;
-      const pointer = samplePointer(events, timeMs);
+      const pointer = isWeb ? null : samplePointer(events, timeMs);
       const cursor = cursorRef.current;
       if (cursor) {
         cursor.style.opacity = pointer ? "1" : "0";
