@@ -11,7 +11,7 @@ export interface CapturedRecording {
   /** Backed by a file in the browser's private storage when available, so it does not fill memory. */
   blob: Blob;
   /** Removes that file; call once the recording is closed. */
-  discard: () => void;
+  discard: () => Promise<void>;
   samples: PointerSample[];
   /** Screen motion on the samples' clock, to line them up with the recording. */
   motion: MotionSample[];
@@ -34,7 +34,8 @@ export function unsupportedReason(): string | null {
   if (!navigator.mediaDevices?.getDisplayMedia) return "display";
   if (typeof MediaRecorder === "undefined") return "recorder";
   // Pointer following and export need these Chromium APIs.
-  if (!("MediaStreamTrackProcessor" in window) || typeof VideoEncoder === "undefined" || typeof AudioEncoder === "undefined") return "codecs";
+  if (!("MediaStreamTrackProcessor" in window) || !("MediaStreamTrackGenerator" in window) || typeof OffscreenCanvas === "undefined") return "streams";
+  if (typeof VideoEncoder === "undefined" || typeof AudioEncoder === "undefined" || typeof VideoFrame === "undefined") return "codecs";
   if (/Android|iPhone|iPad/i.test(navigator.userAgent)) return "mobile";
   return null;
 }
@@ -100,10 +101,13 @@ class ChunkStore {
     return new Blob(this.memory, { type });
   }
 
-  discard() {
-    void this.writable?.abort().catch(() => {});
-    if (this.folder) void this.folder.removeEntry(this.name).catch(() => {});
+  /** Deletes the file once any open write is abandoned, so the delete is not refused. */
+  async discard() {
     this.memory = [];
+    await this.writing.catch(() => {});
+    await this.writable?.abort().catch(() => {});
+    this.writable = null;
+    if (this.folder) await this.folder.removeEntry(this.name).catch(() => {});
   }
 }
 
@@ -271,7 +275,7 @@ export class ScreenRecording {
       if (blob.size === 0) throw new Error("Nothing was recorded.");
       return { blob, discard: () => store.discard(), ...(await samples) };
     } catch (error) {
-      store.discard();
+      await store.discard();
       throw error;
     } finally {
       this.release();
@@ -281,7 +285,7 @@ export class ScreenRecording {
   /** Stops everything without keeping the recording. */
   cancel() {
     if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop();
-    this.store?.discard();
+    void this.store?.discard();
     this.release();
   }
 
