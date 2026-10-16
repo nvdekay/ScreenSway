@@ -16,8 +16,8 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 ## Current state
 
 - Version `0.3.2`; landing page is live at `https://nvdekay.github.io/ScreenSway/`; the latest macOS and Windows installers are served by the downloads Worker (R2), and Pages keeps only the site and `update/latest.json`.
-- The browser version (Chrome/Edge on a computer) records a screen, window or tab, zooms where the pointer settles, offers the desktop styles/timeline/trim and downloads an MP4; no captions, library, pause or statistics. Desktop studio changes ship to it too, so check both.
-- The landing page groups its message into hero/demo, four benefit cards, five essential FAQs and a compact download CTA; install details stay in the popup.
+- The browser version (Chrome/Edge on a computer) has its own black/violet product shell and real painted result preview; it records a screen, window or tab, zooms where the pointer settles, offers the desktop styles/timeline/trim and downloads an MP4. No captions, library, pause or statistics. Desktop studio changes ship to it too, but its visual overrides stay under `html.web`.
+- The landing page groups its message into hero/demo, four benefit cards, a dedicated browser-recorder section, five essential FAQs and a compact download CTA; install details stay in the popup. Its hero presents the browser app as a distinct beta trial beside, not instead of, the two equal desktop downloads.
 - The landing Studio demo uses all five real `BUILT_IN_STYLES`, all eight frame types, six timed EN/VI sample captions and stable reveal keys across language changes. `apps/web/src/RecordingFrame.tsx` calls the shared `computeLayout` and `paintFrameBase` APIs.
 - macOS capture, audio/microphone processing, editable zoom/trim, local EN/VI captions and MP4/SRT export up to 4K/60 fps are implemented.
 - The local recording library supports search, inline rename, confirmed permanent deletion and on-demand hover scrubbing.
