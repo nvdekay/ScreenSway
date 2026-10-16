@@ -40,6 +40,8 @@ export function unsupportedReason(): string | null {
 }
 
 export class MicrophoneBlockedError extends Error {}
+/** Writing the recording failed (the disk is full); what was written is not usable. */
+export class StorageFullError extends Error {}
 export class ShareCancelledError extends Error {}
 
 const STORAGE_FOLDER = "recordings";
@@ -72,28 +74,28 @@ class ChunkStore {
   }
 
   add(chunk: Blob, onFailure: () => void) {
+    if (this.failed) return;
     const writable = this.writable;
     if (!writable) {
       this.memory.push(chunk);
       return;
     }
     this.writing = this.writing.then(() => writable.write(chunk)).catch(() => {
-      // Out of space: stop instead of losing what was recorded.
-      if (!this.failed) onFailure();
-      this.failed = true;
+      // Out of space: a chunk is missing, so the recording is stopped and reported, not shown cut short.
+      if (!this.failed) {
+        this.failed = true;
+        onFailure();
+      }
     });
   }
 
   async finish(type: string): Promise<Blob> {
     await this.writing;
+    if (this.failed) throw new StorageFullError("There is not enough free disk space for this recording.");
     if (this.writable && this.handle) {
-      try {
-        await this.writable.close();
-        const file = await this.handle.getFile();
-        return this.memory.length ? new Blob([file, ...this.memory], { type }) : file.slice(0, file.size, type);
-      } catch {
-        // Fall through to what is still in memory.
-      }
+      await this.writable.close();
+      const file = await this.handle.getFile();
+      return file.slice(0, file.size, type);
     }
     return new Blob(this.memory, { type });
   }
@@ -159,6 +161,7 @@ export class ScreenRecording {
   private worker: Worker | null = null;
   private followed: MediaStreamTrack | null = null;
   private stopped: Promise<void> | null = null;
+  private started = false;
 
   /**
    * Resolves once recording. `onEnded` fires when recording stops on its own: from the
@@ -206,7 +209,12 @@ export class ScreenRecording {
     this.streams.push(display);
     const [shared] = display.getVideoTracks();
     shared.contentHint = "detail";
-    shared.addEventListener("ended", onEnded, { once: true });
+    // Stopping sharing while still starting cancels the start; afterwards it stops the recording.
+    let sharing = true;
+    shared.addEventListener("ended", () => {
+      sharing = false;
+      if (this.started) onEnded();
+    }, { once: true });
     const video = fixedSize(shared);
     video.contentHint = "detail";
     this.streams.push(new MediaStream([video]));
@@ -225,6 +233,7 @@ export class ScreenRecording {
 
     this.store = new ChunkStore(`${this.id}.${mimeType?.includes("mp4") ? "mp4" : "webm"}`);
     await this.store.open();
+    if (!sharing) throw new ShareCancelledError();
 
     // Screen text needs far more than a camera's bitrate, as in the desktop helper.
     const { width = 1920, height = 1080 } = video.getSettings();
@@ -235,7 +244,9 @@ export class ScreenRecording {
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) store.add(event.data, onEnded);
     };
-    recorder.onerror = () => onEnded();
+    recorder.onerror = () => {
+      if (this.started) onEnded();
+    };
     this.stopped = new Promise((resolve) => {
       recorder.onstop = () => resolve();
     });
@@ -245,6 +256,7 @@ export class ScreenRecording {
     const frames = new MediaStreamTrackProcessor({ track: this.followed as MediaStreamVideoTrack }).readable;
     recorder.start(1_000);
     this.worker.postMessage({ type: "start", frames } satisfies WorkerRequest, [frames]);
+    this.started = true;
   }
 
   async stop(): Promise<CapturedRecording> {

@@ -7,7 +7,7 @@ import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
 import { EXPORT_SAVED, removeRecording } from "./backend";
-import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, unsupportedReason } from "./recorder";
+import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, unsupportedReason } from "./recorder";
 import { listen } from "./tauri/event";
 
 type Status = "idle" | "starting" | "recording" | "finishing";
@@ -103,7 +103,8 @@ export function WebApp() {
         return prepared;
       });
     } catch (stopError) {
-      setError(t("web.failed", { message: stopError instanceof Error ? stopError.message : String(stopError) }));
+      if (stopError instanceof StorageFullError) setError(t("web.diskFull"));
+      else setError(t("web.failed", { message: stopError instanceof Error ? stopError.message : String(stopError) }));
     } finally {
       setStatus("idle");
     }
