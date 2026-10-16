@@ -61,7 +61,8 @@ export function ResultPreview() {
   const settings = useMemo(() => ({
     ...DEFAULT_FRAME_SETTINGS,
     frame: "browser-dark" as const,
-    background: { kind: "linear" as const, angle: 135, stops: [{ offset: 0, color: "#0b0714" }, { offset: 0.55, color: "#4c1d95" }, { offset: 1, color: "#a78bfa" }] },
+    // A single flat colour, like the rest of the page.
+    background: { kind: "solid" as const, color: "#5b3fc4" },
     // Fractions of the canvas, as in the built-in styles.
     padding: 0.07,
     radius: 0.016,
