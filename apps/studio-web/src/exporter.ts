@@ -72,13 +72,13 @@ export async function renderExport(
   signal.addEventListener("abort", cancel, { once: true });
   try {
     const videoTrack = await input.getPrimaryVideoTrack();
-    if (!videoTrack) throw new Error("The recording has no video.");
+    if (!videoTrack) throw new Error("web.exportUnreadable");
     const audioTrack = await input.getPrimaryAudioTrack();
     checkpoint();
 
     const canvas = new OffscreenCanvas(job.width, job.height);
     const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("Canvas is not available.");
+    if (!context) throw new Error("web.exportUnreadable");
     context.imageSmoothingQuality = "high";
     base = await createImageBitmap(await (await fetch(baseLayer)).blob());
     checkpoint();

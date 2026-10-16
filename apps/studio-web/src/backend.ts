@@ -169,7 +169,10 @@ export const commands: Record<string, Command> = {
       // Exports are only ever streamed to a file, never built in memory.
       // Errors are message keys the studio translates (see isMessageKey).
       if (!target) throw new Error("web.exportNoStorage");
-      writable = await target.createWritable();
+      // The file may refuse to open (permission withdrawn, storage full).
+      writable = await target.createWritable().catch(() => {
+        throw new Error("web.exportWriteFailed");
+      });
       const { renderExport } = await import("./exporter");
       let committing = false;
       // From the commit on, Cancel is no longer offered (progress 100 hides it) and is ignored.
