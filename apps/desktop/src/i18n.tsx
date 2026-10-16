@@ -214,12 +214,20 @@ const en = {
   "web.micDenied": "The microphone is blocked. Allow it from the address bar, or record without it.",
   "web.failed": "Recording failed: {message}",
   "web.preparing": "Preparing the studio…",
+  "web.exportNoStorage": "This browser window cannot save files. Use a normal (not private) window, or the desktop app.",
+  "web.exportTooLarge": "This browser cannot encode video this large. Choose a lower export quality.",
+  "web.exportWriteFailed": "The video could not be written to the file. Check the free disk space and try again.",
   "web.noStorage": "This browser window cannot store recordings (private windows often cannot). Use a normal window, or the desktop app.",
   "web.diskFull": "The recording stopped: there is not enough free disk space. Free some space and record again.",
   "web.leave": "Leave? Your recording has not been exported.",
 };
 
 export type MessageKey = keyof typeof en;
+
+/** Whether an error from the browser version's backend is a translatable message key. */
+export function isMessageKey(value: string): value is MessageKey {
+  return Object.prototype.hasOwnProperty.call(en, value);
+}
 
 const vi: Record<MessageKey, string> = {
   "app.home": "Trang chủ ScreenSway",
@@ -426,6 +434,9 @@ const vi: Record<MessageKey, string> = {
   "web.micDenied": "Micro đang bị chặn. Hãy cho phép ở thanh địa chỉ, hoặc quay không có micro.",
   "web.failed": "Quay thất bại: {message}",
   "web.preparing": "Đang chuẩn bị studio…",
+  "web.exportNoStorage": "Cửa sổ trình duyệt này không lưu được file. Hãy dùng cửa sổ thường (không ẩn danh), hoặc ứng dụng máy tính.",
+  "web.exportTooLarge": "Trình duyệt này không mã hoá được video lớn như vậy. Hãy chọn chất lượng xuất thấp hơn.",
+  "web.exportWriteFailed": "Không ghi được video vào file. Hãy kiểm tra dung lượng trống rồi thử lại.",
   "web.noStorage": "Cửa sổ trình duyệt này không lưu được bản quay (cửa sổ ẩn danh thường không lưu được). Hãy dùng cửa sổ thường, hoặc ứng dụng máy tính.",
   "web.diskFull": "Đã dừng quay vì ổ đĩa không còn đủ chỗ trống. Hãy giải phóng bớt dung lượng rồi quay lại.",
   "web.leave": "Rời trang? Bản quay chưa được xuất.",
