@@ -2,6 +2,7 @@
 // ingestion rules, authentication, and the numbers /v1/stats reports.
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -54,12 +55,16 @@ try {
   assert.equal((await post({ source: "other", events: [] })).status, 400);
   assert.equal((await post("{not json")).status, 400);
   assert.equal((await post({ source: "web", events: [{ name: "page_view", props: { referrer: "y".repeat(20000) } }] })).status, 413);
+  // The limit counts UTF-8 bytes: 6,000 characters of Vietnamese text is over 16 KB.
+  assert.equal((await post({ source: "web", events: [{ name: "page_view", props: { referrer: "ữ".repeat(6000) } }] })).status, 413);
   // A browser beacon arrives as text/plain; it must be accepted without a preflight.
   assert.equal((await post(JSON.stringify({ source: "web", events: [{ name: "guide_open" }] }), { "Content-Type": "text/plain", "User-Agent": "visitor-1" })).status, 202);
 
   // Reporting requires the token.
   assert.equal((await stats("")).status, 401);
   assert.equal((await stats("wrong")).status, 401);
+  assert.equal((await stats("secretx")).status, 401);
+  assert.equal((await stats("secre")).status, 401);
   const { status, body } = await stats();
   assert.equal(status, 200);
   assert.equal(body.range.days, 30);
@@ -88,7 +93,19 @@ try {
   // The dashboard itself is served as a static page.
   const page = await fetch(base);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /ScreenSway/);
+  const html = await page.text();
+  assert.match(html, /ScreenSway/);
+  // It only talks to its own origin, and its CSP still matches the inline script.
+  assert.doesNotMatch(html, /get\("api"\)|localStorage\.setItem\(k/);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const hash = createHash("sha256").update(script).digest("base64");
+  assert.match(html, new RegExp(`script-src 'sha256-${hash.replace(/[+/]/g, "\\$&")}'`), "update the dashboard CSP hash");
+  assert.match(html, /connect-src 'self'/);
+
+  // Floods from one address are cut off by the rate limiter.
+  let limited = false;
+  for (let attempt = 0; attempt < 80 && !limited; attempt++) limited = (await post({ source: "web", events: [] })).status === 429;
+  assert.ok(limited, "ingestion was not rate limited");
   console.log("analytics e2e: ok");
 } finally {
   server.kill("SIGTERM");
