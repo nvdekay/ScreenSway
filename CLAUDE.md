@@ -36,7 +36,8 @@ pnpm test:capture:macos                           # real screen/window/audio cap
 pnpm dev:desktop                                  # run the app
 pnpm build:macos                                  # universal app + LZMA DMG
 pnpm build:web                                    # landing page
-pnpm dev:studio-web / pnpm build:studio-web        # browser version (served at /app/ by web.yml)
+pnpm dev:site                                     # landing + browser version on one address (app at /app/, as deployed)
+pnpm dev:studio-web / pnpm build:studio-web        # browser version alone (web.yml puts it in the site's app/ folder)
 pnpm --filter @screensway/studio-web test:e2e       # browser version end to end in Edge (BROWSER=chrome)
 pnpm --filter @screensway/analytics test:e2e        # analytics API end to end on a local D1
 pnpm --filter @screensway/downloads test:e2e        # downloads Worker + publish script on a local R2

@@ -5,8 +5,10 @@ import react from "@vitejs/plugin-react";
 const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // The studio comes from apps/desktop; its Tauri calls are answered in the browser.
-export default defineConfig({
-  base: "./",
+// The built app sits in the landing page's app/ folder; in dev it is served at /app/ too,
+// so `pnpm dev:site` shows both on one address, as deployed.
+export default defineConfig(({ command }) => ({
+  base: command === "serve" ? "/app/" : "./",
   plugins: [react()],
   define: { __SCREENSWAY_WEB__: "true" },
   resolve: {
@@ -18,4 +20,4 @@ export default defineConfig({
   },
   worker: { format: "es" },
   server: { port: 1430, strictPort: true },
-});
+}));
