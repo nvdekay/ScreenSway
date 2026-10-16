@@ -109,12 +109,22 @@ function fakes(options) {
       getFile: () => real.getFile(),
       createWritable: async (writeOptions) => {
         const writable = await real.createWritable(writeOptions);
+        let writes = 0;
         return {
           write: async (chunk) => {
             if (window.__test.slowWrites) await new Promise((resolve) => setTimeout(resolve, 300));
+            // The disk fills up or permission is withdrawn while the file is written (mediabunny
+            // writes 16 MB at a time, so a short test export makes a single write).
+            window.__test.writes = ++writes;
+            if (writes === window.__test.failWriteAt) throw new DOMException("Quota exceeded", "QuotaExceededError");
             return writable.write(chunk);
           },
-          close: () => writable.close(),
+          close: async () => {
+            window.__test.closing = true;
+            if (window.__test.slowClose) await new Promise((resolve) => setTimeout(resolve, 1_500));
+            if (window.__test.failClose) throw new DOMException("Commit failed", "InvalidStateError");
+            return writable.close();
+          },
           abort: (reason) => writable.abort(reason),
         };
       },
@@ -274,18 +284,41 @@ try {
     await cancelAt(60);
     await cancelAt(99);
 
-    await page.evaluate(() => (window.__test.failExport = true));
+    // Failures before writing, after part of the file was written, and when committing it.
+    for (const [failure, what] of [["failExport", "before writing"], ["failWriteAt", "while writing it"], ["failClose", "while committing it"]]) {
+      await page.evaluate((key) => (window.__test[key] = key === "failWriteAt" ? 1 : true), failure);
+      await page.getByRole("button", { name: "Export video" }).click();
+      await page.getByText("Export failed").waitFor({ timeout: 60_000 }).catch(async (error) => {
+        throw new Error(`${what}: ${await page.locator(".export-box").textContent()} (writes: ${await page.evaluate(() => window.__test.writes)})`, { cause: error });
+      });
+      assert.equal(await chosenFile(page), "ORIGINAL VIDEO", `an export failing ${what} leaves the chosen file as it was`);
+      await page.evaluate((key) => (window.__test[key] = undefined), failure);
+    }
+
+    // Once the file is being committed, Cancel is gone and the export completes.
+    await page.evaluate(() => {
+      window.__test.slowClose = true;
+      window.__test.closing = false;
+    });
     await page.getByRole("button", { name: "Export video" }).click();
-    await page.getByText("Export failed").waitFor({ timeout: 30_000 });
-    assert.equal(await chosenFile(page), "ORIGINAL VIDEO", "a failed export leaves the chosen file as it was");
-    await page.evaluate(() => (window.__test.failExport = false));
+    await page.waitForFunction(() => window.__test.closing, null, { timeout: 90_000 });
+    assert.equal(await page.locator(".export-box").getByRole("button", { name: "Cancel" }).count(), 0, "Cancel is not offered while committing");
+    await page.locator(".export-done").waitFor({ timeout: 30_000 });
+    assert.notEqual(await chosenFile(page), "ORIGINAL VIDEO", "a committed export replaces the chosen file");
+    await page.evaluate(() => (window.__test.slowClose = false));
+    assert.equal(await page.evaluate(async () => {
+      const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("exports", { create: true });
+      let count = 0;
+      for await (const _ of folder.entries()) count++;
+      return count;
+    }), 0, "no temporary export is left");
 
     await page.getByRole("button", { name: "Close preview" }).click();
     await page.waitForTimeout(300);
     assert.deepEqual(await storedRecordings(page), [], "closing a recording deletes its stored file");
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
-    console.log("cancel, fail and close keep the chosen file: ok");
+    console.log("cancel, failures and commit point keep the chosen file safe: ok");
   }
 
   // 4. Stopping sharing while the app is still starting cancels the start.
