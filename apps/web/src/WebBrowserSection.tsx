@@ -8,7 +8,8 @@ import {
   type FrameSettings,
   type PointerEvent,
 } from "@screensway/core";
-import { ArrowRight, Check, Globe, Lock, MousePointer2 } from "lucide-react";
+import { ArrowRight, Check, Globe, Lock } from "lucide-react";
+import { HandPointer } from "../../desktop/src/HandPointer";
 import { useEffect, useMemo, useRef } from "react";
 import { RecordingFrame } from "./RecordingFrame";
 import { useI18n } from "./i18n";
@@ -133,7 +134,7 @@ export function WebBrowserSection() {
                 <div className="browser-feature-chart"><i /><i /><i /><i className="peak" /><i /></div>
               </div>
             </div>
-            <MousePointer2 className="browser-feature-pointer" ref={pointerRef} size={26} fill="#111" />
+            <HandPointer className="browser-feature-pointer" ref={pointerRef} size={28} />
           </div>
         </RecordingFrame>
         <div className="browser-feature-timeline" aria-hidden="true">

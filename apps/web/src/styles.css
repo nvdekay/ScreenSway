@@ -522,7 +522,7 @@ main:focus { outline: none; }
 .browser-feature-chart i:nth-child(3) { height: 54%; }
 .browser-feature-chart i.peak { height: 90%; background: #0a84ff; }
 .browser-feature-chart i:nth-child(5) { height: 62%; }
-.browser-feature-pointer { position: absolute; margin: -2px 0 0 -3px; color: #111; filter: drop-shadow(0 1px 1px #fff); }
+.browser-feature-pointer { position: absolute; transform: translate(-34%, -11%); filter: drop-shadow(0 1px 2px #0006); }
 .browser-feature-timeline { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--hairline); color: var(--text-subtle); font-size: 10px; }
 .browser-feature-timeline > div { position: relative; height: 6px; border-radius: 99px; background: #ffffff12; }
 .browser-feature-timeline i { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: #0a84ff99; }

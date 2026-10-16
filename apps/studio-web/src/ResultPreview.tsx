@@ -8,7 +8,8 @@ import {
   sampleCameraTrack,
   samplePointer,
 } from "@screensway/core";
-import { BarChart3, LayoutDashboard, MousePointer2, Sparkles } from "lucide-react";
+import { BarChart3, LayoutDashboard, Sparkles } from "lucide-react";
+import { HandPointer } from "../../desktop/src/HandPointer";
 import { useEffect, useMemo, useRef } from "react";
 import { useI18n } from "../../desktop/src/i18n";
 import { pointerEvents, type PointerSample } from "./pointer/focus";
@@ -144,7 +145,7 @@ export function ResultPreview() {
                 <span /><span /><span /><span className="peak" /><span /><span />
               </div>
             </div>
-            <MousePointer2 className="result-pointer" ref={pointerRef} size={22} fill="#111" />
+            <HandPointer className="result-pointer" ref={pointerRef} size={24} />
           </div>
         </div>
       </div>
