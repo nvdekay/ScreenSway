@@ -75,4 +75,3 @@ async function read(id: string, input: Input, captured: CapturedRecording): Prom
     pointerEvents: pointerEvents(samples, width),
   };
 }
-
