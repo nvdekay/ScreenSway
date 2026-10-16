@@ -24,6 +24,7 @@ import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "
 import { DEFAULT_CAPTION_STYLE, loadCaptionFont, paintCaption, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
 import { durationBucket, track } from "../telemetry";
+import { isWeb } from "../platform";
 
 const SETTINGS_KEY = "screensway.frame";
 const CAPTION_STYLE_KEY = "screensway.captionStyle";
@@ -35,6 +36,8 @@ interface ExportResult {
   width: number;
   height: number;
   subtitlesPath?: string | null;
+  /** Frame rate of the file; the desktop helper always writes EXPORT_FPS. */
+  fps?: number;
 }
 
 function loadCaptionStyle(): CaptionStyle {
@@ -453,7 +456,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           onRecentImage={chooseRecentImage}
           onDeleteRecentImage={(path) => void deleteRecentImage(path)}
         >
-          <CaptionsPanel
+          {!isWeb && <CaptionsPanel
             captions={captions}
             transcription={transcription}
             style={captionStyle}
@@ -464,7 +467,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
             onStyleChange={updateCaptionStyle}
             onSeek={(timeMs) => seekRef.current?.(timeMs)}
             onOpenSettings={() => void invoke("open_speech_settings").catch(() => {})}
-          />
+          />}
         </FrameEditor>
 
         <div className="export-box">
@@ -492,7 +495,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
                 <span className="export-done-icon" aria-hidden="true"><Check size={15} strokeWidth={3} /></span>
                 <div>
                   <strong>{t("export.done")}</strong>
-                  <small>{exportState.result.width} × {exportState.result.height} · 60 fps</small>
+                  <small>{exportState.result.width} × {exportState.result.height} · {exportState.result.fps ?? EXPORT_FPS} fps</small>
                 </div>
               </div>
               {exportState.result.subtitlesPath && (
@@ -500,11 +503,13 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
               )}
               <div className="export-done-actions">
                 <button className="editor-button accent" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: false })}>
-                  <Play size={14} aria-hidden="true" /> {t("export.open")}
+                  {isWeb ? <Download size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />} {t("export.open")}
                 </button>
-                <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: true })}>
-                  <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
-                </button>
+                {!isWeb && (
+                  <button className="editor-button" onClick={() => void invoke("open_export", { path: exportState.result.outputPath, reveal: true })}>
+                    <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
+                  </button>
+                )}
               </div>
             </div>
           )}

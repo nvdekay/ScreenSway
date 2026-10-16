@@ -1,4 +1,8 @@
-export type PointerEventType = "move" | "leftClick" | "rightClick";
+/**
+ * "focus" marks where the pointer settled after moving. The browser version cannot see
+ * clicks, so it zooms on these instead; like clicks, they start a zoom.
+ */
+export type PointerEventType = "move" | "leftClick" | "rightClick" | "focus";
 
 export interface PointerEvent {
   timeMs: number;

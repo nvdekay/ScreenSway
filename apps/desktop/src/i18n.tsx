@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { isWindows } from "./platform";
+import { isWeb, isWindows } from "./platform";
 
 export type Language = "en" | "vi";
 
@@ -203,6 +203,18 @@ const en = {
   "tray.resume": "Resume",
   "tray.show": "Show ScreenSway",
   "tray.tooltip": "ScreenSway is recording",
+  "web.desktopApp": "Desktop app",
+  "web.unsupportedTitle": "Use Chrome or Edge on a computer",
+  "web.unsupportedBody": "Recording in the browser needs Google Chrome or Microsoft Edge on a Mac or PC. Safari, Firefox and phones are not supported yet.",
+  "web.unsupportedDownload": "Download the desktop app",
+  "web.audioHint": "Sound from the shared tab",
+  "web.stopHint": "Stop here or with your browser's Stop sharing button.",
+  "web.keepTab": "Your recording lives only in this tab until you export it.",
+  "web.shareDenied": "Nothing was shared. Click Start recording and choose a screen, window or tab.",
+  "web.micDenied": "The microphone is blocked. Allow it from the address bar, or record without it.",
+  "web.failed": "Recording failed: {message}",
+  "web.preparing": "Preparing the studio…",
+  "web.leave": "Leave? Your recording has not been exported.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -401,6 +413,18 @@ const vi: Record<MessageKey, string> = {
   "tray.resume": "Tiếp tục",
   "tray.show": "Mở ScreenSway",
   "tray.tooltip": "ScreenSway đang quay",
+  "web.desktopApp": "Ứng dụng máy tính",
+  "web.unsupportedTitle": "Hãy dùng Chrome hoặc Edge trên máy tính",
+  "web.unsupportedBody": "Quay màn hình trên web cần Google Chrome hoặc Microsoft Edge trên máy Mac hoặc PC. Safari, Firefox và điện thoại chưa được hỗ trợ.",
+  "web.unsupportedDownload": "Tải ứng dụng máy tính",
+  "web.audioHint": "Âm thanh từ tab được chia sẻ",
+  "web.stopHint": "Dừng ở đây hoặc bằng nút Dừng chia sẻ của trình duyệt.",
+  "web.keepTab": "Bản quay chỉ nằm trong tab này cho tới khi bạn xuất video.",
+  "web.shareDenied": "Bạn chưa chia sẻ gì. Bấm Bắt đầu quay rồi chọn màn hình, cửa sổ hoặc tab.",
+  "web.micDenied": "Micro đang bị chặn. Hãy cho phép ở thanh địa chỉ, hoặc quay không có micro.",
+  "web.failed": "Quay thất bại: {message}",
+  "web.preparing": "Đang chuẩn bị studio…",
+  "web.leave": "Rời trang? Bản quay chưa được xuất.",
 };
 
 /** Wording that names macOS places (Finder, Movies, "this Mac") reads differently on Windows. */
@@ -427,9 +451,42 @@ const viWindows: Partial<Record<MessageKey, string>> = {
   "library.emptyHint": "Mọi thứ được lưu trên máy tính này, trong Video › ScreenSway.",
 };
 
-const MESSAGES: Record<Language, Record<MessageKey, string>> = isWindows
-  ? { en: { ...en, ...enWindows }, vi: { ...vi, ...viWindows } }
-  : { en, vi };
+/** The browser version records with the browser, keeps everything in the tab and downloads exports. */
+const enWeb: Partial<Record<MessageKey, string>> = {
+  "welcome.eyebrow": "Screen recorder in your browser",
+  "welcome.subtitle": "Record right here, nothing to install. ScreenSway zooms in where you point, then you polish and export an MP4.",
+  "highlight.zoom": "Zooms where you point",
+  "highlight.cursor": "Nothing to install",
+  "highlight.private": "Never uploaded",
+  "record.hint": "Your browser asks what to share: a screen, a window or a tab. Nothing leaves this computer.",
+  "mic.hint": "Your voice, with noise suppression",
+  "preview.zooms": "{count} zooms where your pointer paused · {time}",
+  "preview.zoomsOne": "1 zoom where your pointer paused · {time}",
+  "frame.imageNote": "Images stay in this browser tab.",
+  "export.done": "Video downloaded",
+  "export.open": "Download again",
+};
+
+const viWeb: Partial<Record<MessageKey, string>> = {
+  "welcome.eyebrow": "Quay màn hình ngay trên trình duyệt",
+  "welcome.subtitle": "Quay ngay tại đây, không cần cài gì. ScreenSway tự zoom vào chỗ bạn trỏ chuột, rồi bạn chỉnh và xuất ra MP4.",
+  "highlight.zoom": "Tự zoom vào chỗ bạn trỏ",
+  "highlight.cursor": "Không cần cài đặt",
+  "highlight.private": "Không tải lên đâu cả",
+  "record.hint": "Trình duyệt sẽ hỏi bạn muốn chia sẻ gì: màn hình, cửa sổ hay một tab. Không có gì rời khỏi máy tính này.",
+  "mic.hint": "Giọng nói, có giảm ồn",
+  "preview.zooms": "{count} lần zoom ở chỗ con trỏ dừng lại · {time}",
+  "preview.zoomsOne": "1 lần zoom ở chỗ con trỏ dừng lại · {time}",
+  "frame.imageNote": "Ảnh chỉ nằm trong tab trình duyệt này.",
+  "export.done": "Đã tải video xuống",
+  "export.open": "Tải lại",
+};
+
+const MESSAGES: Record<Language, Record<MessageKey, string>> = isWeb
+  ? { en: { ...en, ...enWeb }, vi: { ...vi, ...viWeb } }
+  : isWindows
+    ? { en: { ...en, ...enWindows }, vi: { ...vi, ...viWindows } }
+    : { en, vi };
 const STORAGE_KEY = "screensway.language";
 
 export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
