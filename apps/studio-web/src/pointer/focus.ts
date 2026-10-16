@@ -7,11 +7,11 @@ export interface PointerSample {
 }
 
 /** How far the pointer must travel, as a share of the video width, before a stop counts. */
-const MIN_TRAVEL = 0.08;
+const MIN_TRAVEL = 0.12;
 /** The pointer counts as still while it stays this close, as a share of the video width. */
 const STILL_RADIUS = 0.012;
 /** How long it must stay still. */
-const SETTLE_MS = 500;
+const SETTLE_MS = 800;
 
 /**
  * Turns tracked pointer positions into the events the studio uses. A browser never sees
