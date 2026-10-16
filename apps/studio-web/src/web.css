@@ -6,6 +6,8 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 .web-header { position: sticky; top: 12px; z-index: 30; width: min(1180px, calc(100% - 32px)); height: 60px; display: flex; align-items: center; justify-content: space-between; margin: 12px auto 0; padding: 0 12px 0 16px; border: 1px solid #ffffff18; border-radius: 18px; background: #15141cd9; box-shadow: 0 16px 50px #0007; backdrop-filter: blur(22px) saturate(150%); }
 .web-brand, .web-header nav, .web-header nav a { display: flex; align-items: center; }
 .web-brand { gap: 9px; color: #fff; font-size: 15px; font-weight: 700; text-decoration: none; }
+.web-brand svg > rect:first-of-type { fill: #5b5bd6; }
+.web-brand svg > rect:nth-of-type(2) { display: none; }
 .web-brand small { padding: 3px 7px; border: 1px solid #a78bfa55; border-radius: 99px; color: #c4b5fd; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .web-header nav { gap: 8px; }
 .web-header nav a { min-height: 38px; gap: 7px; padding: 0 14px; border: 1px solid #8b5cf6; border-radius: 99px; background: #7c3aed; color: #fff; font-size: 12px; font-weight: 750; text-decoration: none; box-shadow: 0 6px 18px #7c3aed3d; transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease; }
