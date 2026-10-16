@@ -159,7 +159,7 @@ main:focus { outline: none; }
    nav items lift quietly. The video is the stage and never animates. index.html adds .anim; App removes it. */
 .anim .ent-mask { overflow: hidden; padding: .26em 0 .2em; margin: -.26em 0 -.2em; }
 .anim .ent-line { transform: translateY(125%); will-change: transform; }
-.anim .logo, .anim .links nav a, .anim .header-actions, .anim .header-download, .anim .burger, .anim .hero-copy, .anim .hero-note, .anim .hero-stage .button-primary, .anim .hero-demo { opacity: 0; }
+.anim .logo, .anim .links nav a, .anim .header-actions, .anim .header-web, .anim .header-download, .anim .burger, .anim .hero-web, .anim .hero-copy, .anim .hero-note, .anim .hero-stage .button-primary, .anim .hero-demo { opacity: 0; }
 .anim.play .ent-line { animation: ent-line 1.05s var(--ease-reveal) .12s both; }
 .anim.play .ent-mask + .ent-mask .ent-line { animation-delay: .22s; }
 .anim.play .logo { animation: ent-lift .62s var(--ease-soft) .46s both; }
@@ -168,9 +168,13 @@ main:focus { outline: none; }
 .anim.play .links nav a:nth-child(3) { animation-delay: .63s; }
 .anim.play .hero-copy { animation: ent-focus .85s var(--ease-reveal) .58s both; }
 .anim.play .header-actions, .anim.play .burger { animation: ent-pill .55s var(--ease-soft) .68s both; }
+/* The browser-version links settle with their neighbours: between the language button and the
+   download guide, and right after the two downloads. */
+.anim.play .header-web { animation: ent-pill .55s var(--ease-soft) .705s both; }
 .anim.play .header-download { animation: ent-pill .55s var(--ease-soft) .73s both; }
 .anim.play .hero-stage .button-primary { animation: ent-pill .7s var(--ease-reveal) .9s both; }
 .anim.play .hero-stage .button-primary + .button-primary { animation-delay: .97s; }
+.anim.play .hero-web { animation: ent-pill .7s var(--ease-reveal) 1.0s both; }
 .anim.play .hero-note, .anim.play .hero-demo { animation: ent-lift .65s var(--ease-soft) 1.02s both; }
 @keyframes ent-line { from { transform: translateY(125%); } to { transform: translateY(0); } }
 @keyframes ent-focus { from { opacity: 0; transform: translateY(14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: blur(0); } }
