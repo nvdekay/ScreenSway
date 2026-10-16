@@ -58,7 +58,7 @@ export async function renderExport(
   // The desktop exporter's bitrate (Exporter.swift): sharp text when zoomed.
   const bitrate = Math.round(Math.min(100_000_000, Math.max(8_000_000, job.width * job.height * job.fps * 0.12)));
   if (!(await canEncodeVideo("avc", { width: job.width, height: job.height, bitrate }))) {
-    throw new Error(`This browser cannot encode ${job.width} × ${job.height} video. Choose a lower export quality.`);
+    throw new Error("web.exportTooLarge");
   }
 
   const input = new Input({ source: new BlobSource(recording), formats: ALL_FORMATS });
@@ -148,7 +148,7 @@ export async function renderExport(
     await output.finalize();
     // A cancel before the file was committed discarded it. Once committing started (the
     // point of no return, where Cancel is no longer offered) the export completes.
-    if (destination.writeError()) throw new Error("The video could not be written to the file. Check the free disk space and try again.");
+    if (destination.writeError()) throw new Error("web.exportWriteFailed");
     if (destination.outcome() !== "kept") throw new ExportCancelled();
     onProgress(100);
   } catch (error) {
@@ -156,7 +156,9 @@ export async function renderExport(
     // Also waits for a cancel already started by the abort handler to finish closing the file.
     if (output && output.state !== "finalized") await output.cancel().catch(() => {});
     if (destination.outcome() !== "kept") await file.abort().catch(() => {});
-    throw signal.aborted && !destination.writeError() ? new ExportCancelled() : error;
+    // The browser's own wording for a failed write is English and technical.
+    if (destination.writeError()) throw new Error("web.exportWriteFailed");
+    throw signal.aborted ? new ExportCancelled() : error;
   } finally {
     signal.removeEventListener("abort", cancel);
     base?.close();
@@ -199,6 +201,7 @@ function transactional(file: FileSystemWritableFileStream, keep: () => boolean, 
       } catch (error) {
         // Not committed: the browser leaves the old content in place.
         outcome = "discarded";
+        writeError ??= error;
         throw error;
       }
       outcome = "kept";

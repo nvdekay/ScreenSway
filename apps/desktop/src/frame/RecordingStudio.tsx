@@ -17,7 +17,7 @@ import {
 } from "@screensway/core";
 import { AlertCircle, Captions, Check, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useI18n } from "../i18n";
+import { isMessageKey, useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
 import { FrameEditor, type RecentImage } from "./FrameEditor";
 import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
@@ -524,7 +524,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           {exportState.status === "failed" && (
             <div className="capture-message error" role="alert">
               <AlertCircle size={18} aria-hidden="true" />
-              <span><strong>{t("export.failed")}</strong><small>{exportState.message}</small></span>
+              <span><strong>{t("export.failed")}</strong><small>{isWeb && isMessageKey(exportState.message) ? t(exportState.message) : exportState.message}</small></span>
             </div>
           )}
         </div>

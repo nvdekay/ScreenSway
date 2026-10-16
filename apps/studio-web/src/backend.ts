@@ -167,7 +167,8 @@ export const commands: Record<string, Command> = {
       });
       target = chosen ?? (await temporaryFile());
       // Exports are only ever streamed to a file, never built in memory.
-      if (!target) throw new Error("This browser cannot save files here. Use a normal (not private) window, or the desktop app.");
+      // Errors are message keys the studio translates (see isMessageKey).
+      if (!target) throw new Error("web.exportNoStorage");
       writable = await target.createWritable();
       const { renderExport } = await import("./exporter");
       let committing = false;
