@@ -262,6 +262,8 @@ function SiteHeader() {
           <div className="header-actions">
             <LanguageSwitch />
           </div>
+          {/* The browser version is part of this site, at ./app/. */}
+          <a className="header-web" href="./app/"><span className="header-web-dot" aria-hidden="true" />{t("nav.web")}</a>
           <button className="header-download" onClick={() => { track("guide_open", { placement: "header" }); openInstallGuide(preferredPlatform()); }}>{t("nav.download")}<ArrowIcon /></button>
         </div>
         <button ref={burgerRef} className="burger" type="button" aria-label={open ? t("nav.menuClose") : t("nav.menuOpen")} aria-expanded={open} aria-controls="site-nav" onClick={() => setOpen(!open)}>
