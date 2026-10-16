@@ -478,8 +478,10 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
               </div>
               <div className="export-row">
                 <span className="export-status"><Loader2 size={15} className="spin" aria-hidden="true" /> {t("export.running", { percent: exportState.progress })}</span>
-                {/* At 100% the file is being completed and can no longer be cancelled. */}
-                {exportState.progress < 100 && (
+                {/* In the browser, 100% means the file is being committed and can no longer be
+                    cancelled. The desktop helper reports 100% before it finalizes and adds the
+                    sound, and can still be stopped then. */}
+                {(!isWeb || exportState.progress < 100) && (
                   <button className="editor-button" onClick={() => void invoke("cancel_export")}>
                     <X size={15} aria-hidden="true" /> {t("export.cancel")}
                   </button>
