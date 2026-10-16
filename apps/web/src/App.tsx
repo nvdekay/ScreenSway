@@ -10,6 +10,7 @@ import { Faq } from "./Faq";
 import { WebBrowserSection } from "./WebBrowserSection";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LogoMark } from "./LogoMark";
+import { HeroBackdrop } from "./HeroBackdrop";
 import { useI18n, type Language } from "./i18n";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
@@ -31,9 +32,6 @@ function ArrowIcon() {
   );
 }
 
-const GLOBE_VIDEO = `${import.meta.env.BASE_URL}hero/globe.mp4`;
-const GLOBE_POSTER = `${import.meta.env.BASE_URL}hero/globe.jpg`;
-const GLOBE_FADE = 0.9;
 
 /**
  * Looping globe and starfield fixed behind the whole page; a veil in the page
@@ -42,70 +40,6 @@ const GLOBE_FADE = 0.9;
  * the loop point instead of snapping. Under reduced motion it holds on the
  * first frame.
  */
-function HeroBackdrop() {
-  const first = useRef<HTMLVideoElement>(null);
-  const second = useRef<HTMLVideoElement>(null);
-  const veil = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onScroll = () => {
-      const height = window.innerHeight;
-      const dim = Math.min(1, Math.max(0, (window.scrollY - height * 0.4) / (height * 0.5)));
-      veil.current?.style.setProperty("--dim", dim.toFixed(3));
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, []);
-  useEffect(() => {
-    const a = first.current;
-    const b = second.current;
-    if (!a || !b) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      a.pause();
-      b.pause();
-      return;
-    }
-    const play = (video: HTMLVideoElement) => { video.play().catch(() => {}); };
-    let current = a;
-    let next = b;
-    let swapping = false;
-    let timer = 0;
-    const tick = () => {
-      if (swapping || !current.duration || current.duration - current.currentTime > GLOBE_FADE) return;
-      swapping = true;
-      const out = current;
-      next.currentTime = 0;
-      play(next);
-      next.classList.add("is-active");
-      out.classList.remove("is-active");
-      current = next;
-      next = out;
-      timer = window.setTimeout(() => {
-        out.pause();
-        out.currentTime = 0;
-        swapping = false;
-      }, GLOBE_FADE * 1000 + 100);
-    };
-    a.addEventListener("timeupdate", tick);
-    b.addEventListener("timeupdate", tick);
-    play(a);
-    return () => {
-      clearTimeout(timer);
-      a.removeEventListener("timeupdate", tick);
-      b.removeEventListener("timeupdate", tick);
-    };
-  }, []);
-  return (
-    <div className="page-bg" ref={veil} aria-hidden="true">
-      <video ref={first} className="hero-video is-active" src={GLOBE_VIDEO} poster={GLOBE_POSTER} muted loop playsInline preload="auto" disablePictureInPicture />
-      <video ref={second} className="hero-video" src={GLOBE_VIDEO} muted loop playsInline preload="auto" disablePictureInPicture />
-    </div>
-  );
-}
 
 /** Scrolls to an in-page section without adding a #fragment to the URL. */
 function scrollToSection(id: string, focus = false) {
@@ -337,7 +271,7 @@ export default function App() {
   return (
     <div id="top">
       <SectionLink to="main" className="skip-link">{t("nav.skip")}</SectionLink>
-      <HeroBackdrop />
+      <HeroBackdrop src={`${import.meta.env.BASE_URL}hero/globe.mp4`} poster={`${import.meta.env.BASE_URL}hero/globe.jpg`} />
       <SiteHeader />
 
       <main id="main" tabIndex={-1}>
