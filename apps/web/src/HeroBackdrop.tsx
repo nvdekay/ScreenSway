@@ -30,18 +30,35 @@ export function HeroBackdrop({ src, poster }: { src: string; poster: string }) {
     const a = first.current;
     const b = second.current;
     if (!a || !b) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      a.pause();
-      b.pause();
-      return;
-    }
+    // Under reduced motion the clip would only stand still: keep the poster and skip the download.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const play = (video: HTMLVideoElement) => { video.play().catch(() => {}); };
+    // Two <video> elements with the same URL each download the whole clip (6.7 MB instead of
+    // 3.3 MB a visit). Fetch it once and give both the same blob; the poster shows meanwhile.
+    let disposed = false;
+    let objectUrl = "";
+    const controller = new AbortController();
+    fetch(src, { signal: controller.signal })
+      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(String(response.status)))))
+      .then((blob) => {
+        if (disposed) return;
+        objectUrl = URL.createObjectURL(blob);
+        a.src = objectUrl;
+        b.src = objectUrl;
+        play(a);
+      })
+      .catch(() => {
+        // Without the blob, play the one copy straight from the site, looping without the cross-fade.
+        if (disposed || controller.signal.aborted) return;
+        a.src = src;
+        play(a);
+      });
     let current = a;
     let next = b;
     let swapping = false;
     let timer = 0;
     const tick = () => {
-      if (swapping || !current.duration || current.duration - current.currentTime > GLOBE_FADE) return;
+      if (swapping || !next.src || !current.duration || current.duration - current.currentTime > GLOBE_FADE) return;
       swapping = true;
       const out = current;
       next.currentTime = 0;
@@ -58,17 +75,19 @@ export function HeroBackdrop({ src, poster }: { src: string; poster: string }) {
     };
     a.addEventListener("timeupdate", tick);
     b.addEventListener("timeupdate", tick);
-    play(a);
     return () => {
+      disposed = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       clearTimeout(timer);
       a.removeEventListener("timeupdate", tick);
       b.removeEventListener("timeupdate", tick);
     };
-  }, []);
+  }, [src]);
   return (
     <div className="page-bg" ref={veil} aria-hidden="true">
-      <video ref={first} className="hero-video is-active" src={src} poster={poster} muted loop playsInline preload="auto" disablePictureInPicture />
-      <video ref={second} className="hero-video" src={src} muted loop playsInline preload="auto" disablePictureInPicture />
+      <video ref={first} className="hero-video is-active" poster={poster} muted loop playsInline preload="auto" disablePictureInPicture />
+      <video ref={second} className="hero-video" muted loop playsInline preload="auto" disablePictureInPicture />
     </div>
   );
 }

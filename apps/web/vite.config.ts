@@ -8,15 +8,16 @@ export default defineConfig(({ mode }) => {
     base: "./",
     plugins: [
       react(),
-      // Everything is bundled; the only request leaves for the analytics API.
+      // Everything is bundled; the only request that leaves the site goes to the analytics API.
       contentSecurityPolicy({
         "default-src": ["'self'"],
         "script-src": ["'self'"],
         "style-src": ["'self'"],
         "img-src": ["'self'", "data:", "blob:"],
-        "media-src": ["'self'"],
+        // The hero clip is fetched once and played from a blob: URL (HeroBackdrop).
+        "media-src": ["'self'", "blob:"],
         "font-src": ["'self'", "data:"],
-        "connect-src": originOf(env.VITE_ANALYTICS_URL).length ? originOf(env.VITE_ANALYTICS_URL) : ["'none'"],
+        "connect-src": ["'self'", ...originOf(env.VITE_ANALYTICS_URL)],
         "worker-src": ["'none'"],
         "object-src": ["'none'"],
         "base-uri": ["'none'"],
