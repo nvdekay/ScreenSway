@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <!-- The script hash must match the inline script below; test/e2e.mjs checks it. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-PPwqk25HzN4RmvvlU+nWo0hjVlomqSuI+LE15TepwU8='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-+sMWBCDrSfpi5TS/UEWwqhaSFVq0UMzbGTS7WPsBBoQ='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
 <title>ScreenSway Analytics</title>
 <style>
   :root {
@@ -503,11 +503,11 @@ function render(data) {
   showView(currentView, false);
 }
 
-async function load() {
+async function load(fresh = false) {
   if (!token) return showLogin();
   document.querySelectorAll("#range button").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.days) === days)));
   try {
-    const response = await fetch(`/v1/stats?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`/v1/stats?days=${days}${fresh ? "&fresh=1" : ""}`, { headers: { Authorization: `Bearer ${token}` } });
     if (response.status === 401) return showLogin("Mã truy cập không đúng.");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     $("#login").hidden = true; $("#app").hidden = false;
@@ -527,9 +527,10 @@ document.querySelector(".side-nav").addEventListener("click", (event) => {
   if (button) showView(button.dataset.nav);
 });
 $("#range").addEventListener("click", (event) => { const d = Number(event.target.dataset?.days); if (d) { days = d; store.set(DAYS_KEY, String(d)); void load(); } });
-$("#refresh").addEventListener("click", () => void load());
+$("#refresh").addEventListener("click", () => void load(true));
 $("#logout").addEventListener("click", () => showLogin());
-setInterval(() => { if (token && !document.hidden) void load(); }, 60000);
+// Reports read every event in the range: refresh every five minutes, or with "Làm mới".
+setInterval(() => { if (token && !document.hidden) void load(); }, 300000);
 void load();
 </script>
 </body>

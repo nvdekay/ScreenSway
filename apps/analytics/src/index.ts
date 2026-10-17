@@ -217,12 +217,28 @@ const rows = (result: D1Result<unknown>) => (result.results ?? []) as Row[];
 const keyCounts = (result: D1Result<unknown>) =>
   rows(result).map((row) => ({ key: row.k === null ? "unknown" : String(row.k), count: Number(row.c) }));
 
+// One report reads every event in its range many times over. Several dashboard tabs (or quick
+// reloads) within a minute share the last report computed by this isolate.
+const STATS_TTL_MS = 60_000;
+const statsCache = new Map<number, { body: string; until: number }>();
+
 async function stats(request: Request, env: Env): Promise<Response> {
   if (!env.DASHBOARD_TOKEN) return json({ error: "DASHBOARD_TOKEN is not configured" }, 503);
   if (!sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`)) return json({ error: "unauthorized" }, 401);
 
   const url = new URL(request.url);
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));
+  const fresh = url.searchParams.has("fresh");
+  const cached = statsCache.get(days);
+  if (!fresh && cached && cached.until > Date.now()) {
+    return new Response(cached.body, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...CORS } });
+  }
+  const response = await computeStats(env, days);
+  statsCache.set(days, { body: await response.clone().text(), until: Date.now() + STATS_TTL_MS });
+  return response;
+}
+
+async function computeStats(env: Env, days: number): Promise<Response> {
   const today = dayOf(Date.now(), env);
   const from = shiftDay(today, -(days - 1));
   const prevTo = shiftDay(from, -1);

@@ -15,11 +15,12 @@ database_id = "9c27780f-e0d6-48ff-8a12-f61d29ac2965"
 migrations_dir = "migrations"
 
 # POST /v1/events per client address. A visit sends a few beacons and the app sends one
-# batch per flush, so this only stops scripted floods (requests over it get 429).
+# batch per flush, so this only stops scripted floods (requests over it get 429). It is
+# generous because mobile carriers put many people behind one address (CGNAT).
 [[ratelimits]]
 name = "INGEST_LIMITER"
 namespace_id = "1001"
-simple = { limit = 60, period = 60 }
+simple = { limit = 120, period = 60 }
 
 [vars]
 # Days in the dashboard follow this offset from UTC (420 = Asia/Ho_Chi_Minh).

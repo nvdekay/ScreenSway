@@ -64,7 +64,7 @@ Adding an event takes three edits: the allow-list in `apps/analytics/src/index.t
   "events": [{ "name": "export_finished", "props": { "quality": "4k", "captions": true } }] }
 ```
 
-`source: "web"` and `source: "studio"` need no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 60 requests a minute (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
+`source: "web"` and `source: "studio"` need no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 120 requests a minute (generous because mobile carriers share one address among many people) (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
 
 `GET /v1/stats?days=30` (header `Authorization: Bearer <DASHBOARD_TOKEN>`, `days` 1–365) returns one JSON document:
 
@@ -84,7 +84,7 @@ The API sends CORS headers, so another page or script can read it with the same 
 
 ## Dashboard
 
-The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every minute and offers 7, 30, 90 and 365-day ranges. Its "Bản web" view shows the browser app: visitors, the open → record → export funnel, success rates, browsers, shared surfaces and audio, export settings, failures and unsupported browsers. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
+The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every five minutes (and on "Làm mới", which asks for a fresh report) and offers 7, 30, 90 and 365-day ranges. Its "Bản web" view shows the browser app: visitors, the open → record → export funnel, success rates, browsers, shared surfaces and audio, export settings, failures and unsupported browsers. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
 
 ## Running and deploying
 
@@ -117,3 +117,7 @@ Then point the clients at the deployed URL:
 - The ingestion endpoint is public, as any client-side analytics endpoint is. The allow-lists keep junk out of the reports but a determined sender can still inflate counts within the per-address rate limit.
 - A download is counted when the button is clicked, not when the file finishes downloading.
 - D1's free tier (5 GB, 100k writes per day at the time of writing) is far above current needs; reports aggregate at query time, so add rollup tables if the events table grows into millions of rows.
+
+## Load and cost
+
+Ingestion is one small `INSERT` batch per request and scales with Cloudflare; the costly part is reading. A report runs about 45 queries over the events in its range, so `/v1/stats` keeps the last report per range for 60 s in the isolate (`?fresh=1` bypasses it), the dashboard refreshes every five minutes, and `migrations/0002_events_by_name.sql` adds an index on `(source, name, day)` so each breakdown reads only its own event's rows. On the Workers free plan the account has 100k requests a day (both Workers together) and D1 100k rows written and 5M rows read a day; a few dashboard loads a day over a large range can use most of the read allowance, so move to the paid plan before traffic grows past a few thousand visits a day.

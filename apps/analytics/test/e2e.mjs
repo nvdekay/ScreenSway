@@ -119,6 +119,11 @@ try {
   assert.ok(!studio.events.some((event) => event.name === "made_up_event"));
   assert.equal(body.totals.exports, 2, "studio exports are not counted as desktop exports");
 
+  // Reports are shared for a minute; "fresh" (the Refresh button) always recomputes.
+  await post({ source: "web", events: [{ name: "page_view", props: { referrer: "direct" } }] }, { "User-Agent": "visitor-3" });
+  assert.equal((await stats()).body.totals.pageViews, 2, "a report within a minute is reused");
+  assert.equal((await stats("secret", "?fresh=1")).body.totals.pageViews, 3, "fresh recomputes");
+
   // The dashboard itself is served as a static page.
   const page = await fetch(base);
   assert.equal(page.status, 200);
@@ -133,7 +138,7 @@ try {
 
   // Floods from one address are cut off by the rate limiter.
   let limited = false;
-  for (let attempt = 0; attempt < 80 && !limited; attempt++) limited = (await post({ source: "web", events: [] })).status === 429;
+  for (let attempt = 0; attempt < 160 && !limited; attempt++) limited = (await post({ source: "web", events: [] })).status === 429;
   assert.ok(limited, "ingestion was not rate limited");
   console.log("analytics e2e: ok");
 } finally {
