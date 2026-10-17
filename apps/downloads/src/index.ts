@@ -31,10 +31,23 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const notFound = () => json({ error: "not found" }, 404);
 
-async function currentTag(env: Env): Promise<string | null> {
+// Every /latest download needs the current tag. Keep it for a short while in this isolate, so a
+// rush of visitors costs one R2 read per isolate instead of one per download. A new release is
+// picked up within this time; the release it replaces stays in the bucket meanwhile.
+const CURRENT_TTL_MS = 30_000;
+let cachedTag: { tag: string | null; until: number } | null = null;
+
+async function readCurrentTag(env: Env): Promise<string | null> {
   const object = await env.BUCKET.get(CURRENT_KEY);
   const tag = object ? (await object.text()).trim() : "";
   return TAG.test(tag) ? tag : null;
+}
+
+async function currentTag(env: Env, fresh = false): Promise<string | null> {
+  if (!fresh && cachedTag && cachedTag.until > Date.now()) return cachedTag.tag;
+  const tag = await readCurrentTag(env);
+  cachedTag = { tag, until: Date.now() + CURRENT_TTL_MS };
+  return tag;
 }
 
 async function serveFile(request: Request, env: Env, tag: string, file: string, immutable: boolean): Promise<Response> {
@@ -81,8 +94,9 @@ async function admin(request: Request, env: Env, url: URL, parts: string[]): Pro
     const missing = [];
     for (const file of REQUIRED) if (!(await env.BUCKET.head(key(tag, file)))) missing.push(file);
     if (missing.length) return json({ error: "release is incomplete", missing }, 409);
-    const previous = await currentTag(env);
+    const previous = await currentTag(env, true);
     await env.BUCKET.put(CURRENT_KEY, tag);
+    cachedTag = { tag, until: Date.now() + CURRENT_TTL_MS };
     // Keep the release being replaced: a client may be mid-update from its feed entry.
     const keep = new Set([tag, previous]);
     const removed: string[] = [];
@@ -130,7 +144,12 @@ async function admin(request: Request, env: Env, url: URL, parts: string[]): Pro
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    let parts: string[];
+    try {
+      parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    } catch {
+      return notFound(); // a malformed %-escape
+    }
     try {
       if (parts[0] === "admin") return await admin(request, env, url, parts);
       if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method not allowed" }, 405);
