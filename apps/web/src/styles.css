@@ -1,4 +1,5 @@
 @import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/plus-jakarta-sans/wght-italic.css"; /* the hero quote */
 
 /* Design tokens: black stage, white ink, system-blue accent shared with the browser app. The page is dark only. */
 :root {
@@ -134,7 +135,7 @@ main:focus { outline: none; }
 .hero-inner::before { content: none; }
 .ent-mask, .ent-line { display: block; }
 .hero h1 { display: flex; flex-direction: column; font-size: clamp(34px, 6vw, 88px); line-height: 1.02; letter-spacing: -.014em; }
-.hero-copy { max-width: 650px; margin: 18px auto 0; color: #f6f6f6; font-size: 17.5px; font-weight: 300; line-height: 27px; letter-spacing: -.017em; text-wrap: pretty; text-shadow: 0 1px 16px #000c; }
+.hero-copy { max-width: 650px; margin: 20px auto 0; color: #f6f6f6; font-size: 21px; font-weight: 400; font-style: italic; line-height: 30px; letter-spacing: -.017em; text-wrap: pretty; text-shadow: 0 1px 16px #000c; }
 .download-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .download-actions.centered { justify-content: center; }
 .button-primary { height: 46px; min-width: 238px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 0 21px 0 19px; border-radius: 23px; background: var(--button-bg); color: var(--button-text); font-size: 15px; font-weight: 500; line-height: 1; letter-spacing: -.02em; white-space: nowrap; transition: background .18s ease, transform .18s ease; }
@@ -558,7 +559,7 @@ main:focus { outline: none; }
   .navrow { width: calc(100% - 16px); height: 50px; padding-left: 11px; border-radius: 14px; }
   .hero-stage { margin-top: -64px; padding: 94px 20px 72px; }
   .hero h1 { line-height: 1.06; letter-spacing: -.02em; }
-  .hero-copy { margin-top: 16px; font-size: 16px; line-height: 1.6; letter-spacing: 0; }
+  .hero-copy { margin-top: 16px; font-size: 18px; line-height: 1.5; letter-spacing: 0; }
   .download-actions { flex-direction: column; align-items: center; gap: 10px; }
   .button-primary { width: min(100%, 272px); }
   .wordmark { font-size: 20px; }

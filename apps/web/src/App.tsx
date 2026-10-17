@@ -279,7 +279,7 @@ export default function App() {
                 <a href="./app/"><span>{t("hero.webBeta")}</span>{t("hero.web")}<ArrowIcon /></a>
               </p>
               <p className="hero-note">
-                v{appVersion} · {t("hero.perks")} · {t("hero.macNote")} · {t("hero.windowsNote")} ·{" "}
+                v{appVersion} · {t("hero.perks")} · {t("hero.platforms")} ·{" "}
                 <button className="link-button" onClick={() => { track("guide_open", { placement: "hero" }); openInstallGuide(preferredPlatform()); }}>{t("hero.howToInstall")}</button>
               </p>
             </div>
