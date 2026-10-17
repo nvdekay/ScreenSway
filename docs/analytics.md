@@ -1,11 +1,11 @@
 # Analytics
 
-ScreenSway measures downloads, landing-page visits and feature usage with its own small service, so every number lives in one place and no third-party tracker is involved.
+ScreenSway measures downloads, landing-page visits, browser-app usage and desktop feature usage with its own small service, so every number lives in one place and no third-party tracker is involved.
 
 ```
-landing page (apps/web) ──┐
-                          ├─ POST /v1/events ─► Worker + D1 (apps/analytics) ─► GET /v1/stats ─► dashboard (/)
-desktop app (opt-in)   ───┘
+landing page (apps/web)        ──┐
+browser app (apps/studio-web)  ──┼─ POST /v1/events ─► Worker + D1 (apps/analytics) ─► GET /v1/stats ─► dashboard (/)
+desktop app (opt-in)           ──┘
 ```
 
 `apps/analytics` is a Cloudflare Worker with a D1 (SQLite) database. It serves three things: the public ingestion endpoint, a token-protected reporting API, and the dashboard page that reads that API.
@@ -16,10 +16,10 @@ desktop app (opt-in)   ───┘
 - Values are filtered twice, in the app (`telemetry.rs`) and in the Worker: only booleans, numbers and labels of at most 40 characters without slashes are kept; unknown event names are dropped.
 - The desktop app sends nothing until the user agrees. The first launch asks once; Settings has a switch. Declining or switching off stops all requests.
 - The app identifies an installation by a random ID stored in `telemetry.json` in the app's config folder. It is not derived from hardware or the user account.
-- The landing page uses no cookies and no browser storage. A visitor is a salted hash of address, browser and day; it changes every day and the address is not stored. `Do Not Track` and Global Privacy Control are honoured.
+- The landing page and the browser app use no cookies and no browser storage for counting. A visitor is a salted hash of address, browser and day; it changes every day and the address is not stored. `Do Not Track` and Global Privacy Control are honoured. The browser app sends only labels (browser, kind of shared surface, export settings, coarse durations, failure kinds), never anything from the recording.
 - The Worker stores the country reported by Cloudflare, never the IP address.
 
-Keep the in-app wording in step with these rules when they change. The landing page shows no notice about its own counting.
+Keep the in-app wording in step with these rules when they change. Neither the landing page nor the browser app shows a notice about this counting; the browser app's "stays on your computer" promise is about the recording, which never leaves the browser.
 
 ## Events
 
@@ -28,6 +28,15 @@ Keep the in-app wording in step with these rules when they change. The landing p
 | web | `page_view` | `referrer` (host or `direct`), `lang`, `theme`, `os` |
 | web | `download_click` | `platform` (`macos`/`windows`), `placement` (`hero`/`cta`/`guide`) |
 | web | `guide_open` | `placement` |
+| studio | `app_open` | `browser` (`chrome`/`edge`/…), `referrer` (`landing`, a host or `direct`) |
+| studio | `unsupported_shown` | `browser`, `reason` (`insecure`/`display`/`recorder`/`streams`/`codecs`/`mobile`) |
+| studio | `recording_started` | `source` (`monitor`/`window`/`browser`), `system_audio`, `shared_audio` (the surface really sent sound), `microphone` |
+| studio | `recording_finished` | `duration` (buckets as below), `format` (`mp4`/`webm`) |
+| studio | `recording_failed` | `reason` (`share_denied`, `mic_denied`, `no_storage`, `start_failed`, `disk_full`, `finish_failed`) |
+| studio | `export_finished` | as the app's |
+| studio | `export_failed` | `reason` (`toolarge`, `unreadable`, `writefailed`, `nostorage`) |
+| studio | `export_cancelled`, `style_applied` | as the app's |
+| studio | `desktop_click` | `placement` (`header`/`unsupported`) |
 | app | `app_open` | — |
 | app | `telemetry_enabled` | — |
 | app | `recording_started` | `source` (`display`/`window`), `system_audio`, `microphone` |
@@ -40,7 +49,9 @@ Keep the in-app wording in step with these rules when they change. The landing p
 | app | `captions_failed` | — |
 | app | `style_applied` | `style` (built-in ID or `custom`) |
 
-Every app batch also carries the app version, `os` (for example `macos-aarch64`) and the UI language.
+Every app batch also carries the app version, `os` (for example `macos-aarch64`) and the UI language. Browser-app batches carry the site's version, `os` (`macos`/`windows`/`linux`/`mobile`) and the page language.
+
+The browser app sends from `apps/studio-web/src/analytics.ts` (its own events) and answers the shared studio's `track_event` command in `backend.ts`, so export and style events come from the same `RecordingStudio` code as on the desktop. It only sends when built with `VITE_ANALYTICS_URL` (set in `web.yml`); local builds and tests send nothing. To add a browser-app event, add it to `STUDIO_EVENTS` in `analytics.ts` and to `EVENTS.studio` (plus `STUDIO_BREAKDOWNS`) in the Worker, and deploy the Worker first.
 
 Adding an event takes three edits: the allow-list in `apps/analytics/src/index.ts` (`EVENTS`, plus `BREAKDOWNS` for a property the dashboard should chart), the allow-list in `apps/desktop/src-tauri/src/telemetry.rs`, and the `TelemetryEvent` type in `apps/desktop/src/telemetry.ts`. Deploy the Worker before shipping an app that sends the new event.
 
@@ -53,7 +64,7 @@ Adding an event takes three edits: the allow-list in `apps/analytics/src/index.t
   "events": [{ "name": "export_finished", "props": { "quality": "4k", "captions": true } }] }
 ```
 
-`source: "web"` needs no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 60 requests a minute (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
+`source: "web"` and `source: "studio"` need no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 60 requests a minute (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
 
 `GET /v1/stats?days=30` (header `Authorization: Bearer <DASHBOARD_TOKEN>`, `days` 1–365) returns one JSON document:
 
@@ -65,6 +76,7 @@ Adding an event takes three edits: the allow-list in `apps/analytics/src/index.t
 - `web` (`countries`, `referrers`, `os`, `languages`, `themes`) and `app` (`versions`, `os`, `countries`, `locales`) as `{key, count}` lists.
 - `breakdowns`: `{key, count}` lists per charted property, for example `exportQuality`, `exportFrame`, `recordingSource`, `captionLocale`, `downloadPlacement`.
 - `recent`: the latest 40 events.
+- `studio`: the browser app. `totals`/`previous` (`visitors`, `opens`, `unsupported`, `recordingsStarted`, `recordings`, `recordingFailures`, `exports`, `exportFailures`, `exportCancels`, `styles`, `desktopClicks`), `funnel` (visitor-days that `opened`, `started`, `recorded`, `exported`), daily `series` (`visitors`, `recordings`, `exports`, `failures`), `events`, `countries`, `os`, `locales` and `breakdowns` (for example `browser`, `recordingSource`, `recordingFailure`, `exportQuality`, `unsupportedReason`, `desktopPlacement`). Visitors and the funnel count visitor-days, because the visitor hash rotates daily.
 
 The API sends CORS headers, so another page or script can read it with the same token. `GET /v1/health` is an unauthenticated liveness check.
 
@@ -72,7 +84,7 @@ The API sends CORS headers, so another page or script can read it with the same 
 
 ## Dashboard
 
-The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every minute and offers 7, 30, 90 and 365-day ranges. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
+The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every minute and offers 7, 30, 90 and 365-day ranges. Its "Bản web" view shows the browser app: visitors, the open → record → export funnel, success rates, browsers, shared surfaces and audio, export settings, failures and unsupported browsers. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
 
 ## Running and deploying
 

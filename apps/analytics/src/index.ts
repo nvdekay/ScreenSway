@@ -1,7 +1,7 @@
 /**
  * ScreenSway analytics: a small ingestion and reporting API.
  *
- *   POST /v1/events   public; anonymous events from the landing page and the desktop app
+ *   POST /v1/events   public; anonymous events from the landing page, the browser app and the desktop app
  *   GET  /v1/stats    bearer token; every number the dashboard shows, as one JSON document
  *   GET  /v1/health   liveness
  *   GET  /            the dashboard (static asset in ./public)
@@ -18,11 +18,24 @@ export interface Env {
   INGEST_LIMITER?: RateLimit;
 }
 
-type Source = "web" | "app";
+/** web = landing page, studio = the browser app at /app/, app = the desktop app. */
+type Source = "web" | "studio" | "app";
 
 /** Events the API accepts. Anything else is dropped, so a typo or abuse cannot invent metrics. */
 const EVENTS: Record<Source, readonly string[]> = {
   web: ["page_view", "download_click", "guide_open"],
+  studio: [
+    "app_open",
+    "unsupported_shown",
+    "recording_started",
+    "recording_finished",
+    "recording_failed",
+    "export_finished",
+    "export_failed",
+    "export_cancelled",
+    "style_applied",
+    "desktop_click",
+  ],
   app: [
     "app_open",
     "telemetry_enabled",
@@ -57,6 +70,31 @@ const BREAKDOWNS: readonly [string, Source, string, string][] = [
   ["exportDuration", "app", "export_finished", "duration"],
   ["captionLocale", "app", "captions_generated", "locale"],
   ["styleApplied", "app", "style_applied", "style"],
+];
+
+/** The same kind of breakdowns for the browser app, reported under `studio.breakdowns`. */
+const STUDIO_BREAKDOWNS: readonly [string, string, string][] = [
+  ["browser", "app_open", "browser"],
+  ["referrer", "app_open", "referrer"],
+  ["unsupportedBrowser", "unsupported_shown", "browser"],
+  ["unsupportedReason", "unsupported_shown", "reason"],
+  ["recordingSource", "recording_started", "source"],
+  ["recordingSystemAudio", "recording_started", "system_audio"],
+  ["recordingSharedAudio", "recording_started", "shared_audio"],
+  ["recordingMicrophone", "recording_started", "microphone"],
+  ["recordingDuration", "recording_finished", "duration"],
+  ["recordingFormat", "recording_finished", "format"],
+  ["recordingFailure", "recording_failed", "reason"],
+  ["exportQuality", "export_finished", "quality"],
+  ["exportFrame", "export_finished", "frame"],
+  ["exportAspect", "export_finished", "aspect"],
+  ["exportBackground", "export_finished", "background"],
+  ["exportAutoZoom", "export_finished", "auto_zoom"],
+  ["exportTrimmed", "export_finished", "trimmed"],
+  ["exportDuration", "export_finished", "duration"],
+  ["exportFailure", "export_failed", "reason"],
+  ["styleApplied", "style_applied", "style"],
+  ["desktopPlacement", "desktop_click", "placement"],
 ];
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -136,7 +174,7 @@ async function ingest(request: Request, env: Env): Promise<Response> {
     return json({ error: "invalid JSON" }, 400);
   }
   const source = body.source;
-  if (source !== "web" && source !== "app") return json({ error: "unknown source" }, 400);
+  if (source !== "web" && source !== "studio" && source !== "app") return json({ error: "unknown source" }, 400);
   if (!Array.isArray(body.events)) return json({ error: "events must be an array" }, 400);
 
   const now = Date.now();
@@ -148,7 +186,7 @@ async function ingest(request: Request, env: Env): Promise<Response> {
   } else {
     // Without the salt the visitor hash would be an unsalted digest of address and browser.
     if (!env.ACTOR_SALT) return json({ error: "ACTOR_SALT is not configured" }, 503);
-    // A visitor is "the same address and browser on the same day". The hash cannot be
+    // A visitor (of the landing page or the browser app) is "the same address and browser on the same day". The hash cannot be
     // reversed or linked across days, and the address itself is never stored.
     const agent = request.headers.get("User-Agent") ?? "";
     actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT}`)).slice(0, 32);
@@ -278,6 +316,7 @@ async function stats(request: Request, env: Env): Promise<Response> {
     };
   });
 
+  const studio = await studioStats(db, days, from, today, prevFrom, prevTo);
   const life = rows(allTime)[0] ?? {};
   return json({
     generatedAt: new Date().toISOString(),
@@ -302,6 +341,7 @@ async function stats(request: Request, env: Env): Promise<Response> {
       locales: keyCounts(locales),
     },
     breakdowns: Object.fromEntries(BREAKDOWNS.map(([key], index) => [key, keyCounts(results[fixed.length + index])])),
+    studio,
     recent: rows(recent).map((row) => ({
       ts: Number(row.ts),
       source: row.source,
@@ -312,6 +352,74 @@ async function stats(request: Request, env: Env): Promise<Response> {
       props: row.props ? (JSON.parse(String(row.props)) as unknown) : null,
     })),
   });
+}
+
+/**
+ * The browser app's numbers. Its visitor hash rotates daily like the landing page's, so
+ * "visitors" and the funnel count visitor-days: one person on two days counts twice.
+ */
+async function studioStats(db: D1Database, days: number, from: string, to: string, prevFrom: string, prevTo: string) {
+  const range = "source = 'studio' AND day BETWEEN ? AND ?";
+  const byName = (a: string, b: string) =>
+    db.prepare(`SELECT name, COUNT(*) c, COUNT(DISTINCT day || actor) u FROM events WHERE ${range} GROUP BY name`).bind(a, b);
+  const visitors = (a: string, b: string) => db.prepare(`SELECT COUNT(DISTINCT day || actor) c FROM events WHERE ${range}`).bind(a, b);
+  const dimension = (column: string) =>
+    db.prepare(`SELECT ${column} k, COUNT(DISTINCT day || actor) c FROM events WHERE ${range} GROUP BY k ORDER BY c DESC LIMIT 12`).bind(from, to);
+  const results = await db.batch([
+    byName(from, to),
+    byName(prevFrom, prevTo),
+    visitors(from, to),
+    visitors(prevFrom, prevTo),
+    db.prepare(`SELECT day, name, COUNT(*) c FROM events WHERE ${range} GROUP BY day, name`).bind(from, to),
+    db.prepare(`SELECT day, COUNT(DISTINCT actor) c FROM events WHERE ${range} GROUP BY day`).bind(from, to),
+    dimension("country"),
+    dimension("os"),
+    dimension("locale"),
+    ...STUDIO_BREAKDOWNS.map(([, name, prop]) =>
+      db.prepare(`SELECT ${propValue(prop)} k, COUNT(*) c FROM events WHERE ${range} AND name = ? GROUP BY k ORDER BY c DESC LIMIT 12`).bind(from, to, name),
+    ),
+  ]);
+  const [cur, prev, visitorsCur, visitorsPrev, daily, dailyVisitors, countries, oses, locales] = results;
+  const summarize = (result: D1Result<unknown>, visitorCount: number) => {
+    const count = (name: string) => Number(rows(result).find((row) => row.name === name)?.c ?? 0);
+    return {
+      visitors: visitorCount,
+      opens: count("app_open"),
+      unsupported: count("unsupported_shown"),
+      recordingsStarted: count("recording_started"),
+      recordings: count("recording_finished"),
+      recordingFailures: count("recording_failed"),
+      exports: count("export_finished"),
+      exportFailures: count("export_failed"),
+      exportCancels: count("export_cancelled"),
+      styles: count("style_applied"),
+      desktopClicks: count("desktop_click"),
+    };
+  };
+  const reached = (name: string) => Number(rows(cur).find((row) => row.name === name)?.u ?? 0);
+  const one = (result: D1Result<unknown>) => Number(rows(result)[0]?.c ?? 0);
+  return {
+    totals: summarize(cur, one(visitorsCur)),
+    previous: summarize(prev, one(visitorsPrev)),
+    // Visitor-days that reached each step, in order.
+    funnel: { opened: reached("app_open"), started: reached("recording_started"), recorded: reached("recording_finished"), exported: reached("export_finished") },
+    series: Array.from({ length: days }, (_, index) => {
+      const day = shiftDay(from, index);
+      const count = (name: string) => Number(rows(daily).find((row) => row.day === day && row.name === name)?.c ?? 0);
+      return {
+        day,
+        visitors: Number(rows(dailyVisitors).find((row) => row.day === day)?.c ?? 0),
+        recordings: count("recording_finished"),
+        exports: count("export_finished"),
+        failures: count("recording_failed") + count("export_failed"),
+      };
+    }),
+    events: rows(cur).map((row) => ({ name: row.name, count: Number(row.c), visitors: Number(row.u) })),
+    countries: keyCounts(countries),
+    os: keyCounts(oses),
+    locales: keyCounts(locales),
+    breakdowns: Object.fromEntries(STUDIO_BREAKDOWNS.map(([key], index) => [key, keyCounts(results[9 + index])])),
+  };
 }
 
 export default {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <!-- The script hash must match the inline script below; test/e2e.mjs checks it. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-sNHVt/nENhL0KWW/5wa7xdF+hbbfL1yKnvSlyM1Z9BU='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-PPwqk25HzN4RmvvlU+nWo0hjVlomqSuI+LE15TepwU8='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
 <title>ScreenSway Analytics</title>
 <style>
   :root {
@@ -162,6 +162,7 @@
       <button class="nav-item" data-nav="acquisition"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Thu hút & tải</button>
       <button class="nav-item" data-nav="audience"><svg viewBox="0 0 24 24" fill="none"><path d="M16 20v-1.7c0-2.4-1.8-4.3-4-4.3H7c-2.2 0-4 1.9-4 4.3V20m6.5-10A3.5 3.5 0 1 0 9.5 3a3.5 3.5 0 0 0 0 7Zm7-5.8a3.5 3.5 0 0 1 0 6.6M21 20v-1.7c0-2-1.2-3.6-3-4.1" stroke-width="1.8" stroke-linecap="round"/></svg>Người dùng</button>
       <button class="nav-item" data-nav="product"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9ZM4.5 7.8 12 12l7.5-4.2M12 12v9" stroke-width="1.8" stroke-linejoin="round"/></svg>Sản phẩm</button>
+      <button class="nav-item" data-nav="studio"><svg viewBox="0 0 24 24" fill="none"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11ZM3 9h18M6.5 6.5h.01M9 6.5h.01" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14.5" r="2.5" stroke-width="1.8"/></svg>Bản web</button>
       <button class="nav-item" data-nav="activity"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 12h16M4 19h16M7 3v4m8 3v4m-5 3v4" stroke-width="1.8" stroke-linecap="round"/></svg>Hoạt động</button>
     </nav>
     <div class="sidebar-foot"><button class="nav-item" id="logout"><svg viewBox="0 0 24 24" fill="none"><path d="M10 5H5v14h5m4-3 4-4-4-4m4 4H9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Đăng xuất</button></div>
@@ -186,7 +187,7 @@ const keep = (area) => ({ get: (k) => { try { return area().getItem(k); } catch 
 const store = keep(() => localStorage), session = keep(() => sessionStorage);
 store.set(TOKEN_KEY, null); // left by older versions of this page
 let token = session.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
-const VIEW_NAMES = { overview: "Tổng quan", acquisition: "Thu hút & tải", audience: "Người dùng", product: "Sản phẩm", activity: "Hoạt động" };
+const VIEW_NAMES = { overview: "Tổng quan", acquisition: "Thu hút & tải", audience: "Người dùng", product: "Sản phẩm", studio: "Bản web", activity: "Hoạt động" };
 let currentView = VIEW_NAMES[location.hash.slice(1)] ? location.hash.slice(1) : "overview";
 
 const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
@@ -198,8 +199,18 @@ const EVENT_NAMES = {
   recording_failed: "Ghi hình lỗi", recording_opened: "Mở lại bản ghi cũ", export_finished: "Xuất video xong", export_failed: "Xuất video lỗi",
   export_cancelled: "Huỷ xuất video", captions_generated: "Tạo phụ đề", captions_failed: "Tạo phụ đề lỗi", style_applied: "Áp dụng style",
   page_view: "Xem landing page", download_click: "Bấm tải", guide_open: "Mở hướng dẫn cài đặt",
+  unsupported_shown: "Trình duyệt không hỗ trợ", desktop_click: "Bấm sang app máy tính",
 };
-const VALUE_NAMES = { true: "Bật", false: "Tắt", unknown: "Không rõ", macos: "macOS", windows: "Windows", display: "Màn hình", window: "Cửa sổ", direct: "Truy cập trực tiếp" };
+const SOURCE_NAMES = { app: "App", web: "Landing", studio: "Bản web" };
+const VALUE_NAMES = {
+  true: "Bật", false: "Tắt", unknown: "Không rõ", macos: "macOS", windows: "Windows", linux: "Linux", mobile: "Điện thoại", other: "Khác",
+  display: "Màn hình", window: "Cửa sổ", monitor: "Toàn màn hình", browser: "Tab trình duyệt", direct: "Truy cập trực tiếp", landing: "Từ landing page",
+  chrome: "Chrome", edge: "Edge", firefox: "Firefox", safari: "Safari", opera: "Opera", mp4: "MP4", webm: "WebM",
+  share_denied: "Huỷ chọn nội dung chia sẻ", mic_denied: "Micro bị chặn", no_storage: "Cửa sổ không có bộ nhớ (ẩn danh)", disk_full: "Hết dung lượng ổ đĩa",
+  start_failed: "Lỗi khi bắt đầu", finish_failed: "Lỗi khi hoàn tất", insecure: "Không phải HTTPS", recorder: "Thiếu MediaRecorder",
+  streams: "Thiếu API xử lý luồng", codecs: "Thiếu WebCodecs", toolarge: "Video quá lớn", unreadable: "Không đọc được bản quay",
+  writefailed: "Không ghi được file", nostorage: "Không lưu được file", header: "Header", compare: "Phần so sánh", unsupported: "Màn hình không hỗ trợ",
+};
 const label = (key) => VALUE_NAMES[key] ?? key;
 
 function delta(current, previous, upIsGood = true) {
@@ -290,6 +301,78 @@ function showView(view, updateUrl = true) {
   $("#page-title").textContent = VIEW_NAMES[view];
   if (updateUrl) history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// The browser app at /app/: visits, the record → export funnel, settings and failures.
+function studioView(w) {
+  if (!w) return `<section data-view="studio" hidden><div class="card empty">API chưa trả số liệu bản web.</div></section>`;
+  const t = w.totals, p = w.previous, B = (key) => w.breakdowns[key] ?? [];
+  const rate = (a, v) => (v ? `${((a / v) * 100).toFixed(1)}%` : "–");
+  const f = w.funnel, base = f.opened || 1;
+  const funnel = [
+    { key: "Mở bản web", count: f.opened },
+    { key: "Bắt đầu quay", count: f.started },
+    { key: "Quay xong", count: f.recorded },
+    { key: "Xuất video", count: f.exported },
+  ];
+  const finishedExports = t.exports + t.exportFailures + t.exportCancels;
+  return `
+    <section data-view="studio" hidden>
+      <div class="view-head"><h2>Bản web</h2><p>Người dùng quay màn hình ngay trên trình duyệt (/app/): từ lượt mở đến video xuất xong.</p></div>
+      <div class="grid tiles">
+        ${tile("Khách dùng bản web", compact(t.visitors), delta(t.visitors, p.visitors), true)}
+        ${tile("Bản quay hoàn tất", compact(t.recordings), delta(t.recordings, p.recordings))}
+        ${tile("Video đã xuất", compact(t.exports), delta(t.exports, p.exports))}
+        ${tile("Tỉ lệ khách xuất video", rate(f.exported, f.opened), `<span class="delta">${compact(f.exported)} / ${compact(f.opened)} khách-ngày mở bản web</span>`)}
+      </div>
+      <div class="grid tiles">
+        ${tile("Quay thành công", rate(t.recordings, t.recordingsStarted), `<span class="delta">${compact(t.recordingFailures)} lần quay lỗi · ${compact(t.recordingsStarted)} lần bắt đầu</span>`)}
+        ${tile("Xuất thành công", rate(t.exports, finishedExports), `<span class="delta">${compact(t.exportFailures)} lỗi · ${compact(t.exportCancels)} huỷ</span>`)}
+        ${tile("Trình duyệt không hỗ trợ", compact(t.unsupported), delta(t.unsupported, p.unsupported, false))}
+        ${tile("Bấm sang app máy tính", compact(t.desktopClicks), delta(t.desktopClicks, p.desktopClicks))}
+      </div>
+      <div class="section-title"><h3>Phễu sử dụng</h3><span>Tính theo khách-ngày (mã khách đổi mỗi ngày)</span></div>
+      <div class="grid two">
+        ${card("Từ mở trang đến xuất video", "Số khách-ngày đi tới từng bước", barList(funnel, { secondary: (item) => `${Math.round((item.count / base) * 100)}%` }))}
+        ${card("Hoạt động theo ngày", "Khách, bản quay và video xuất", chart(w.series, [{ key: "visitors", name: "Khách", color: "var(--s1)" }, { key: "recordings", name: "Bản quay", color: "var(--s2)" }, { key: "exports", name: "Video xuất", color: "var(--s3)" }], "line"))}
+      </div>
+      <div class="section-title"><h3>Khách truy cập</h3><span>Trình duyệt, nguồn và khu vực</span></div>
+      <div class="grid three">
+        ${card("Trình duyệt", "Khi mở bản web", barList(B("browser")))}
+        ${card("Nguồn truy cập", "Từ landing page hay nơi khác", barList(B("referrer")))}
+        ${card("Hệ điều hành", "Theo khách-ngày", barList(w.os))}
+        ${card("Quốc gia", "Theo khách-ngày", barList(w.countries))}
+        ${card("Ngôn ngữ trang", "EN hay VI", barList(w.locales))}
+        ${card("Nút sang app máy tính", "Vị trí được bấm", barList(B("desktopPlacement")))}
+      </div>
+      <div class="section-title"><h3>Ghi hình</h3><span>Nội dung chia sẻ, âm thanh và lỗi</span></div>
+      <div class="grid three">
+        ${card("Nội dung chia sẻ", "Màn hình, cửa sổ hay tab", barList(B("recordingSource")))}
+        ${card("Âm thanh hệ thống", "Người dùng bật hay tắt", barList(B("recordingSystemAudio")))}
+        ${card("Có thu được âm thanh", "Trình duyệt có gửi âm thanh không", barList(B("recordingSharedAudio")))}
+        ${card("Micro", "Bật hoặc tắt", barList(B("recordingMicrophone")))}
+        ${card("Độ dài bản quay", "Theo nhóm thời lượng", barList(B("recordingDuration")))}
+        ${card("Định dạng ghi", "MP4 hay WebM", barList(B("recordingFormat")))}
+        ${card("Lỗi ghi hình", "Theo nhóm lỗi", barList(B("recordingFailure")))}
+      </div>
+      <div class="section-title"><h3>Chỉnh sửa & xuất video</h3><span>Lựa chọn trong studio</span></div>
+      <div class="grid three">
+        ${card("Chất lượng xuất", "1080p / 1440p / 4K", barList(B("exportQuality")))}
+        ${card("Khung cửa sổ", "Loại khung trong video", barList(B("exportFrame")))}
+        ${card("Tỉ lệ khung hình", "Khi xuất video", barList(B("exportAspect")))}
+        ${card("Nền khi xuất", "Loại nền", barList(B("exportBackground")))}
+        ${card("Auto-zoom", "Bật hoặc tắt", barList(B("exportAutoZoom")))}
+        ${card("Cắt đầu/cuối", "Video có trim không", barList(B("exportTrimmed")))}
+        ${card("Độ dài video", "Theo nhóm thời lượng", barList(B("exportDuration")))}
+        ${card("Style được áp dụng", "Style có sẵn hoặc tự lưu", barList(B("styleApplied")))}
+        ${card("Lỗi xuất video", "Theo nhóm lỗi", barList(B("exportFailure")))}
+      </div>
+      <div class="section-title"><h3>Trình duyệt không hỗ trợ</h3><span>Khách không quay được</span></div>
+      <div class="grid two">
+        ${card("Lý do", "Thiếu tính năng nào", barList(B("unsupportedReason")))}
+        ${card("Trình duyệt", "Của khách không quay được", barList(B("unsupportedBrowser")))}
+      </div>
+    </section>`;
 }
 
 function render(data) {
@@ -403,13 +486,15 @@ function render(data) {
       </div>
     </section>
 
+    ${studioView(data.studio)}
+
     <section data-view="activity" hidden>
-      <div class="view-head"><h2>Hoạt động gần đây</h2><p>Dòng sự kiện mới nhất từ landing page và ứng dụng desktop.</p></div>
+      <div class="view-head"><h2>Hoạt động gần đây</h2><p>Dòng sự kiện mới nhất từ landing page, bản web và ứng dụng desktop.</p></div>
       <div class="card scroll"><table>
       <thead><tr><th>Thời gian</th><th>Nguồn</th><th>Sự kiện</th><th>Phiên bản</th><th>Hệ điều hành</th><th>Quốc gia</th><th>Chi tiết</th></tr></thead>
       <tbody>${data.recent.map((event) => `<tr>
         <td>${new Date(event.ts).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
-        <td><span class="pill">${event.source === "app" ? "App" : "Web"}</span></td>
+        <td><span class="pill">${SOURCE_NAMES[event.source] ?? esc(event.source)}</span></td>
         <td>${esc(EVENT_NAMES[event.name] ?? event.name)}</td><td>${esc(event.version ?? "")}</td><td>${esc(event.os ?? "")}</td><td>${esc(event.country ?? "")}</td>
         <td class="props">${event.props ? esc(Object.entries(event.props).map(([k, v]) => `${k}: ${v}`).join(" · ")) : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">Chưa có sự kiện nào.</td></tr>`}</tbody>
       </table></div>

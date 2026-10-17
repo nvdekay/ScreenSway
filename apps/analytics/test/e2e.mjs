@@ -51,6 +51,18 @@ try {
   ] });
   await post({ source: "app", installId: installB, version: "0.3.1", os: "windows-x86_64", locale: "en", events: [{ name: "app_open" }, { name: "export_finished", props: { quality: "1080p", frame: "none", captions: false } }] });
 
+  // The browser app (source "studio") is counted per visitor-day, like the landing page.
+  await post({ source: "studio", version: "0.3.3", os: "macos", locale: "vi", events: [
+    { name: "app_open", props: { browser: "edge", referrer: "landing" } },
+    { name: "recording_started", props: { source: "monitor", system_audio: true, shared_audio: false, microphone: false } },
+    { name: "recording_finished", props: { duration: "<30s", format: "mp4" } },
+    { name: "style_applied", props: { style: "clean" } },
+    { name: "export_finished", props: { quality: "1080p", frame: "macos-dark", aspect: "auto", background: "mesh", auto_zoom: true, trimmed: false, duration: "<30s" } },
+    { name: "made_up_event" },
+  ] }, { "User-Agent": "studio-visitor-1" });
+  await post({ source: "studio", events: [{ name: "desktop_click", props: { placement: "header" } }] }, { "User-Agent": "studio-visitor-1" });
+  await post({ source: "studio", events: [{ name: "unsupported_shown", props: { browser: "safari", reason: "streams" } }] }, { "User-Agent": "studio-visitor-2" });
+
   assert.equal((await post({ source: "app", installId: "not-an-id", events: [{ name: "app_open" }] })).status, 400);
   assert.equal((await post({ source: "other", events: [] })).status, 400);
   assert.equal((await post("{not json")).status, 400);
@@ -89,6 +101,23 @@ try {
   const exported = body.recent.find((event) => event.name === "export_finished" && event.props.quality === "4k");
   assert.deepEqual(exported.props, { quality: "4k", frame: "macos-dark", captions: true });
   assert.equal((await stats("secret", "?days=7")).body.series.length, 7);
+
+  // The browser app has its own section, and its events never leak into the desktop numbers.
+  const studio = body.studio;
+  assert.deepEqual(
+    [studio.totals.visitors, studio.totals.opens, studio.totals.recordingsStarted, studio.totals.recordings, studio.totals.exports, studio.totals.styles, studio.totals.unsupported, studio.totals.desktopClicks],
+    [2, 1, 1, 1, 1, 1, 1, 1],
+  );
+  assert.deepEqual(studio.funnel, { opened: 1, started: 1, recorded: 1, exported: 1 });
+  assert.deepEqual(studio.breakdowns.browser, [{ key: "edge", count: 1 }]);
+  assert.deepEqual(studio.breakdowns.recordingSource, [{ key: "monitor", count: 1 }]);
+  assert.deepEqual(studio.breakdowns.recordingSharedAudio, [{ key: "false", count: 1 }]);
+  assert.deepEqual(studio.breakdowns.unsupportedReason, [{ key: "streams", count: 1 }]);
+  assert.deepEqual(studio.breakdowns.desktopPlacement, [{ key: "header", count: 1 }]);
+  assert.equal(studio.series.length, 30);
+  assert.deepEqual([studio.series.at(-1).visitors, studio.series.at(-1).recordings, studio.series.at(-1).exports], [2, 1, 1]);
+  assert.ok(!studio.events.some((event) => event.name === "made_up_event"));
+  assert.equal(body.totals.exports, 2, "studio exports are not counted as desktop exports");
 
   // The dashboard itself is served as a static page.
   const page = await fetch(base);
