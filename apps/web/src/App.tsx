@@ -12,7 +12,7 @@ import { InstallGuide, openInstallGuide } from "./InstallGuide";
 import { LanguageToggle } from "../../desktop/src/LanguageToggle";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { HeroBackdrop } from "./HeroBackdrop";
-import { useI18n, type Language } from "./i18n";
+import { useI18n } from "./i18n";
 
 // Served by the landing page itself; the deploy workflow copies it from the latest release.
 const MAC_DOWNLOAD = DOWNLOADS.macos;
