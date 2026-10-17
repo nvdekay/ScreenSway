@@ -54,7 +54,6 @@ export function InstallGuide() {
         <button className="guide-close" onClick={() => dialogRef.current?.close()} aria-label={t("guide.close")}>
           <X size={18} />
         </button>
-        <span className="kicker">{t("guide.kicker")}</span>
         <h2 id="install-guide-title">{t("guide.title")}</h2>
         <div className="guide-platforms">
           {(["macos", "windows"] as const).map((option) => <button key={option} aria-pressed={platform === option} onClick={() => setPlatform(option)}>{option === "macos" ? "macOS" : "Windows"}</button>)}

@@ -58,6 +58,9 @@ jobs:
       - run: |
           pnpm --filter @screensway/studio-web build
           cp -R apps/studio-web/dist apps/web/dist/app
+        env:
+          # Its anonymous usage counts go to the same analytics API, as source "studio".
+          VITE_ANALYTICS_URL: https://screensway-analytics.visual-lab-dm4.workers.dev
       # The repository is private, so release assets are not publicly downloadable.
       # Copy the latest complete release to the downloads Worker. While a new release
       # is still waiting for its Windows installer, keep offering the current one.

@@ -1,5 +1,5 @@
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, ArrowRight, Check, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LanguageToggle } from "../../desktop/src/LanguageToggle";
 import { LogoMark } from "../../desktop/src/LogoMark";
@@ -7,6 +7,7 @@ import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
+import { durationBucket, track, trackOpen } from "./analytics";
 import { EXPORT_SAVED, removeRecording } from "./backend";
 import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
 import { ResultPreview } from "./ResultPreview";
@@ -21,9 +22,9 @@ const LANDING_URL = "../";
  * Links to the landing page stay in this tab, with the page transition both pages declare.
  * An unexported recording still asks before leaving (see the beforeunload effect).
  */
-function LandingLink({ className, label, children }: { className?: string; label?: string; children: ReactNode }) {
+function LandingLink({ className, label, placement, children }: { className?: string; label?: string; placement: "header" | "unsupported"; children: ReactNode }) {
   return (
-    <a className={className} href={LANDING_URL} aria-label={label}>
+    <a className={className} href={LANDING_URL} aria-label={label} onClick={() => track("desktop_click", { placement })}>
       {children}
     </a>
   );
@@ -35,8 +36,16 @@ function LanguageSwitch() {
   return <LanguageToggle language={language} onChange={setLanguage} label={t("web.language")} />;
 }
 
+/** A short label for a failed start, for the anonymous statistics (never the message itself). */
+function startFailure(error: unknown): string {
+  if (error instanceof ShareCancelledError) return "share_denied";
+  if (error instanceof MicrophoneBlockedError) return "mic_denied";
+  if (error instanceof StorageUnavailableError) return "no_storage";
+  return "start_failed";
+}
+
 export function WebApp() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const unsupported = useMemo(unsupportedReason, []);
   const [systemAudio, setSystemAudio] = useState(true);
   const [microphone, setMicrophone] = useState(false);
@@ -50,6 +59,8 @@ export function WebApp() {
   const recordingRef = useRef<ScreenRecording | null>(null);
   const previewRef = useRef<HTMLElement>(null);
   const recording = status === "recording" || status === "finishing";
+
+  useEffect(() => trackOpen(unsupported, language), [unsupported, language]);
 
   useEffect(() => {
     if (status !== "recording") return;
@@ -87,6 +98,7 @@ export function WebApp() {
       setStartedAt(performance.now());
       setNow(performance.now());
       setStatus("recording");
+      track("recording_started", { source: session.surface, system_audio: systemAudio, shared_audio: session.sharedAudio, microphone });
     } catch (startError) {
       // start() already releases the screen and microphone; this is a second guard.
       session.cancel();
@@ -96,6 +108,7 @@ export function WebApp() {
       else if (startError instanceof MicrophoneBlockedError) setError(t("web.micDenied"));
       else if (startError instanceof StorageUnavailableError) setError(t("web.noStorage"));
       else setError(t("web.failed", { message: startError instanceof Error ? startError.message : String(startError) }));
+      track("recording_failed", { reason: startFailure(startError) });
     }
   }
 
@@ -112,6 +125,7 @@ export function WebApp() {
         throw prepareError;
       });
       setExported(false);
+      track("recording_finished", { duration: durationBucket(prepared.durationMs), format: session.format });
       setResult((previous) => {
         if (previous) removeRecording(previous.projectPath);
         return prepared;
@@ -119,6 +133,7 @@ export function WebApp() {
     } catch (stopError) {
       if (stopError instanceof StorageFullError) setError(t("web.diskFull"));
       else setError(t("web.failed", { message: stopError instanceof Error ? stopError.message : String(stopError) }));
+      track("recording_failed", { reason: stopError instanceof StorageFullError ? "disk_full" : "finish_failed" });
     } finally {
       setStatus("idle");
     }
@@ -137,7 +152,7 @@ export function WebApp() {
         </a>
         <nav aria-label={t("web.headerNav")}>
           <LanguageSwitch />
-          <LandingLink label={t("web.desktopApp")}>
+          <LandingLink label={t("web.desktopApp")} placement="header">
             <Download size={15} aria-hidden="true" />
             <span>{t("web.desktopApp")}</span>
           </LandingLink>
@@ -151,7 +166,7 @@ export function WebApp() {
             <span className="web-kicker">ScreenSway Web · Beta</span>
             <h1>{t("web.unsupportedTitle")}</h1>
             <p>{t("web.unsupportedBody")}</p>
-            <LandingLink>
+            <LandingLink placement="unsupported">
               {t("web.unsupportedDownload")}
               <ArrowRight size={16} aria-hidden="true" />
             </LandingLink>
@@ -236,37 +251,6 @@ export function WebApp() {
                     <p className="requirements"><Lock size={13} aria-hidden="true" />{t("web.requirements")}</p>
                   </>
                 )}
-              </div>
-            </div>
-
-            <ol className="web-steps">
-              {(["1", "2", "3"] as const).map((step) => (
-                <li key={step}>
-                  <b>{step}</b>
-                  <span>
-                    <strong>{t(`web.step${step}`)}</strong>
-                    <small>{t(`web.step${step}Copy`)}</small>
-                  </span>
-                </li>
-              ))}
-            </ol>
-
-            <div className="web-compare">
-              <div>
-                <span>{t("web.browserIncludes")}</span>
-                <ul>
-                  <li><Check aria-hidden="true" />{t("web.includeZoom")}</li>
-                  <li><Check aria-hidden="true" />{t("web.includeStudio")}</li>
-                  <li><Check aria-hidden="true" />{t("web.includeExport")}</li>
-                </ul>
-              </div>
-              <div>
-                <span>{t("web.desktopAdds")}</span>
-                <p>{t("web.desktopLimits")}</p>
-                <LandingLink>
-                  {t("web.viewDesktop")}
-                  <ArrowRight aria-hidden="true" />
-                </LandingLink>
               </div>
             </div>
           </section>

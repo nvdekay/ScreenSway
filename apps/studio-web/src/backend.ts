@@ -1,6 +1,8 @@
 // The desktop studio talks to the Rust shell through commands; in the browser they are
-// answered here. Nothing leaves this browser: edits and images stay in the tab's memory,
-// recordings and downloaded exports in its private file storage (OPFS).
+// answered here. No recording content leaves this browser: edits and images stay in the tab's memory,
+// recordings and downloaded exports in its private file storage (OPFS). Only anonymous
+// usage counts are sent (analytics.ts).
+import { STUDIO_EVENTS, track, type StudioEvent } from "./analytics";
 import { emit } from "./tauri/event";
 import type { ExportJob } from "./exporter";
 
@@ -132,8 +134,10 @@ export const commands: Record<string, Command> = {
   save_edits: ({ projectPath, edits: value }) => void edits.set(String(projectPath), value),
   load_captions: () => null,
   save_captions: () => undefined,
-  // The browser version sends no usage statistics.
-  track_event: () => undefined,
+  // The studio's own events (exports, styles) join the page's anonymous statistics.
+  track_event: ({ name, props }) => {
+    if ((STUDIO_EVENTS as readonly string[]).includes(String(name))) track(name as StudioEvent, (props ?? {}) as Record<string, string | number | boolean>);
+  },
   telemetry_status: () => ({ available: false, enabled: false }),
   read_thumbnail: ({ projectPath }) => recordingOf(projectPath).thumbnail,
 

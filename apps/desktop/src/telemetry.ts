@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { isWeb } from "./platform";
 
 /**
  * Optional, anonymous usage statistics. The shell decides whether anything is sent
@@ -31,7 +32,8 @@ const inShell = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 const CHANGED_EVENT = "screensway:telemetry";
 
 export function track(name: TelemetryEvent, props: Record<string, string | number | boolean> = {}, locale?: string) {
-  if (!inShell) return;
+  // The browser version answers this command itself, with its own anonymous statistics.
+  if (!inShell && !isWeb) return;
   void invoke("track_event", { name, props, locale: locale ?? (document.documentElement.lang || null) }).catch(() => {});
 }
 

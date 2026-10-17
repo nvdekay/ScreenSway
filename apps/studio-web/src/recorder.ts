@@ -168,6 +168,11 @@ export class ScreenRecording {
   private followed: MediaStreamTrack | null = null;
   private stopped: Promise<void> | null = null;
   private started = false;
+  /** What was shared ("monitor", "window" or "browser"), for anonymous usage statistics. */
+  surface = "unknown";
+  /** Whether the shared surface itself provided sound (tab or system audio). */
+  sharedAudio = false;
+  format: "mp4" | "webm" = "webm";
 
   /**
    * Resolves once recording. `onEnded` fires when recording stops on its own: from the
@@ -215,6 +220,8 @@ export class ScreenRecording {
     this.streams.push(display);
     const [shared] = display.getVideoTracks();
     shared.contentHint = "detail";
+    this.surface = (shared.getSettings() as MediaTrackSettings & { displaySurface?: string }).displaySurface ?? "unknown";
+    this.sharedAudio = display.getAudioTracks().length > 0;
     // Stopping sharing while still starting cancels the start; afterwards it stops the recording.
     let sharing = true;
     shared.addEventListener("ended", () => {
@@ -237,7 +244,8 @@ export class ScreenRecording {
     const hasAudio = tracks.length > 1;
     const mimeType = MIME_TYPES.map(([withAudio, withoutAudio]) => (hasAudio ? withAudio : withoutAudio)).find((type) => MediaRecorder.isTypeSupported(type));
 
-    this.store = new ChunkStore(`${this.id}.${mimeType?.includes("mp4") ? "mp4" : "webm"}`);
+    this.format = mimeType?.includes("mp4") ? "mp4" : "webm";
+    this.store = new ChunkStore(`${this.id}.${this.format}`);
     await this.store.open();
     if (!sharing) throw new ShareCancelledError();
 

@@ -46,7 +46,7 @@ Measured on a real 35 s recording (Retina, animated Edge wallpaper) with the rea
 
 ## Privacy
 
-Nothing is uploaded and the page sends no statistics: `track_event` is a no-op and `telemetry_status` reports statistics as unavailable.
+No recording content is uploaded. The page sends anonymous, cookieless usage counts (source `studio`, see `docs/analytics.md`) when built with `VITE_ANALYTICS_URL`, honouring Do Not Track and Global Privacy Control: `src/analytics.ts` counts visits, unsupported browsers, recording starts, finishes and failures and clicks to the desktop app, and `backend.ts` answers the shared studio's `track_event` with the same sender (exports, styles); `telemetry_status` still reports the desktop opt-in as unavailable, so no settings switch appears.
 
 ## Validation
 

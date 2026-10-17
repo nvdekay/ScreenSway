@@ -419,7 +419,9 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       });
     } catch (error) {
       const message = String(error);
-      track(message === "Export cancelled." ? "export_cancelled" : "export_failed");
+      // The browser version's errors are message keys (web.exportTooLarge, …): a safe label.
+      const reason = isWeb && message.startsWith("web.export") ? message.slice("web.export".length).toLowerCase() : null;
+      track(message === "Export cancelled." ? "export_cancelled" : "export_failed", reason ? { reason } : {});
       setExportState(message === "Export cancelled." ? { status: "idle" } : { status: "failed", message });
     } finally {
       activeJobs.current.export = false;
