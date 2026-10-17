@@ -53,3 +53,7 @@ The shared-renderer update additionally passed 720 browser comparisons (five pre
 The header’s Download guide button opens the install dialog without starting a download. Its active platform tab names and links the corresponding installer. The main download actions use the monochrome Apple mark and Windows blue mark in both themes.
 
 The macOS and Windows download actions share equal widths, filled backgrounds, shadows and hover/press effects in both the hero and footer CTA. Neither platform is visually secondary.
+
+## Content-Security-Policy
+
+GitHub Pages cannot send headers, so both pages get a CSP `<meta>` tag at build time from `scripts/vite-csp.mjs` (production builds only; the dev server needs inline styles and the HMR websocket). The plugin hashes the inline `<script>` and `<style>` blocks of the final HTML, so editing them needs no manual hash. The landing page allows only its own files (`data:`/`blob:` images, `data:` fonts that Vite inlines), no workers, objects, forms or `<base>`, and `connect-src` only for the analytics origin from `VITE_ANALYTICS_URL` (`'none'` without it). The browser app's policy is in `docs/web-studio.md`. A `<meta>` CSP cannot set `frame-ancestors`.

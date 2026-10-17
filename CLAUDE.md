@@ -51,6 +51,7 @@ pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the
 - Commits: focused, imperative subject, explanatory body. Never add Claude/Co-Authored-By attribution. Split unrelated changes into separate commits.
 - The app's only network use is opt-in anonymous usage statistics (`src-tauri/src/telemetry.rs`): nothing is sent before the user agrees, and never recording content, file names or paths. Fonts are bundled. New events must be added to the allow-lists on both sides (see `docs/analytics.md`). File access from the UI is restricted to `~/Movies/ScreenSway`.
 - Versions live in four places: root and desktop `package.json`, `tauri.conf.json`, `Cargo.toml`. Release = push a matching `vX.Y.Z` tag; the workflow builds, verifies, publishes and redeploys the landing page with the new DMG.
+- The landing page and the browser app get a build-time CSP `<meta>` from `scripts/vite-csp.mjs` (inline blocks hashed automatically). A new external request (another API, CDN, font) must be added to `connect-src`/the matching directive in that app's `vite.config.ts`, or the browser blocks it.
 - The repository is private: the landing page links to the downloads Worker (`…/latest/ScreenSway-macos-universal.dmg`) and must not link to GitHub.
 - Before ending a coding session, keep `CLAUDE.md` and the relevant file in `docs/` aligned with shipped behavior, run proportionate checks, split unrelated work into focused commits, and push `main` when the user asks for a full handoff.
 

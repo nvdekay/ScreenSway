@@ -46,7 +46,7 @@ Measured on a real 35 s recording (Retina, animated Edge wallpaper) with the rea
 
 ## Privacy
 
-No recording content is uploaded. The page sends anonymous, cookieless usage counts (source `studio`, see `docs/analytics.md`) when built with `VITE_ANALYTICS_URL`, honouring Do Not Track and Global Privacy Control: `src/analytics.ts` counts visits, unsupported browsers, recording starts, finishes and failures and clicks to the desktop app, and `backend.ts` answers the shared studio's `track_event` with the same sender (exports, styles); `telemetry_status` still reports the desktop opt-in as unavailable, so no settings switch appears.
+Production builds carry a Content-Security-Policy `<meta>` (`scripts/vite-csp.mjs`, configured in `vite.config.ts`): scripts, styles, fonts and workers only from the site (plus `blob:` workers and media, `data:`/`blob:` images and Vite's inlined `data:` fonts), and `connect-src` limited to the analytics origin plus `data:`/`blob:` (the exporter decodes an image from a `data:` URL), so even injected code could not send a recording anywhere. `test:e2e` runs every scenario against the built page and fails on any CSP violation. No recording content is uploaded. The page sends anonymous, cookieless usage counts (source `studio`, see `docs/analytics.md`) when built with `VITE_ANALYTICS_URL`, honouring Do Not Track and Global Privacy Control: `src/analytics.ts` counts visits, unsupported browsers, recording starts, finishes and failures and clicks to the desktop app, and `backend.ts` answers the shared studio's `track_event` with the same sender (exports, styles); `telemetry_status` still reports the desktop opt-in as unavailable, so no settings switch appears.
 
 ## Validation
 

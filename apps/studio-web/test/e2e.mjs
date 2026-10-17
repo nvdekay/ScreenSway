@@ -152,9 +152,15 @@ function fakes(options) {
   };
 }
 
+// Every page runs under the production Content-Security-Policy; any violation fails the run.
+const cspViolations = [];
+
 async function openApp(options = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on("pageerror", (error) => console.error("page error:", error.message));
+  page.on("console", (message) => {
+    if (/Content Security Policy/i.test(message.text())) cspViolations.push(message.text().slice(0, 200));
+  });
   await page.addInitScript(fakes, options);
   await page.goto(base);
   return page;
@@ -434,6 +440,10 @@ try {
     await page.close();
     console.log("failed start releases the screen: ok");
   }
+  const built = readFileSync(join(dist, "index.html"), "utf8");
+  assert.match(built, /<meta http-equiv="Content-Security-Policy"[^>]*connect-src[^>]*>/, "the build carries a CSP");
+  assert.deepEqual(cspViolations, [], "nothing was blocked by the CSP");
+  console.log("no Content-Security-Policy violations: ok");
   console.log("studio-web e2e: ok");
 } finally {
   await browser.close();
