@@ -885,8 +885,28 @@ fn project_member(project: &std::path::Path, relative: &str) -> Result<std::path
     Ok(file)
 }
 
+// Size limits for what the UI sends and what a project may contain, far above real use (a 4K
+// export layer, an hour of captions), so a compromised page or a crafted project cannot make
+// the app read or write without bound.
+const MAX_MANIFEST_BYTES: u64 = 1 << 20;
+const MAX_PROJECT_JSON_BYTES: u64 = 16 << 20;
+const MAX_IMAGE_FILE_BYTES: u64 = 48 << 20;
+const MAX_DATA_URL_CHARS: usize = 64 << 20;
+const MAX_EXPORT_CAPTIONS: usize = 20_000;
+const MAX_EXPORT_JOB_BYTES: usize = 256 << 20;
+const MAX_SUBTITLES_CHARS: usize = 16 << 20;
+
+/// Reads a whole file, refusing one larger than `max` bytes before allocating for it.
+fn read_bounded(path: &std::path::Path, max: u64) -> std::io::Result<Vec<u8>> {
+    let size = std::fs::metadata(path)?.len();
+    if size > max {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("the file is too large ({size} bytes)")));
+    }
+    std::fs::read(path)
+}
+
 fn read_manifest(project: &std::path::Path) -> Result<ProjectManifest, String> {
-    let data = std::fs::read(project.join("project.json"))
+    let data = read_bounded(&project.join("project.json"), MAX_MANIFEST_BYTES)
         .map_err(|error| format!("Could not read the project file: {error}"))?;
     serde_json::from_slice(&data).map_err(|error| format!("The project file is damaged: {error}"))
 }
@@ -928,7 +948,7 @@ fn rename_recording_in(project: &std::path::Path, title: &str) -> Result<String,
     }
 
     let manifest_path = project.join("project.json");
-    let data = std::fs::read(&manifest_path)
+    let data = read_bounded(&manifest_path, MAX_MANIFEST_BYTES)
         .map_err(|error| format!("Could not read the project file: {error}"))?;
     let mut manifest: serde_json::Value = serde_json::from_slice(&data)
         .map_err(|error| format!("The project file is damaged: {error}"))?;
@@ -1047,7 +1067,7 @@ fn write_edits(project: &std::path::Path, edits: &serde_json::Value) -> Result<(
 
 /// A JSON object stored in the project, or None when it is missing or damaged.
 fn read_project_json(project: &std::path::Path, name: &str) -> Option<serde_json::Value> {
-    let data = std::fs::read(project.join(name)).ok()?;
+    let data = read_bounded(&project.join(name), MAX_PROJECT_JSON_BYTES).ok()?;
     serde_json::from_slice::<serde_json::Value>(&data).ok().filter(serde_json::Value::is_object)
 }
 
@@ -1056,6 +1076,9 @@ fn write_project_json(project: &std::path::Path, name: &str, value: &serde_json:
         return Err("The data to save is invalid.".into());
     }
     let data = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
+    if data.len() as u64 > MAX_PROJECT_JSON_BYTES {
+        return Err("The data to save is too large.".into());
+    }
     // Write next to the file and rename, so a crash never leaves half a file behind.
     let temporary = project.join(format!("{name}.tmp"));
     std::fs::write(&temporary, data).map_err(|error| format!("Could not save {name}: {error}"))?;
@@ -1258,6 +1281,9 @@ fn resolve_library_file(path: &str) -> Result<std::path::PathBuf, String> {
 
 fn decode_png(data: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
+    if data.len() > MAX_DATA_URL_CHARS {
+        return Err("The image is too large.".into());
+    }
     let encoded = data.split_once(',').map_or(data, |(_, rest)| rest);
     base64::engine::general_purpose::STANDARD
         .decode(encoded)
@@ -1298,8 +1324,11 @@ async fn export_recording(
     captions: Option<Vec<CaptionImage>>,
     subtitles: Option<String>,
 ) -> Result<ExportResult, String> {
+    let captions = captions.unwrap_or_default();
+    if captions.len() > MAX_EXPORT_CAPTIONS || subtitles.as_ref().is_some_and(|text| text.len() > MAX_SUBTITLES_CHARS) {
+        return Err("The export has too many captions.".into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
-        let captions = captions.unwrap_or_default();
         export_recording_blocking(&app, &project_path, &file_name, job, &base_layer, &cursor, &captions, subtitles.as_deref())
     })
     .await
@@ -1371,7 +1400,11 @@ fn export_recording_blocking(
         }
         fields.insert("captions".into(), serde_json::Value::Array(caption_jobs));
         let job_path = work.join("job.json");
-        std::fs::write(&job_path, serde_json::to_vec(&job).map_err(|error| error.to_string())?)
+        let job_bytes = serde_json::to_vec(&job).map_err(|error| error.to_string())?;
+        if job_bytes.len() > MAX_EXPORT_JOB_BYTES {
+            return Err("The export plan is too large.".into());
+        }
+        std::fs::write(&job_path, job_bytes)
             .map_err(|error| format!("Could not prepare the export: {error}"))?;
 
         let mut child = helper_command()?
@@ -1491,7 +1524,7 @@ fn data_url(path: &std::path::Path) -> Result<String, String> {
         Some("gif") => "image/gif",
         _ => return Err("This is not a background image.".into()),
     };
-    let bytes = std::fs::read(path).map_err(|error| format!("Could not read the image: {error}"))?;
+    let bytes = read_bounded(path, MAX_IMAGE_FILE_BYTES).map_err(|error| format!("Could not read the image: {error}"))?;
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
@@ -1590,7 +1623,7 @@ fn read_thumbnail(project_path: String) -> Result<Option<String>, String> {
     if !thumbnail.is_file() {
         return Ok(None);
     }
-    let bytes = std::fs::read(thumbnail).map_err(|error| format!("Could not read the thumbnail: {error}"))?;
+    let bytes = read_bounded(&thumbnail, MAX_IMAGE_FILE_BYTES).map_err(|error| format!("Could not read the thumbnail: {error}"))?;
     Ok(Some(format!(
         "data:image/jpeg;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1834,6 +1867,22 @@ mod tests {
 
         std::fs::write(project.join(EDITS_FILE), b"{ broken").unwrap();
         assert_eq!(read_edits(&project), None);
+        std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn oversized_inputs_are_refused_before_they_are_read_or_written() {
+        let project = std::env::temp_dir().join(format!("screensway-limits-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("project.json"), vec![b' '; (MAX_MANIFEST_BYTES + 1) as usize]).unwrap();
+        assert!(read_manifest(&project).err().is_some_and(|error| error.contains("too large")));
+        std::fs::write(project.join(EDITS_FILE), vec![b' '; (MAX_PROJECT_JSON_BYTES + 1) as usize]).unwrap();
+        assert_eq!(read_edits(&project), None);
+        let huge = serde_json::json!({ "text": "x".repeat(MAX_PROJECT_JSON_BYTES as usize) });
+        assert!(write_edits(&project, &huge).unwrap_err().contains("too large"));
+        assert!(!project.join("edits.json.tmp").exists());
+        assert!(decode_png(&"A".repeat(MAX_DATA_URL_CHARS + 1)).unwrap_err().contains("too large"));
         std::fs::remove_dir_all(&project).unwrap();
     }
 
