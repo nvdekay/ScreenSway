@@ -122,7 +122,7 @@ export function WebBrowserSection() {
       <div className="browser-feature-visual" data-reveal ref={stageRef} role="img" aria-label={t("webFeature.visual")}>
         <div className="browser-feature-bar" aria-hidden="true">
           <span><i /><i /><i /></span>
-          <b><Globe size={13} />nvdekay.github.io/ScreenSway/app</b>
+          <b><Globe size={13} />screensway.site/app</b>
           <em><Lock size={12} />{t("webFeature.local")}</em>
         </div>
         <RecordingFrame settings={SETTINGS}>

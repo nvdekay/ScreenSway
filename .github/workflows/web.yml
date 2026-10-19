@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 env:
-  DOWNLOADS_URL: https://screensway-downloads.visual-lab-dm4.workers.dev
+  DOWNLOADS_URL: https://download.screensway.site
 
 concurrency:
   group: pages
@@ -50,7 +50,7 @@ jobs:
       - run: pnpm --filter @screensway/web build
         env:
           # Public URL of the analytics API (apps/analytics); local builds send nothing.
-          VITE_ANALYTICS_URL: https://screensway-analytics.visual-lab-dm4.workers.dev
+          VITE_ANALYTICS_URL: https://stats.screensway.site
           # Installers are served by the downloads Worker (apps/downloads), not by Pages:
           # Pages limits a site to 1 GB and ~100 GB of traffic a month.
           VITE_DOWNLOADS_URL: ${{ env.DOWNLOADS_URL }}
@@ -60,7 +60,7 @@ jobs:
           cp -R apps/studio-web/dist apps/web/dist/app
         env:
           # Its anonymous usage counts go to the same analytics API, as source "studio".
-          VITE_ANALYTICS_URL: https://screensway-analytics.visual-lab-dm4.workers.dev
+          VITE_ANALYTICS_URL: https://stats.screensway.site
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: site

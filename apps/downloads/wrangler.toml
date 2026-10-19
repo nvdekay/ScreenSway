@@ -2,6 +2,11 @@ name = "screensway-downloads"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+# Served on the site's own domain; the workers.dev address stays on for links and
+# updater feeds published before the move.
+routes = [{ pattern = "download.screensway.site", custom_domain = true }]
+workers_dev = true
+
 # Installers and updater bundles, served from R2 instead of GitHub Pages
 # (Pages limits a site to 1 GB and ~100 GB of traffic a month). See docs/releasing.md.
 [[r2_buckets]]

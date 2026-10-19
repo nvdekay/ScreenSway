@@ -5,11 +5,13 @@
 The repository is private, so GitHub Release assets are not publicly downloadable. A Cloudflare Worker (`apps/downloads`, bucket `screensway-downloads` in R2) serves both desktop builds:
 
 ```text
-https://screensway-downloads.visual-lab-dm4.workers.dev/latest/ScreenSway-macos-universal.dmg
-https://screensway-downloads.visual-lab-dm4.workers.dev/latest/ScreenSway-windows-x64-setup.exe
-https://screensway-downloads.visual-lab-dm4.workers.dev/v0.3.2/ScreenSway-macos-universal.app.tar.gz   # one release
-https://screensway-downloads.visual-lab-dm4.workers.dev/current                                     # {"tag": "v0.3.2"}
+https://download.screensway.site/latest/ScreenSway-macos-universal.dmg
+https://download.screensway.site/latest/ScreenSway-windows-x64-setup.exe
+https://download.screensway.site/v0.3.2/ScreenSway-macos-universal.app.tar.gz   # one release
+https://download.screensway.site/current                                     # {"tag": "v0.3.2"}
 ```
+
+The Worker is a custom domain of the `screensway.site` zone (Cloudflare DNS; the domain is registered at Tenten). Its old address `https://screensway-downloads.visual-lab-dm4.workers.dev` stays enabled, because update feeds published before the move point there.
 
 GitHub Pages used to host these files, but the Windows installer alone is about 494 MiB, and Pages limits a site to 1 GB and about 100 GB of traffic a month. R2 has no egress fees. The Worker supports range requests (resumable downloads), sends `X-Checksum-Sha256`, and serves only the three known file names.
 
@@ -47,7 +49,7 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD='<password from the password manager>'
 pnpm build:macos
 ```
 
-Do not place these values in `.env` files. The public feed is `https://nvdekay.github.io/ScreenSway/update/latest.json`; it always describes the release the Worker currently offers.
+Do not place these values in `.env` files. The public feed is `https://screensway.site/update/latest.json`; the app lists it first and keeps `https://nvdekay.github.io/ScreenSway/update/latest.json` as a fallback (installed 0.3.x builds know only that one, and GitHub redirects it to the custom domain). It always describes the release the Worker currently offers.
 
 ## Updates and macOS permissions
 

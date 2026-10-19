@@ -2,7 +2,7 @@
 
 ScreenSway is a local-first screen recorder that automatically follows the action with smooth cursor-aware zooms and pans.
 
-Landing page: https://nvdekay.github.io/ScreenSway/
+Landing page: https://screensway.site/
 
 The application is free to use, has no watermark, and keeps recordings on the user's device. ScreenSway is proprietary software and is not open source.
 

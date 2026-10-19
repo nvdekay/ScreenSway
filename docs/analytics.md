@@ -95,7 +95,7 @@ pnpm --filter @screensway/analytics test:e2e  # end-to-end test against a throwa
 
 For local runs put `DASHBOARD_TOKEN=…` and `ACTOR_SALT=…` in `apps/analytics/.dev.vars` (not committed).
 
-The service runs at `https://screensway-analytics.visual-lab-dm4.workers.dev` (dashboard at `/`). Later changes only need `pnpm run deploy`. The first deployment, from `apps/analytics`, was:
+The service runs at `https://stats.screensway.site` (dashboard at `/`). The old `https://screensway-analytics.visual-lab-dm4.workers.dev` address stays enabled, because desktop builds before the move send their opt-in statistics there. Later changes only need `pnpm run deploy`. The first deployment, from `apps/analytics`, was:
 
 ```bash
 npx wrangler login

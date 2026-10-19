@@ -2,6 +2,11 @@ name = "screensway-analytics"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+# Served on the site's own domain; the workers.dev address stays on for app versions
+# (0.3.x) that still send there.
+routes = [{ pattern = "stats.screensway.site", custom_domain = true }]
+workers_dev = true
+
 # The dashboard is a static page; everything under /v1 is handled by the Worker.
 [assets]
 directory = "./public"
