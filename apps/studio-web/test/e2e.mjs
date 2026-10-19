@@ -395,13 +395,17 @@ try {
       await page.keyboard.press(key);
     }
     const kept = await page.locator(".timeline-title").textContent();
-    const keptSeconds = Number(kept.match(/\((\d+):(\d+(?:\.\d+)?)\)/).slice(1).reduce((minutes, seconds) => minutes * 60 + Number(seconds), 0));
     assert.match(kept, /Keeping 0:00\.2/, `trimmed at the start (${kept})`);
+    // The handles' exact positions: the title rounds to tenths of a second.
+    const handle = async (name) => Number(await page.getByRole("slider", { name }).or(page.getByLabel(name)).first().getAttribute("aria-valuenow"));
+    const keptSeconds = ((await handle("End of the video")) - (await handle("Start of the video"))) / 1_000;
     await page.getByRole("button", { name: "Export video" }).click();
     await page.locator(".export-done").waitFor({ timeout: 60_000 });
     const exported = await readExport(page);
-    assert.ok(Math.abs(exported.duration - keptSeconds) < 0.1, `export is the kept ${keptSeconds} s (${exported.duration.toFixed(3)} s)`);
-    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, "sound and picture end together");
+    // The picture is whole frames (60 fps), so it may run up to one frame past the kept part.
+    assert.ok(exported.videoDuration >= keptSeconds - 0.001 && exported.videoDuration <= keptSeconds + 1 / 60 + 0.001, `the picture is the kept ${keptSeconds.toFixed(3)} s (${exported.videoDuration.toFixed(3)} s)`);
+    // AAC stores sound in blocks of 1024 samples plus the encoder's start-up delay, about 0.1 s at most here.
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, `sound and picture end together (${exported.audioDuration.toFixed(3)} / ${exported.videoDuration.toFixed(3)} s)`);
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
     console.log("short recording trimmed at both ends: ok");
