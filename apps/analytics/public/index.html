@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <!-- The script hash must match the inline script below; test/e2e.mjs checks it. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-+sMWBCDrSfpi5TS/UEWwqhaSFVq0UMzbGTS7WPsBBoQ='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Io7MrM8/xPQDeiSdj5/EKO3Ixy94xyRZpLz23bWvkmA='; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'" />
 <title>ScreenSway Analytics</title>
 <style>
   :root {
@@ -104,6 +104,8 @@
   .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--wash); font-size: 12px; }
   #login { max-width: 420px; margin: 12vh auto; }
   #login input { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); margin: 10px 0; }
+  #login .remember { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  #login .remember input { width: auto; margin: 0; }
   #login .error { color: var(--down); min-height: 1.4em; font-size: 13px; }
   .login-wrap { padding: 20px; }
   .loading { min-height: 240px; display: grid; place-items: center; color: var(--muted); }
@@ -141,11 +143,13 @@
 <div class="login-wrap">
   <section id="login" class="card" hidden>
     <h1 style="margin:0 0 4px;font-size:20px">ScreenSway Analytics</h1>
-    <div class="sub" style="color:var(--muted)">Nhập mã truy cập dashboard để xem số liệu.</div>
+    <div class="sub" style="color:var(--muted)">Đăng nhập tài khoản quản trị để xem số liệu.</div>
     <form id="login-form">
-      <input id="token" type="password" autocomplete="current-password" placeholder="Mã truy cập (DASHBOARD_TOKEN)" required />
+      <input id="username" name="username" type="text" autocomplete="username" placeholder="Tên đăng nhập" required />
+      <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Mật khẩu" required />
+      <label class="remember"><input id="remember" type="checkbox" checked /> Ghi nhớ trên máy này (30 ngày)</label>
       <div class="error" id="login-error"></div>
-      <button class="btn primary" type="submit">Mở dashboard</button>
+      <button class="btn primary" type="submit">Đăng nhập</button>
     </form>
   </section>
 
@@ -180,13 +184,15 @@
   </div>
 </div>
 <script>
-// The token only ever goes to this page's own Worker, and lives only for this tab's session.
+// Signing in sets an HttpOnly session cookie on this page's own Worker; the page never sees
+// or stores a credential. "Ghi nhớ" keeps the session for 30 days, otherwise it ends with the
+// browser session.
 const TOKEN_KEY = "screensway.analytics.token", DAYS_KEY = "screensway.analytics.days";
 const $ = (selector) => document.querySelector(selector);
 const keep = (area) => ({ get: (k) => { try { return area().getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? area().removeItem(k) : area().setItem(k, v); } catch {} } });
 const store = keep(() => localStorage), session = keep(() => sessionStorage);
-store.set(TOKEN_KEY, null); // left by older versions of this page
-let token = session.get(TOKEN_KEY), days = Number(store.get(DAYS_KEY)) || 30;
+store.set(TOKEN_KEY, null); session.set(TOKEN_KEY, null); // tokens kept by older versions of this page
+let signedIn = false, days = Number(store.get(DAYS_KEY)) || 30;
 const VIEW_NAMES = { overview: "Tổng quan", acquisition: "Thu hút & tải", audience: "Người dùng", product: "Sản phẩm", studio: "Bản web", activity: "Hoạt động" };
 let currentView = VIEW_NAMES[location.hash.slice(1)] ? location.hash.slice(1) : "overview";
 
@@ -504,12 +510,12 @@ function render(data) {
 }
 
 async function load(fresh = false) {
-  if (!token) return showLogin();
   document.querySelectorAll("#range button").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.days) === days)));
   try {
-    const response = await fetch(`/v1/stats?days=${days}${fresh ? "&fresh=1" : ""}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (response.status === 401) return showLogin("Mã truy cập không đúng.");
+    const response = await fetch(`/v1/stats?days=${days}${fresh ? "&fresh=1" : ""}`);
+    if (response.status === 401) return showLogin(signedIn ? "Phiên đăng nhập đã hết, đăng nhập lại." : "");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    signedIn = true;
     $("#login").hidden = true; $("#app").hidden = false;
     render(await response.json());
   } catch (error) {
@@ -518,19 +524,35 @@ async function load(fresh = false) {
   }
 }
 function showLogin(message = "") {
-  token = null; session.set(TOKEN_KEY, null);
+  signedIn = false;
   $("#app").hidden = true; $("#login").hidden = false; $("#login-error").textContent = message;
 }
-$("#login-form").addEventListener("submit", (event) => { event.preventDefault(); token = $("#token").value.trim(); session.set(TOKEN_KEY, token); void load(); });
+$("#login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.target.querySelector("button");
+  button.disabled = true; $("#login-error").textContent = "";
+  try {
+    const response = await fetch("/v1/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: $("#username").value.trim(), password: $("#password").value, remember: $("#remember").checked }) });
+    if (response.status === 401) return showLogin("Sai tên đăng nhập hoặc mật khẩu.");
+    if (response.status === 429) return showLogin("Thử sai quá nhiều lần. Đợi một phút rồi thử lại.");
+    if (!response.ok) return showLogin(`Không đăng nhập được (HTTP ${response.status}).`);
+    $("#password").value = "";
+    await load();
+  } catch (error) {
+    showLogin(`Không đăng nhập được (${error.message}).`);
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelector(".side-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-nav]");
   if (button) showView(button.dataset.nav);
 });
 $("#range").addEventListener("click", (event) => { const d = Number(event.target.dataset?.days); if (d) { days = d; store.set(DAYS_KEY, String(d)); void load(); } });
 $("#refresh").addEventListener("click", () => void load(true));
-$("#logout").addEventListener("click", () => showLogin());
+$("#logout").addEventListener("click", async () => { await fetch("/v1/logout", { method: "POST" }).catch(() => {}); showLogin(); });
 // Reports read every event in the range: refresh every five minutes, or with "Làm mới".
-setInterval(() => { if (token && !document.hidden) void load(); }, 300000);
+setInterval(() => { if (signedIn && !document.hidden) void load(); }, 300000);
 void load();
 </script>
 </body>

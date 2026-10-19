@@ -15,7 +15,7 @@ const base = `http://127.0.0.1:${port}`;
 const wrangler = join(root, "node_modules", ".bin", "wrangler");
 
 execFileSync(wrangler, ["d1", "migrations", "apply", "screensway-analytics", "--local", "--persist-to", state], { cwd: root, stdio: "pipe" });
-const server = spawn(wrangler, ["dev", "--port", String(port), "--persist-to", state, "--var", "DASHBOARD_TOKEN:secret", "--var", "ACTOR_SALT:salt"], { cwd: root, stdio: "pipe" });
+const server = spawn(wrangler, ["dev", "--port", String(port), "--persist-to", state, "--var", "DASHBOARD_TOKEN:secret", "--var", "ACTOR_SALT:salt", "--var", "ADMIN_USERNAME:admin", "--var", "ADMIN_PASSWORD:pass word"], { cwd: root, stdio: "pipe" });
 let log = "";
 server.stdout.on("data", (chunk) => (log += chunk));
 server.stderr.on("data", (chunk) => (log += chunk));
@@ -72,7 +72,7 @@ try {
   // A browser beacon arrives as text/plain; it must be accepted without a preflight.
   assert.equal((await post(JSON.stringify({ source: "web", events: [{ name: "guide_open" }] }), { "Content-Type": "text/plain", "User-Agent": "visitor-1" })).status, 202);
 
-  // Reporting requires the token.
+  // Reporting requires the token or a signed-in session.
   assert.equal((await stats("")).status, 401);
   assert.equal((await stats("wrong")).status, 401);
   assert.equal((await stats("secretx")).status, 401);
@@ -119,6 +119,32 @@ try {
   assert.ok(!studio.events.some((event) => event.name === "made_up_event"));
   assert.equal(body.totals.exports, 2, "studio exports are not counted as desktop exports");
 
+  // The dashboard account signs in to an HttpOnly session cookie.
+  const login = (body) => fetch(`${base}/v1/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const withCookie = async (cookie) => (await fetch(`${base}/v1/stats?days=7`, { headers: { Cookie: cookie } })).status;
+  for (const wrong of [{ username: "admin", password: "pass" }, { username: "Admin", password: "pass word" }, { username: "admin" }, {}, { username: "admin", password: "pass word " }]) {
+    const refused = await login(wrong);
+    assert.equal(refused.status, 401, `refuses ${JSON.stringify(wrong)}`);
+    assert.equal(refused.headers.get("Set-Cookie"), null);
+  }
+  assert.equal((await fetch(`${base}/v1/login`, { method: "POST", body: "{" })).status, 400);
+  let signIn = await login({ username: "admin", password: "pass word", remember: true });
+  assert.equal(signIn.status, 204);
+  const remembered = signIn.headers.get("Set-Cookie");
+  assert.match(remembered, /^screensway_session=\d+\.[\w-]+; Path=\/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000$/);
+  const session = remembered.split(";")[0];
+  assert.equal(await withCookie(session), 200, "a session reads reports");
+  assert.equal(await withCookie(`other=1; ${session}`), 200, "among other cookies");
+  const [, expires, signature] = session.match(/=(\d+)\.(.+)$/);
+  assert.equal(await withCookie(`screensway_session=${Number(expires) + 86400}.${signature}`), 401, "a longer expiry needs a new signature");
+  assert.equal(await withCookie(`screensway_session=${expires}.${signature.slice(0, -2)}xx`), 401, "a forged signature is refused");
+  assert.equal(await withCookie(`screensway_session=${expires}`), 401);
+  signIn = await login({ username: "admin", password: "pass word" });
+  assert.doesNotMatch(signIn.headers.get("Set-Cookie"), /Max-Age/, "without remember the cookie ends with the browser session");
+  const signOut = await fetch(`${base}/v1/logout`, { method: "POST" });
+  assert.equal(signOut.status, 204);
+  assert.match(signOut.headers.get("Set-Cookie"), /^screensway_session=; .*Max-Age=0$/);
+
   // Reports are shared for a minute; "fresh" (the Refresh button) always recomputes.
   await post({ source: "web", events: [{ name: "page_view", props: { referrer: "direct" } }] }, { "User-Agent": "visitor-3" });
   assert.equal((await stats()).body.totals.pageViews, 2, "a report within a minute is reused");
@@ -135,6 +161,11 @@ try {
   const hash = createHash("sha256").update(script).digest("base64");
   assert.match(html, new RegExp(`script-src 'sha256-${hash.replace(/[+/]/g, "\\$&")}'`), "update the dashboard CSP hash");
   assert.match(html, /connect-src 'self'/);
+
+  // Password guessing from one address is cut off.
+  let throttled = false;
+  for (let attempt = 0; attempt < 30 && !throttled; attempt++) throttled = (await login({ username: "admin", password: `guess-${attempt}` })).status === 429;
+  assert.ok(throttled, "sign-in was not rate limited");
 
   // Floods from one address are cut off by the rate limiter.
   let limited = false;

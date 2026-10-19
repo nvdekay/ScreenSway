@@ -2,7 +2,9 @@
  * ScreenSway analytics: a small ingestion and reporting API.
  *
  *   POST /v1/events   public; anonymous events from the landing page, the browser app and the desktop app
- *   GET  /v1/stats    bearer token; every number the dashboard shows, as one JSON document
+ *   POST /v1/login    the admin account (Worker secrets) → a signed session cookie
+ *   POST /v1/logout   clears that cookie
+ *   GET  /v1/stats    session cookie or bearer token; every number the dashboard shows, as one JSON document
  *   GET  /v1/health   liveness
  *   GET  /            the dashboard (static asset in ./public)
  *
@@ -11,11 +13,17 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** Bearer token for scripts; also the key that signs dashboard sessions. */
   DASHBOARD_TOKEN?: string;
+  /** The one dashboard account (secrets, never in wrangler.toml). */
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
   ACTOR_SALT?: string;
   TZ_OFFSET_MINUTES?: string;
   /** Cloudflare rate limiter for POST /v1/events, keyed by client address (wrangler.toml). */
   INGEST_LIMITER?: RateLimit;
+  /** Sign-in attempts per client address, so the password cannot be guessed quickly. */
+  LOGIN_LIMITER?: RateLimit;
 }
 
 /** web = landing page, studio = the browser app at /app/, app = the desktop app. */
@@ -222,9 +230,65 @@ const keyCounts = (result: D1Result<unknown>) =>
 const STATS_TTL_MS = 60_000;
 const statsCache = new Map<number, { body: string; until: number }>();
 
+// Dashboard sessions: the cookie holds its expiry and an HMAC of it, keyed by DASHBOARD_TOKEN.
+// The account is part of the signed text, so changing the username or password (or rotating
+// the token) signs every browser out. Nothing is stored server-side.
+const SESSION_COOKIE = "screensway_session";
+const REMEMBERED_SESSION_S = 30 * 86_400, SHORT_SESSION_S = 12 * 3_600;
+const MAX_LOGIN_BYTES = 1024;
+
+async function sessionSignature(env: Env, expires: number): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.DASHBOARD_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`session|${expires}|${env.ADMIN_USERNAME}|${env.ADMIN_PASSWORD}`));
+  return btoa(String.fromCharCode(...new Uint8Array(mac))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const accountConfigured = (env: Env) => Boolean(env.DASHBOARD_TOKEN && env.ADMIN_USERNAME && env.ADMIN_PASSWORD);
+
+async function hasSession(request: Request, env: Env): Promise<boolean> {
+  if (!accountConfigured(env)) return false;
+  const value = (request.headers.get("Cookie") ?? "").split(/;\s*/).find((part) => part.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1);
+  const [expiresText, signature, extra] = (value ?? "").split(".");
+  const expires = Number(expiresText);
+  if (!signature || extra !== undefined || !Number.isInteger(expires) || expires <= Date.now() / 1000) return false;
+  return sameSecret(signature, await sessionSignature(env, expires));
+}
+
+const sessionCookie = (value: string, maxAge?: number) =>
+  `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict${maxAge === undefined ? "" : `; Max-Age=${maxAge}`}`;
+
+async function login(request: Request, env: Env): Promise<Response> {
+  if (!accountConfigured(env)) return json({ error: "the admin account is not configured" }, 503);
+  const address = request.headers.get("CF-Connecting-IP") ?? "";
+  if (env.LOGIN_LIMITER && !(await env.LOGIN_LIMITER.limit({ key: address || "unknown" })).success) {
+    return json({ error: "too many attempts" }, 429);
+  }
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > MAX_LOGIN_BYTES) return json({ error: "payload too large" }, 413);
+  let body: { username?: unknown; password?: unknown; remember?: unknown };
+  try {
+    body = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return json({ error: "invalid JSON" }, 400);
+  }
+  // Both are always compared, so the response time does not tell which one was wrong.
+  const userMatches = sameSecret(String(body?.username ?? ""), env.ADMIN_USERNAME!);
+  const passwordMatches = sameSecret(String(body?.password ?? ""), env.ADMIN_PASSWORD!);
+  if (!userMatches || !passwordMatches) return json({ error: "wrong username or password" }, 401);
+
+  const remember = body.remember === true;
+  const expires = Math.floor(Date.now() / 1000) + (remember ? REMEMBERED_SESSION_S : SHORT_SESSION_S);
+  const value = `${expires}.${await sessionSignature(env, expires)}`;
+  // Without "remember", the cookie ends with the browser session (and after 12 hours at most).
+  return new Response(null, { status: 204, headers: { "Set-Cookie": sessionCookie(value, remember ? REMEMBERED_SESSION_S : undefined), "Cache-Control": "no-store" } });
+}
+
+const logout = () => new Response(null, { status: 204, headers: { "Set-Cookie": sessionCookie("", 0), "Cache-Control": "no-store" } });
+
 async function stats(request: Request, env: Env): Promise<Response> {
   if (!env.DASHBOARD_TOKEN) return json({ error: "DASHBOARD_TOKEN is not configured" }, 503);
-  if (!sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`)) return json({ error: "unauthorized" }, 401);
+  const bearer = sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`);
+  if (!bearer && !(await hasSession(request, env))) return json({ error: "unauthorized" }, 401);
 
   const url = new URL(request.url);
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));
@@ -445,6 +509,8 @@ export default {
     try {
       if (pathname === "/v1/events" && request.method === "POST") return await ingest(request, env);
       if (pathname === "/v1/stats" && request.method === "GET") return await stats(request, env);
+      if (pathname === "/v1/login" && request.method === "POST") return await login(request, env);
+      if (pathname === "/v1/logout" && request.method === "POST") return logout();
       if (pathname === "/v1/health") return json({ ok: true });
     } catch (error) {
       console.error(error);

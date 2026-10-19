@@ -10,7 +10,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture, WASAPI audio, Media Foundation export and Whisper captions). Shell code shared by both platforms is gated with `cfg(capture)`.
 - `apps/web` — landing page (GitHub Pages), bilingual, dark only, CSS tokens in `src/styles.css` (black stage with the system-blue accent shared with the browser app, the same flat blue `LogoMark`, and a looping globe video shifted to blue behind the page; see `docs/landing-page.md`).
 - `apps/studio-web` — browser version (beta) at `/app/`: reuses the desktop studio through `@tauri-apps/api` aliases (`src/tauri/`, `src/backend.ts`) and `isWeb`, records with `getDisplayMedia`, finds the pointer in the video (`src/pointer/`) and exports with mediabunny/WebCodecs. See `docs/web-studio.md`.
-- `apps/analytics` — Cloudflare Worker + D1: public event ingestion, token-protected stats API and the private dashboard page. Events, API and deployment: `docs/analytics.md`.
+- `apps/analytics` — Cloudflare Worker + D1: public event ingestion, the stats API and the private dashboard page (one admin account in Worker secrets, signed session cookie; bearer token for scripts). Events, API and deployment: `docs/analytics.md`.
 - `apps/downloads` — Cloudflare Worker + R2 that serves the installers and updater bundles (`/latest/<file>`, `/<tag>/<file>`); the landing deploy uploads releases with `scripts/publish-downloads.mjs`. See `docs/releasing.md`.
 
 ## Current state

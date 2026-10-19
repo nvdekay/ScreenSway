@@ -27,10 +27,19 @@ name = "INGEST_LIMITER"
 namespace_id = "1001"
 simple = { limit = 120, period = 60 }
 
+# POST /v1/login per client address: a person retyping a password never comes close, a
+# password-guessing script gets 429.
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1002"
+simple = { limit = 10, period = 60 }
+
 [vars]
 # Days in the dashboard follow this offset from UTC (420 = Asia/Ho_Chi_Minh).
 TZ_OFFSET_MINUTES = "420"
 
 # Secrets (set with `wrangler secret put`, or in .dev.vars for local runs):
-#   DASHBOARD_TOKEN  bearer token for GET /v1/stats
+#   DASHBOARD_TOKEN  bearer token for GET /v1/stats, and the key that signs dashboard sessions
+#   ADMIN_USERNAME   the dashboard account
+#   ADMIN_PASSWORD
 #   ACTOR_SALT       salt for the daily-rotating visitor hash

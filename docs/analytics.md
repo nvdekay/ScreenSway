@@ -66,7 +66,7 @@ Adding an event takes three edits: the allow-list in `apps/analytics/src/index.t
 
 `source: "web"` and `source: "studio"` need no `installId`. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 120 requests a minute (generous because mobile carriers share one address among many people) (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
 
-`GET /v1/stats?days=30` (header `Authorization: Bearer <DASHBOARD_TOKEN>`, `days` 1–365) returns one JSON document:
+`GET /v1/stats?days=30` (`days` 1–365; the dashboard's session cookie, or header `Authorization: Bearer <DASHBOARD_TOKEN>` for scripts) returns one JSON document:
 
 - `range`: `from`, `to`, the previous period and `tzOffsetMinutes`. Days follow `TZ_OFFSET_MINUTES` (420, Vietnam time).
 - `totals` and `previous`: `pageViews`, `visitors`, `downloads`, `guideOpens`, `activeInstalls`, `newInstalls`, `appOpens`, `recordings`, `exports`, `captions` for the range and for the equally long period before it.
@@ -84,7 +84,7 @@ The API sends CORS headers, so another page or script can read it with the same 
 
 ## Dashboard
 
-The Worker serves the dashboard at `/`. It asks for the token once per browser tab (kept in session storage, so it is gone when the tab closes), refreshes every five minutes (and on "Làm mới", which asks for a fresh report) and offers 7, 30, 90 and 365-day ranges. Its "Bản web" view shows the browser app: visitors, the open → record → export funnel, success rates, browsers, shared surfaces and audio, export settings, failures and unsupported browsers. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
+The Worker serves the dashboard at `/`. It signs in with the one admin account, the `ADMIN_USERNAME` and `ADMIN_PASSWORD` secrets: `POST /v1/login` (`{username, password, remember}`) sets an `HttpOnly; Secure; SameSite=Strict` cookie holding an expiry and an HMAC of it keyed by `DASHBOARD_TOKEN`, so no session is stored and the page never sees a credential. "Ghi nhớ trên máy này" (on by default) keeps the session 30 days, otherwise it ends with the browser session (12 hours at most). The account is part of the signed text: changing the username or password, or rotating `DASHBOARD_TOKEN`, signs every browser out. `POST /v1/logout` clears the cookie. Each client address may try 10 sign-ins a minute (`LOGIN_LIMITER`); more get `429`. The dashboard refreshes every five minutes (and on "Làm mới", which asks for a fresh report) and offers 7, 30, 90 and 365-day ranges. Its "Bản web" view shows the browser app: visitors, the open → record → export funnel, success rates, browsers, shared surfaces and audio, export settings, failures and unsupported browsers. It only reads `/v1/stats` from its own origin; a Content-Security-Policy (`connect-src 'self'`, inline script allowed by hash) enforces that. After editing the dashboard script, update the `sha256-…` hash in its CSP meta tag; `test:e2e` fails until it matches.
 
 ## Running and deploying
 
@@ -93,14 +93,16 @@ pnpm --filter @screensway/analytics dev     # local Worker + local D1 on http://
 pnpm --filter @screensway/analytics test:e2e  # end-to-end test against a throwaway local database
 ```
 
-For local runs put `DASHBOARD_TOKEN=…` and `ACTOR_SALT=…` in `apps/analytics/.dev.vars` (not committed).
+For local runs put `DASHBOARD_TOKEN=…`, `ACTOR_SALT=…`, `ADMIN_USERNAME=…` and `ADMIN_PASSWORD=…` in `apps/analytics/.dev.vars` (not committed). To change the account: `npx wrangler secret put ADMIN_PASSWORD` (or `ADMIN_USERNAME`) in `apps/analytics`.
 
 The service runs at `https://stats.screensway.site` (dashboard at `/`). The old `https://screensway-analytics.visual-lab-dm4.workers.dev` address stays enabled, because desktop builds before the move send their opt-in statistics there. Later changes only need `pnpm run deploy`. The first deployment, from `apps/analytics`, was:
 
 ```bash
 npx wrangler login
 npx wrangler d1 create screensway-analytics      # copy the database_id into wrangler.toml
-npx wrangler secret put DASHBOARD_TOKEN          # the dashboard password; choose a long random value
+npx wrangler secret put DASHBOARD_TOKEN          # long random value: script access and the session signing key
+npx wrangler secret put ADMIN_USERNAME           # the dashboard account
+npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put ACTOR_SALT               # any long random value; keep it stable
 pnpm run deploy                                  # applies migrations, then deploys
 ```
