@@ -1,11 +1,11 @@
 // Stand-in for @tauri-apps/api/event: the studio's progress events, raised by the web backend.
-export interface Event<T> {
+interface Event<T> {
   event: string;
   id: number;
   payload: T;
 }
 
-export type UnlistenFn = () => void;
+type UnlistenFn = () => void;
 
 const listeners = new Map<string, Set<(event: Event<unknown>) => void>>();
 let nextId = 0;

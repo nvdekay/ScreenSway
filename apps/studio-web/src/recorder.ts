@@ -2,7 +2,7 @@ import type { MotionSample } from "./pointer/align";
 import type { PointerSample } from "./pointer/focus";
 import type { WorkerRequest, WorkerResponse } from "./pointer/worker";
 
-export interface RecordingOptions {
+interface RecordingOptions {
   systemAudio: boolean;
   microphone: boolean;
 }

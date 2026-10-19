@@ -6,7 +6,7 @@ import { STUDIO_EVENTS, track, type StudioEvent } from "./analytics";
 import { emit } from "./tauri/event";
 import type { ExportJob } from "./exporter";
 
-export interface WebRecording {
+interface WebRecording {
   /** Also the projectPath the studio passes back. */
   id: string;
   blob: Blob;

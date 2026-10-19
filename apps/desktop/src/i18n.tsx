@@ -544,7 +544,7 @@ const MESSAGES: Record<Language, Record<MessageKey, string>> = isWeb
     : { en, vi };
 const STORAGE_KEY = "screensway.language";
 
-export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 
 interface I18nContextValue {
   language: Language;

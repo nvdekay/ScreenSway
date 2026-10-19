@@ -40,7 +40,7 @@ export function timelineOffset(recorded: MotionSample[], live: MotionSample[]): 
  * much it beats the best offset more than 200 ms away. Repeating motion (a spinner, a
  * looping video) agrees at many offsets; then the margin is small and nothing is moved.
  */
-export function timelineMatch(recorded: MotionSample[], live: MotionSample[]): { offset: number; score: number; margin: number } | null {
+function timelineMatch(recorded: MotionSample[], live: MotionSample[]): { offset: number; score: number; margin: number } | null {
   if (recorded.length < 10 || live.length < 10) return null;
   // Motion at a time: what changed since the previous frame, so take the next frame at or after it.
   const at = (series: MotionSample[], timeMs: number) => {

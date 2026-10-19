@@ -5,7 +5,7 @@ import { trackDownload } from "./analytics";
 import { DOWNLOADS, preferredPlatform, type DownloadPlatform } from "./downloads";
 import { LogoMark } from "../../desktop/src/LogoMark";
 
-export const INSTALL_GUIDE_EVENT = "screensway:install-guide";
+const INSTALL_GUIDE_EVENT = "screensway:install-guide";
 const QUARANTINE_COMMAND = "xattr -dr com.apple.quarantine /Applications/ScreenSway.app";
 
 /** Opens the install guide from anywhere on the page. */

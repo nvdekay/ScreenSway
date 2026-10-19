@@ -66,7 +66,7 @@ interface Chain {
   length: number;
 }
 
-export interface PointerPosition {
+interface PointerPosition {
   x: number;
   y: number;
 }

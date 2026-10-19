@@ -27,9 +27,9 @@ export interface ExportJob {
   frames: RenderFrame[];
 }
 
-export const CANCELLED = "Export cancelled.";
+const CANCELLED = "Export cancelled.";
 
-export class ExportCancelled extends Error {
+class ExportCancelled extends Error {
   constructor() {
     super(CANCELLED);
   }

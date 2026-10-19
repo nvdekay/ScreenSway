@@ -7,7 +7,7 @@ import { isWeb } from "./platform";
  * (only after the user agrees) and strips every value down to short labels, so
  * callers pass feature names and settings, never recording content or file names.
  */
-export type TelemetryEvent =
+type TelemetryEvent =
   | "app_open"
   | "telemetry_enabled"
   | "recording_started"
@@ -21,7 +21,7 @@ export type TelemetryEvent =
   | "captions_failed"
   | "style_applied";
 
-export interface TelemetryStatus {
+interface TelemetryStatus {
   /** False when this build has no analytics endpoint. */
   available: boolean;
   /** `null` until the user has answered the first-run question. */

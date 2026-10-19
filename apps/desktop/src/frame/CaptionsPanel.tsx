@@ -17,7 +17,7 @@ export type TranscriptionState =
   | { status: "running"; progress: number }
   | { status: "failed"; message: string };
 
-export const CAPTION_LANGUAGES: { id: string; label: string }[] = [
+const CAPTION_LANGUAGES: { id: string; label: string }[] = [
   { id: "vi-VN", label: "Tiếng Việt" },
   { id: "en-US", label: "English" },
 ];

@@ -15,7 +15,7 @@ const SIZE_RATIO: Record<CaptionSize, number> = { s: 0.034, m: 0.043, l: 0.054 }
 const FONT_FAMILY = `"Plus Jakarta Sans Variable", system-ui, sans-serif`;
 const MAX_LINES = 2;
 
-export interface PaintedCaption {
+interface PaintedCaption {
   canvas: HTMLCanvasElement;
   /** Top-left corner in layout pixels. */
   x: number;
