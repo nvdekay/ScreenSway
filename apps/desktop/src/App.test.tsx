@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HeaderUpdateButton, LibraryCard, recordingMatches } from "./App";
+import { foldText, HeaderUpdateButton, LibraryCard, recordingMatches, spokenMatch } from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
@@ -90,5 +90,19 @@ describe("recording library", () => {
 
     fireEvent.pointerLeave(thumbnail);
     expect(container.querySelector("video")).toBeNull();
+  });
+});
+
+describe("speech search", () => {
+  const transcript = { projectPath: "/p", lines: [{ startMs: 1_000, text: "Xin chào" }, { startMs: 8_500, text: "Bấm vào nút Đăng nhập" }] };
+
+  it("ignores accents and case", () => {
+    expect(foldText("Đăng NHẬP")).toBe("dang nhap");
+    expect(spokenMatch(transcript, "dang nhap")).toEqual({ startMs: 8_500, text: "Bấm vào nút Đăng nhập" });
+  });
+
+  it("needs at least two letters and a transcript", () => {
+    expect(spokenMatch(transcript, "x")).toBeNull();
+    expect(spokenMatch(undefined, "xin")).toBeNull();
   });
 });

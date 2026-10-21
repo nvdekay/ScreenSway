@@ -1,5 +1,5 @@
 import type { CaptionLine } from "@screensway/core";
-import { Captions, Loader2, RotateCw, X } from "lucide-react";
+import { Captions, Loader2, RotateCcw, RotateCw, Scissors, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { formatPrecise } from "../format";
 import { useI18n, type MessageKey } from "../i18n";
@@ -26,7 +26,7 @@ const SPEECH_DENIED_MARKER = "SCREENSWAY_SPEECH_DENIED";
 const SIZES: CaptionSize[] = ["s", "m", "l"];
 const LOOKS: CaptionLook[] = ["dark", "light", "outline"];
 
-export function CaptionsPanel({ captions, transcription, style, defaultLocale, onGenerate, onCancel, onChange, onStyleChange, onSeek, onOpenSettings }: {
+export function CaptionsPanel({ captions, transcription, style, defaultLocale, onGenerate, onCancel, onChange, onStyleChange, onSeek, onOpenSettings, onCutCaption, onRemoveSilences, isCut }: {
   captions: RecordingCaptions | null;
   transcription: TranscriptionState;
   style: CaptionStyle;
@@ -37,6 +37,11 @@ export function CaptionsPanel({ captions, transcription, style, defaultLocale, o
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
   onSeek: (timeMs: number) => void;
   onOpenSettings: () => void;
+  /** Removes the line's speech and video, or brings them back when already removed. */
+  onCutCaption: (line: CaptionLine) => void;
+  onRemoveSilences: () => void;
+  /** Whether a line is inside a removed part of the timeline. */
+  isCut: (line: CaptionLine) => boolean;
 }) {
   const { t } = useI18n();
   const [locale, setLocale] = useState(captions?.locale ?? defaultLocale);
@@ -106,9 +111,13 @@ export function CaptionsPanel({ captions, transcription, style, defaultLocale, o
                   </button>
                 ))}
               </div>
+              <button className="editor-button captions-cleanup" onClick={onRemoveSilences}><Scissors size={14} /> {t("captions.removeSilences")}</button>
               <ol className="caption-lines">
-                {captions.lines.map((line) => (
-                  <li key={line.id}>
+                {captions.lines.map((line) => {
+                  const cut = isCut(line);
+                  const label = t(cut ? "captions.restoreLine" : "captions.cutLine", { time: formatPrecise(line.startMs) });
+                  return (
+                  <li key={line.id} className={cut ? "is-cut" : undefined}>
                     <button className="caption-time" onClick={() => onSeek(line.startMs)} title={t("captions.jump")}>
                       {formatPrecise(line.startMs)}
                     </button>
@@ -121,8 +130,12 @@ export function CaptionsPanel({ captions, transcription, style, defaultLocale, o
                         lines: captions.lines.map((other) => (other.id === line.id ? { ...other, text: event.target.value } : other)),
                       })}
                     />
+                    <button className="caption-cut" onClick={() => onCutCaption(line)} aria-label={label} title={label}>
+                      {cut ? <RotateCcw size={13} aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true" />}
+                    </button>
                   </li>
-                ))}
+                  );
+                })}
               </ol>
               <p className="editor-note">{t("captions.srtNote")}</p>
             </>

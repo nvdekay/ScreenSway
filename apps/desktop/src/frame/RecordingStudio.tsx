@@ -1,34 +1,52 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   buildCaptionLines,
   buildRenderFrames,
+  buildSourceTimes,
+  cameraRect,
   computeLayout,
+  DEFAULT_CAMERA_OVERLAY,
   DEFAULT_FRAME_SETTINGS,
+  DEFAULT_KEYSTROKE_OVERLAY,
   NO_EDITS,
+  keptRanges,
+  retimeCaptions,
   resolveZooms,
   toSrt,
-  trimCaptions,
   trimRange,
   type CaptionWord,
+  type CutSegment,
   type BackgroundSpec,
   type FrameSettings,
   type RecordingEdits,
+  type Redaction,
+  sourceToOutputTime,
 } from "@screensway/core";
-import { AlertCircle, Captions, Check, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
+import { AlertCircle, Captions, Check, Copy, Download, Film, FolderOpen, Loader2, Play, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMessageKey, useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
 import { FrameEditor, type RecentImage } from "./FrameEditor";
 import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
-import { DEFAULT_CAPTION_STYLE, loadCaptionFont, paintCaption, type CaptionStyle } from "./captionPaint";
+import { DEFAULT_CAPTION_STYLE, keystrokeEnd, loadCaptionFont, paintCaption, paintKeystroke, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
 import { durationBucket, track } from "../telemetry";
 import { isWeb } from "../platform";
+import { PrivacyPanel } from "./PrivacyPanel";
+import { KeystrokePanel } from "./KeystrokePanel";
+import { CameraPanel } from "./CameraPanel";
+import { estimateGifBytes, GIF_PRESETS, makeGif, type GifOptions } from "./gif";
+import { EXPORT_PRESETS, ExportPresets } from "./ExportPresets";
+import { BrandPanel } from "./BrandPanel";
+import { ChaptersPanel } from "./ChaptersPanel";
+import { CARD_MS, loadBrand, logoRect, paintCard, paintLogo, saveBrand, type BrandKit } from "./brand";
 
 const SETTINGS_KEY = "screensway.frame";
 const CAPTION_STYLE_KEY = "screensway.captionStyle";
 const EXPORT_FPS = 60;
+/** Tells the library to reload, e.g. after the Studio renamed the recording. */
+export const LIBRARY_CHANGED_EVENT = "screensway:library-changed";
 
 interface ExportResult {
   outputPath: string;
@@ -93,8 +111,28 @@ function parseEdits(value: unknown): RecordingEdits {
   const zooms = Array.isArray(edits.zooms)
     ? edits.zooms.filter((zoom) => zoom && [zoom.startMs, zoom.endMs, zoom.centerX, zoom.centerY, zoom.scale].every((field) => number(field) !== null))
     : null;
-  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms };
+  const cuts = Array.isArray(edits.cuts)
+    ? edits.cuts.filter((cut) => cut && typeof cut.id === "string" && number(cut.startMs) !== null && number(cut.endMs) !== null)
+    : [];
+  const redactions = Array.isArray(edits.redactions)
+    ? edits.redactions.filter((item): item is Redaction => Boolean(item && typeof item.id === "string" && (item.mode === "blur" || item.mode === "solid") && [item.x, item.y, item.width, item.height].every((field) => number(field) !== null)))
+    : [];
+  const overlay = edits.keystrokeOverlay;
+  const keystrokeOverlay = overlay && typeof overlay.enabled === "boolean" && ["top", "bottom"].includes(overlay.position) && ["small", "medium", "large"].includes(overlay.size) && ["dark", "light"].includes(overlay.theme)
+    ? overlay : DEFAULT_KEYSTROKE_OVERLAY;
+  const storedCamera = edits.camera;
+  const camera = storedCamera && typeof storedCamera.visible === "boolean" && typeof storedCamera.mirror === "boolean"
+    && ["circle", "rounded"].includes(storedCamera.shape) && [storedCamera.x, storedCamera.y, storedCamera.size].every((field) => number(field) !== null)
+    ? storedCamera : undefined;
+  const chapters = Array.isArray(edits.chapters)
+    ? edits.chapters.filter((item) => item && typeof item.title === "string" && number(item.startMs) !== null)
+    : undefined;
+  const framing = Array.isArray(edits.framing)
+    ? edits.framing.filter((item) => item && typeof item.id === "string" && [item.startMs, item.endMs, item.x].every((field) => number(field) !== null))
+    : [];
+  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters };
 }
+
 
 function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -124,7 +162,15 @@ function exportFileName(): string {
 }
 
 /** Preview, frame customization and export for one recording. */
-export function RecordingStudio({ recording }: { recording: RecordingResult }) {
+export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExportStarted }: {
+  recording: RecordingResult;
+  /** Where to start playing, e.g. a line found by searching speech. */
+  startAtMs?: number | null;
+  /** Export once the recording is ready, with an optional preset (from a screensway:// link). */
+  autoExport?: { preset: string | null; id: number } | null;
+  /** The link's export has started; later recordings are not exported by themselves. */
+  onAutoExportStarted?: () => void;
+}) {
   const { t, language } = useI18n();
   const [settings, setSettings] = useState<FrameSettings>(loadSettings);
   const [autoZoom, setAutoZoom] = useState(true);
@@ -133,7 +179,47 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
   const [recentImages, setRecentImages] = useState<RecentImage[]>([]);
   const [magic, setMagic] = useState<BackgroundSpec | null>(null);
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
+  const [gif, setGif] = useState<{ status: "idle" } | { status: "running"; progress: number } | { status: "done"; path: string } | { status: "failed"; message: string }>({ status: "idle" });
+  const [copied, setCopied] = useState<string | null>(null);
+  const gifAbort = useRef<AbortController | null>(null);
+  const [brand, setBrand] = useState<BrandKit>(loadBrand);
+  const [logoData, setLogoData] = useState<string | null>(null);
+  const [logoImage, setLogoImage] = useState<HTMLImageElement | null>(null);
+  const updateBrand = useCallback((next: BrandKit) => {
+    setBrand(next);
+    saveBrand(next);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (isWeb || !brand.logoPath) {
+      setLogoData(null);
+      setLogoImage(null);
+      return;
+    }
+    invoke<string>("read_logo", { path: brand.logoPath })
+      .then(async (data) => {
+        const loaded = await loadImage(data);
+        if (!cancelled) { setLogoData(data); setLogoImage(loaded); }
+      })
+      .catch(() => { if (!cancelled) { setLogoData(null); setLogoImage(null); } });
+    return () => { cancelled = true; };
+  }, [brand.logoPath]);
+  async function chooseLogo(file: File) {
+    try {
+      const data = await readFile(file);
+      const loaded = await loadImage(data);
+      const path = await invoke<string>("save_logo", { image: data, thumbnail: thumbnailOf(loaded) });
+      updateBrand({ ...brand, logoPath: path, showLogo: true });
+    } catch {
+      setExportState({ status: "failed", message: t("frame.imageFailed") });
+    }
+  }
   const [edits, setEdits] = useState<RecordingEdits>(NO_EDITS);
+  const [editsLoaded, setEditsLoaded] = useState(false);
+  const [captionsLoaded, setCaptionsLoaded] = useState(false);
+  const [autoExportReady, setAutoExportReady] = useState<number | null>(null);
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
+  const history = useRef<{ past: RecordingEdits[]; future: RecordingEdits[]; lastChange: number }>({ past: [], future: [], lastChange: 0 });
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingEdits = useRef<RecordingEdits | null>(null);
   const mounted = useRef(true);
@@ -143,15 +229,20 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
     () => resolveZooms(edits, recording.pointerEvents, recording.durationMs),
     [edits, recording.durationMs, recording.pointerEvents],
   );
+  const sourceRanges = useMemo(() => keptRanges(edits, recording.durationMs), [edits, recording.durationMs]);
+  const cameraOverlay = edits.camera ?? DEFAULT_CAMERA_OVERLAY;
 
   // Each recording keeps its own trim and zooms in edits.json.
   useEffect(() => {
     let cancelled = false;
     setEdits(NO_EDITS);
+    history.current = { past: [], future: [], lastChange: 0 };
+    setHistoryState({ canUndo: false, canRedo: false });
     invoke<unknown>("load_edits", { projectPath: recording.projectPath })
       .then((stored) => {
         if (!cancelled) setEdits(parseEdits(stored));
       })
+      .finally(() => { if (!cancelled) setEditsLoaded(true); })
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -186,7 +277,8 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       .then((stored) => {
         if (!cancelled) setCaptions(parseCaptions(stored));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCaptionsLoaded(true); });
     return () => {
       cancelled = true;
     };
@@ -246,10 +338,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
 
   const editsRef = useRef(edits);
   editsRef.current = edits;
-  const updateEdits = useCallback((update: (current: RecordingEdits) => RecordingEdits) => {
-    const next = update(editsRef.current);
-    editsRef.current = next;
-    setEdits(next);
+  const saveEdits = useCallback((next: RecordingEdits) => {
     pendingEdits.current = next;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
@@ -257,6 +346,79 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       void invoke("save_edits", { projectPath: recording.projectPath, edits: next }).catch(() => {});
     }, 300);
   }, [recording.projectPath]);
+  const updateEdits = useCallback((update: (current: RecordingEdits) => RecordingEdits) => {
+    const current = editsRef.current;
+    const next = update(current);
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
+    const now = performance.now();
+    // Pointer drags emit many changes; keep one snapshot for the whole gesture.
+    if (now - history.current.lastChange > 500 || history.current.past.length === 0) {
+      history.current.past.push(current);
+      if (history.current.past.length > 50) history.current.past.shift();
+    }
+    history.current.lastChange = now;
+    history.current.future = [];
+    editsRef.current = next;
+    setEdits(next);
+    setHistoryState({ canUndo: true, canRedo: false });
+    saveEdits(next);
+  }, [saveEdits]);
+
+  const moveHistory = useCallback((direction: "undo" | "redo") => {
+    const from = direction === "undo" ? history.current.past : history.current.future;
+    const to = direction === "undo" ? history.current.future : history.current.past;
+    const next = from.pop();
+    if (!next) return;
+    to.push(editsRef.current);
+    history.current.lastChange = 0;
+    editsRef.current = next;
+    setEdits(next);
+    setHistoryState({ canUndo: history.current.past.length > 0, canRedo: history.current.future.length > 0 });
+    saveEdits(next);
+  }, [saveEdits]);
+
+  // Removing a line cuts its speech from the video; the line stays listed so it can be restored.
+  const captionCutId = (line: { id: string }) => `cut-caption-${line.id}`;
+  const isCaptionCut = useCallback((line: { startMs: number; endMs: number }) => {
+    const middle = (line.startMs + line.endMs) / 2;
+    return !sourceRanges.some((kept) => middle >= kept.startMs && middle < kept.endMs);
+  }, [sourceRanges]);
+  const cutCaption = useCallback((line: { id: string; startMs: number; endMs: number }) => {
+    updateEdits((current) => {
+      const cuts = current.cuts ?? [];
+      if (isCaptionCut(line)) {
+        // Restore: drop every cut that covers the line.
+        return { ...current, cuts: cuts.filter((cut) => cut.id !== captionCutId(line) && (cut.endMs <= line.startMs || cut.startMs >= line.endMs)) };
+      }
+      return { ...current, cuts: [...cuts, { id: captionCutId(line), startMs: line.startMs, endMs: line.endMs }] };
+    });
+  }, [isCaptionCut, updateEdits]);
+
+  const removeSilences = useCallback(() => {
+    if (!captions) return;
+    const lines = [...captions.lines].sort((a, b) => a.startMs - b.startMs);
+    const suggested: CutSegment[] = [];
+    let cursor = range.startMs;
+    for (const line of lines) {
+      const start = Math.max(range.startMs, line.startMs - 200);
+      if (start - cursor >= 1_200) suggested.push({ id: `cut-silence-${Math.round(cursor)}`, startMs: cursor, endMs: start });
+      cursor = Math.max(cursor, Math.min(range.endMs, line.endMs + 200));
+    }
+    if (range.endMs - cursor >= 1_200) suggested.push({ id: `cut-silence-${Math.round(cursor)}`, startMs: cursor, endMs: range.endMs });
+    updateEdits((current) => ({ ...current, cuts: [...(current.cuts ?? []), ...suggested] }));
+  }, [captions, range.endMs, range.startMs, updateEdits]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, [contenteditable=true]")) return;
+      event.preventDefault();
+      moveHistory(event.shiftKey ? "redo" : "undo");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [moveHistory]);
   // An image background without a loaded image (e.g. after a restart) falls back to the default.
   const effectiveSettings = useMemo(
     () => (settings.background.kind === "image" && (!image || imagePath !== (settings.background.path ?? null))
@@ -372,7 +534,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
       paintFrameBase(canvas.getContext("2d")!, layout, effective, image);
 
       // Captions on the exported timeline, each painted at output size like the preview.
-      const keptCaptions = captions?.enabled ? trimCaptions(captions.lines, range.startMs, range.endMs) : [];
+      const keptCaptions = captions?.enabled ? retimeCaptions(captions.lines, sourceRanges) : [];
       if (keptCaptions.length > 0) await loadCaptionFont();
       const captionImages = keptCaptions.flatMap((line) => {
         const painted = paintCaption(line.text, layout, captionStyle);
@@ -380,18 +542,53 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           ? [{ startMs: line.startMs, endMs: line.endMs, image: painted.canvas.toDataURL("image/png"), x: painted.x, y: painted.y }]
           : [];
       });
+      const overlay = edits.keystrokeOverlay ?? DEFAULT_KEYSTROKE_OVERLAY;
+      const keyImages = overlay.enabled ? (recording.keystrokes ?? []).flatMap((event, index) => {
+        const kept = sourceRanges.find((item) => event.timeMs >= item.startMs && event.timeMs < item.endMs);
+        if (!kept) return [];
+        const painted = paintKeystroke(event.keys, layout, overlay);
+        const sourceEnd = Math.min(kept.endMs, keystrokeEnd(recording.keystrokes, index));
+        return [{ startMs: sourceToOutputTime(sourceRanges, event.timeMs), endMs: sourceToOutputTime(sourceRanges, sourceEnd), image: painted.canvas.toDataURL("image/png"), x: painted.x, y: painted.y }];
+      }) : [];
+
+      // Brand pieces: title cards before and after the recording and the logo over it.
+      const withCards = !isWeb;
+      const introMs = withCards && brand.intro.enabled && brand.intro.title.trim() ? CARD_MS : 0;
+      const outroMs = withCards && brand.outro.enabled && brand.outro.title.trim() ? CARD_MS : 0;
+      const sourceTimes = buildSourceTimes(sourceRanges, EXPORT_FPS);
+      const recordingFrames = buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom, {
+        zooms,
+        startMs: range.startMs,
+        endMs: range.endMs,
+        sourceTimesMs: sourceTimes,
+        framing: edits.framing,
+      });
+      const introFrames = Math.round((introMs / 1_000) * EXPORT_FPS);
+      const outroFrames = Math.round((outroMs / 1_000) * EXPORT_FPS);
+      const leadIn = (introFrames * 1_000) / EXPORT_FPS;
+      const recordingMs = (recordingFrames.length * 1_000) / EXPORT_FPS;
+      const shift = <T extends { startMs: number; endMs: number }>(item: T): T => ({ ...item, startMs: item.startMs + leadIn, endMs: item.endMs + leadIn });
+      const cardImages = [
+        introMs ? { startMs: 0, endMs: leadIn, image: paintCard(brand.intro, layout, effective, image, logoImage).toDataURL("image/png"), x: 0, y: 0 } : null,
+        outroMs ? { startMs: leadIn + recordingMs, endMs: leadIn + recordingMs + (outroFrames * 1_000) / EXPORT_FPS, image: paintCard(brand.outro, layout, effective, image, logoImage).toDataURL("image/png"), x: 0, y: 0 } : null,
+      ].filter((item) => item !== null);
+      const logoImages = withCards && brand.showLogo && logoImage
+        ? [(() => { const painted = paintLogo(brand, logoImage, layout); return { startMs: leadIn, endMs: leadIn + recordingMs, image: painted.canvas.toDataURL("image/png"), x: painted.x, y: painted.y }; })()]
+        : [];
 
       if (!mounted.current) return;
       const result = await invoke<ExportResult>("export_recording", {
         projectPath: recording.projectPath,
-        captions: captionImages,
-        subtitles: keptCaptions.length > 0 ? toSrt(keptCaptions) : null,
+        captions: [...logoImages, ...[...captionImages, ...keyImages].map(shift), ...cardImages],
+        subtitles: keptCaptions.length > 0 ? toSrt(keptCaptions.map(shift)) : null,
         fileName: exportFileName(),
         baseLayer: canvas.toDataURL("image/png"),
         cursor: renderCursorPng(),
         job: {
           width: layout.width,
           height: layout.height,
+          sourceWidth: recording.width,
+          sourceHeight: recording.height,
           fps: EXPORT_FPS,
           cursorHotspotX: CURSOR_HOTSPOT.x,
           cursorHotspotY: CURSOR_HOTSPOT.y,
@@ -399,14 +596,20 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           radius: layout.videoRadius,
           roundTopCorners: layout.roundVideoTop,
           startMs: range.startMs,
-          frames: buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom, {
-            zooms,
-            startMs: range.startMs,
-            endMs: range.endMs,
-          }),
+          sourceRanges,
+          leadInMs: leadIn,
+          // The cards cover the frame; under them the first and last frames stand still.
+          sourceTimesMs: [...Array(introFrames).fill(sourceTimes[0]), ...sourceTimes, ...Array(outroFrames).fill(sourceTimes.at(-1))],
+          redactions: edits.redactions ?? [],
+          camera: recording.cameraPath && cameraOverlay.visible
+            ? { ...cameraRect(cameraOverlay, layout.width, layout.height), mirror: cameraOverlay.mirror }
+            : null,
+          frames: [...Array(introFrames).fill(recordingFrames[0]), ...recordingFrames, ...Array(outroFrames).fill(recordingFrames.at(-1))],
         },
       });
       setExportState({ status: "done", result });
+      setGif({ status: "idle" });
+      setCopied(null);
       track("export_finished", {
         quality: effective.quality,
         frame: effective.frame,
@@ -428,6 +631,52 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
     }
   }
 
+  async function createGif(videoPath: string, options: GifOptions) {
+    const controller = new AbortController();
+    gifAbort.current = controller;
+    setGif({ status: "running", progress: 0 });
+    try {
+      const bytes = await makeGif(convertFileSrc(videoPath), options, (progress) => setGif({ status: "running", progress }), controller.signal);
+      let binary = "";
+      for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+      const path = await invoke<string>("save_export_gif", { videoPath, data: btoa(binary) });
+      setGif({ status: "done", path });
+    } catch (error) {
+      const message = String(error).replace(/^Error: /, "");
+      setGif(message === "Export cancelled." ? { status: "idle" } : { status: "failed", message });
+    } finally {
+      gifAbort.current = null;
+    }
+  }
+
+  async function copyExport(path: string) {
+    try {
+      await invoke("copy_export", { path });
+      setCopied(path);
+    } catch (error) {
+      setGif({ status: "failed", message: String(error) });
+    }
+  }
+
+  // An export asked for by a link: apply its preset, then export once the settings are in place.
+  const handledAutoExport = useRef<number | null>(null);
+  useEffect(() => {
+    // Wait for everything the export draws: edits, captions and a chosen background image.
+    const imageReady = settings.background.kind !== "image" || Boolean(image) || !settings.background.path;
+    if (!autoExport || !editsLoaded || !captionsLoaded || !imageReady || handledAutoExport.current === autoExport.id) return;
+    handledAutoExport.current = autoExport.id;
+    const preset = EXPORT_PRESETS.find((item) => item.id === autoExport.preset);
+    if (preset) updateSettings(preset.settings);
+    setAutoExportReady(autoExport.id);
+  }, [autoExport, captionsLoaded, editsLoaded, image, settings.background, updateSettings]);
+  useEffect(() => {
+    if (autoExportReady === null) return;
+    setAutoExportReady(null);
+    onAutoExportStarted?.();
+    void exportVideo();
+    // exportVideo reads the settings the preset has just applied.
+  }, [autoExportReady]);
+
   const running = exportState.status === "running";
 
   return (
@@ -444,6 +693,16 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
         range={range}
         captions={captions?.enabled ? { lines: captions.lines, style: captionStyle } : null}
         seekRef={seekRef}
+        canUndo={historyState.canUndo}
+        canRedo={historyState.canRedo}
+        onUndo={() => moveHistory("undo")}
+        onRedo={() => moveHistory("redo")}
+        redactions={edits.redactions ?? []}
+        keystrokeOverlay={edits.keystrokeOverlay ?? DEFAULT_KEYSTROKE_OVERLAY}
+        startAtMs={startAtMs ?? undefined}
+        cameraOverlay={cameraOverlay}
+        logo={logoData && logoImage && brand.showLogo ? { src: logoData, rect: (layout) => logoRect(brand, { width: logoImage.naturalWidth, height: logoImage.naturalHeight }, layout) } : null}
+        onCameraChange={(camera) => updateEdits((current) => ({ ...current, camera }))}
       />
 
       <aside className="editor-panel glass">
@@ -458,6 +717,10 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
           onRecentImage={chooseRecentImage}
           onDeleteRecentImage={(path) => void deleteRecentImage(path)}
         >
+          {!isWeb && <BrandPanel brand={brand} logo={logoData} onChange={updateBrand} onLogo={(file) => void chooseLogo(file)} />}
+          {recording.cameraPath && <CameraPanel value={cameraOverlay} onChange={(camera) => updateEdits((current) => ({ ...current, camera }))} />}
+          {!isWeb && <PrivacyPanel redactions={edits.redactions ?? []} onChange={(redactions) => updateEdits((current) => ({ ...current, redactions }))} />}
+          {!isWeb && <KeystrokePanel count={recording.keystrokes?.length ?? 0} value={edits.keystrokeOverlay ?? DEFAULT_KEYSTROKE_OVERLAY} onChange={(keystrokeOverlay) => updateEdits((current) => ({ ...current, keystrokeOverlay }))} />}
           {!isWeb && <CaptionsPanel
             captions={captions}
             transcription={transcription}
@@ -469,10 +732,28 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
             onStyleChange={updateCaptionStyle}
             onSeek={(timeMs) => seekRef.current?.(timeMs)}
             onOpenSettings={() => void invoke("open_speech_settings").catch(() => {})}
+            onCutCaption={cutCaption}
+            onRemoveSilences={removeSilences}
+            isCut={isCaptionCut}
           />}
+          {!isWeb && captions && captions.lines.length > 0 && (
+            <ChaptersPanel
+              key={recording.projectPath}
+              lines={captions.lines}
+              chapters={edits.chapters}
+              onChange={(chapters) => updateEdits((current) => ({ ...current, chapters }))}
+              toOutput={(timeMs) => sourceToOutputTime(sourceRanges, timeMs) + (brand.intro.enabled && brand.intro.title.trim() ? CARD_MS : 0)}
+              onRename={async (title) => {
+                await invoke("rename_recording", { projectPath: recording.projectPath, title });
+                window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
+              }}
+              onSeek={(timeMs) => seekRef.current?.(timeMs)}
+            />
+          )}
         </FrameEditor>
 
         <div className="export-box">
+          {!running && <ExportPresets settings={settings} onApply={(patch) => updateSettings(patch)} />}
           {running ? (
             <>
               <div className="export-progress" role="progressbar" aria-valuenow={exportState.progress} aria-valuemin={0} aria-valuemax={100}>
@@ -520,7 +801,39 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
                     <FolderOpen size={14} aria-hidden="true" /> {t("export.reveal")}
                   </button>
                 )}
+                {!isWeb && (
+                  <button className="editor-button" onClick={() => void copyExport(exportState.result.outputPath)}>
+                    {copied === exportState.result.outputPath ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />} {t(copied === exportState.result.outputPath ? "export.copied" : "export.copy")}
+                  </button>
+                )}
               </div>
+              {!isWeb && (
+                <div className="gif-box">
+                  {gif.status === "running" ? (
+                    <div className="export-row">
+                      <span className="export-status"><Loader2 size={15} className="spin" aria-hidden="true" /> {t("gif.running", { percent: gif.progress })}</span>
+                      <button className="editor-button" onClick={() => gifAbort.current?.abort()}><X size={15} aria-hidden="true" /> {t("export.cancel")}</button>
+                    </div>
+                  ) : gif.status === "done" ? (
+                    <div className="export-done-actions">
+                      <button className="editor-button accent" onClick={() => void invoke("open_export", { path: gif.path, reveal: false })}><Play size={14} aria-hidden="true" /> {t("gif.open")}</button>
+                      <button className="editor-button" onClick={() => void copyExport(gif.path)}>
+                        {copied === gif.path ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />} {t(copied === gif.path ? "export.copied" : "gif.copy")}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="gif-choices">
+                      {GIF_PRESETS.map((preset) => (
+                        <button key={preset.id} className="editor-button" onClick={() => void createGif(exportState.result.outputPath, preset.options)}>
+                          <Film size={14} aria-hidden="true" />
+                          <span>{t(`gif.${preset.id}`)}<small>{t("gif.estimate", { size: formatBytes(estimateGifBytes(preset.options, exportState.result)) })}</small></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {gif.status === "failed" && <p className="editor-note error-note">{gif.message}</p>}
+                </div>
+              )}
             </div>
           )}
           {exportState.status === "failed" && (
@@ -536,3 +849,7 @@ export function RecordingStudio({ recording }: { recording: RecordingResult }) {
 }
 
 const MAGIC_FALLBACK: BackgroundSpec = DEFAULT_FRAME_SETTINGS.background;
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(bytes >= 10 * 1024 ** 2 ? 0 : 1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

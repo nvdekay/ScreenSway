@@ -5,13 +5,16 @@ import {
   MIN_ZOOM_MS,
   MIN_ZOOM_SCALE,
   normalizeZooms,
+  normalizeCuts,
   samplePointer,
   type Canvas,
   type PointerEvent,
   type RecordingEdits,
+  type CutSegment,
+  type FramingSegment,
   type ZoomSegment,
 } from "@screensway/core";
-import { Plus, RotateCcw, Scissors, Trash2, Wand2 } from "lucide-react";
+import { Crosshair, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2, Wand2 } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { formatPrecise } from "../format";
 import { useI18n } from "../i18n";
@@ -42,15 +45,27 @@ interface TimelineProps {
   currentTimeMs: () => number;
   /** Moved by the player on every frame, so the timeline does not re-render while playing. */
   playheadRef: RefObject<HTMLDivElement | null>;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  /** A filled frame narrower than the recording, where the view's position can be held. */
+  framingEnabled?: boolean;
 }
 
 /** Trim handles and an editable lane of zooms under the preview. */
-export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoomEnabled, onChange, onSeek, currentTimeMs, playheadRef }: TimelineProps) {
+export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoomEnabled, onChange, onSeek, currentTimeMs, playheadRef, canUndo, canRedo, onUndo, onRedo, framingEnabled }: TimelineProps) {
   const { t } = useI18n();
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedCutId, setSelectedCutId] = useState<string | null>(null);
   const selected = zooms.find((zoom) => zoom.id === selectedId) ?? null;
+  const cuts = normalizeCuts(edits.cuts ?? [], range);
+  const selectedCut = cuts.find((cut) => cut.id === selectedCutId) ?? null;
+  const [selectedFramingId, setSelectedFramingId] = useState<string | null>(null);
+  const framing = framingEnabled ? edits.framing ?? [] : [];
+  const selectedFraming = framing.find((item) => item.id === selectedFramingId) ?? null;
   const clicks = events.filter((event) => event.type !== "move");
   const percent = (timeMs: number) => `${(timeMs / durationMs) * 100}%`;
   const trimmed = range.startMs > 0 || range.endMs < durationMs;
@@ -153,6 +168,41 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
     setSelectedId(null);
   };
 
+  const setCuts = (next: CutSegment[]) => onChange((current) => ({ ...current, cuts: normalizeCuts(next, range) }));
+  const addCut = () => {
+    const center = Math.min(range.endMs - 100, Math.max(range.startMs + 100, currentTimeMs()));
+    const cut = { id: `cut-${Date.now().toString(36)}`, startMs: Math.max(range.startMs, center - 500), endMs: Math.min(range.endMs, center + 500) };
+    const next = normalizeCuts([...cuts, cut], range);
+    if (!next.some((candidate) => candidate.id === cut.id)) return;
+    setCuts(next);
+    setSelectedCutId(cut.id);
+    setSelectedId(null);
+  };
+  const updateCut = (id: string, patch: Partial<CutSegment>) => setCuts(cuts.map((cut) => cut.id === id ? { ...cut, ...patch } : cut));
+  const removeCut = (id: string) => {
+    setCuts(cuts.filter((cut) => cut.id !== id));
+    setSelectedCutId(null);
+  };
+
+  const setFraming = (next: FramingSegment[]) => onChange((current) => ({ ...current, framing: [...next].sort((a, b) => a.startMs - b.startMs) }));
+  const addFraming = () => {
+    const now = Math.min(range.endMs - 500, Math.max(range.startMs, currentTimeMs()));
+    const pointer = samplePointer(events, now);
+    const segment = {
+      id: `framing-${Date.now().toString(36)}`,
+      startMs: Math.round(now),
+      endMs: Math.round(Math.min(range.endMs, now + 3_000)),
+      x: pointer ? Math.min(1, Math.max(0, pointer.x / canvas.width)) : 0.5,
+    };
+    // A new hold replaces the part of others it overlaps.
+    const others = framing.filter((item) => item.endMs <= segment.startMs || item.startMs >= segment.endMs);
+    setFraming([...others, segment]);
+    setSelectedFramingId(segment.id);
+    setSelectedCutId(null);
+    setSelectedId(null);
+  };
+  const updateFraming = (id: string, patch: Partial<FramingSegment>) => setFraming(framing.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+
   const trimKeys = (edge: "start" | "end") => (event: KeyboardEvent) => {
     const step = event.key === "ArrowLeft" ? -KEY_STEP_MS : event.key === "ArrowRight" ? KEY_STEP_MS : 0;
     if (!step) return;
@@ -169,6 +219,8 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
           {t("timeline.kept", { start: formatPrecise(range.startMs), end: formatPrecise(range.endMs), length: formatPrecise(range.endMs - range.startMs) })}
         </span>
         <span className="timeline-actions">
+          <button className="editor-button compact icon-only" onClick={onUndo} disabled={!canUndo} aria-label={t("timeline.undo")} title={t("timeline.undo")}><Undo2 size={13} /></button>
+          <button className="editor-button compact icon-only" onClick={onRedo} disabled={!canRedo} aria-label={t("timeline.redo")} title={t("timeline.redo")}><Redo2 size={13} /></button>
           {trimmed && (
             <button className="editor-button compact" onClick={() => setTrim(0, durationMs)}>
               <RotateCcw size={13} aria-hidden="true" /> {t("timeline.resetTrim")}
@@ -182,6 +234,10 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
           <button className="editor-button compact accent" onClick={addZoom} disabled={!zoomEnabled}>
             <Plus size={13} aria-hidden="true" /> {t("timeline.addZoom")}
           </button>
+          <button className="editor-button compact" onClick={addCut}><Scissors size={13} aria-hidden="true" /> {t("timeline.addCut")}</button>
+          {framingEnabled && (
+            <button className="editor-button compact" onClick={addFraming}><Crosshair size={13} aria-hidden="true" /> {t("timeline.holdFraming")}</button>
+          )}
         </span>
       </div>
 
@@ -221,6 +277,32 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
             </div>
           ))}
         </div>
+        <div className="cut-lane" aria-label={t("timeline.cuts")}>
+          {cuts.map((cut) => (
+            <button
+              key={cut.id}
+              className={`cut-block${cut.id === selectedCutId ? " selected" : ""}`}
+              style={{ left: percent(cut.startMs), width: percent(cut.endMs - cut.startMs) }}
+              aria-label={t("timeline.cutLabel", { start: formatPrecise(cut.startMs), end: formatPrecise(cut.endMs) })}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => { setSelectedCutId(cut.id); setSelectedId(null); onSeek(cut.startMs); }}
+            />
+          ))}
+        </div>
+        {framing.length > 0 && (
+          <div className="framing-lane" aria-label={t("timeline.framing")}>
+            {framing.map((item) => (
+              <button
+                key={item.id}
+                className={`framing-block${item.id === selectedFramingId ? " selected" : ""}`}
+                style={{ left: percent(item.startMs), width: percent(item.endMs - item.startMs) }}
+                aria-label={t("timeline.framingLabel", { start: formatPrecise(item.startMs), end: formatPrecise(item.endMs) })}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => { setSelectedFramingId(item.id); setSelectedCutId(null); setSelectedId(null); onSeek(item.startMs); }}
+              />
+            ))}
+          </div>
+        )}
         <div className="trim-shade" style={{ left: 0, width: percent(range.startMs) }} />
         <div className="trim-shade" style={{ left: percent(range.endMs), right: 0 }} />
         <div className="trim-window" style={{ left: percent(range.startMs), width: percent(range.endMs - range.startMs) }}>
@@ -268,6 +350,21 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
           <button className="editor-button compact" onClick={() => removeZoom(selected.id)}>
             <Trash2 size={13} aria-hidden="true" /> {t("timeline.removeZoom")}
           </button>
+        </div>
+      )}
+      {selectedCut && (
+        <div className="cut-inspector">
+          <label><span>{t("timeline.cutStart")}</span><input type="number" min={range.startMs / 1_000} max={(selectedCut.endMs - 100) / 1_000} step={0.1} value={(selectedCut.startMs / 1_000).toFixed(1)} onChange={(event) => updateCut(selectedCut.id, { startMs: Number(event.target.value) * 1_000 })} /></label>
+          <label><span>{t("timeline.cutEnd")}</span><input type="number" min={(selectedCut.startMs + 100) / 1_000} max={range.endMs / 1_000} step={0.1} value={(selectedCut.endMs / 1_000).toFixed(1)} onChange={(event) => updateCut(selectedCut.id, { endMs: Number(event.target.value) * 1_000 })} /></label>
+          <button className="editor-button compact" onClick={() => removeCut(selectedCut.id)}><Trash2 size={13} /> {t("timeline.removeCut")}</button>
+        </div>
+      )}
+      {selectedFraming && (
+        <div className="cut-inspector">
+          <label><span>{t("timeline.cutStart")}</span><input type="number" min={0} max={(selectedFraming.endMs - 100) / 1_000} step={0.1} value={(selectedFraming.startMs / 1_000).toFixed(1)} onChange={(event) => updateFraming(selectedFraming.id, { startMs: Math.min(selectedFraming.endMs - 100, Number(event.target.value) * 1_000) })} /></label>
+          <label><span>{t("timeline.cutEnd")}</span><input type="number" min={(selectedFraming.startMs + 100) / 1_000} max={durationMs / 1_000} step={0.1} value={(selectedFraming.endMs / 1_000).toFixed(1)} onChange={(event) => updateFraming(selectedFraming.id, { endMs: Math.max(selectedFraming.startMs + 100, Number(event.target.value) * 1_000) })} /></label>
+          <button className="editor-button compact" onClick={() => { setFraming(framing.filter((item) => item.id !== selectedFraming.id)); setSelectedFramingId(null); }}><Trash2 size={13} /> {t("timeline.removeFraming")}</button>
+          <label className="framing-position"><span>{t("timeline.framingPosition")}</span><input type="range" min={0} max={1} step={0.01} value={selectedFraming.x} onChange={(event) => updateFraming(selectedFraming.id, { x: Number(event.target.value) })} /></label>
         </div>
       )}
       {!zoomEnabled && <p className="editor-note">{t("timeline.zoomOff")}</p>}

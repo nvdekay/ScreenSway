@@ -9,11 +9,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: tauri.listen }));
 vi.mock("../i18n", () => ({ useI18n: () => ({ t: (key: string) => key, language: "en" }) }));
 vi.mock("../ZoomPreview", () => ({
-  ZoomPreview: ({ edits, captions, onEditsChange }: any) => (
+  ZoomPreview: ({ edits, captions, onEditsChange, onUndo, onRedo, canUndo, canRedo }: any) => (
     <section>
       <output data-testid="trim">{edits.trimStartMs}</output>
       <output data-testid="caption">{captions?.lines[0]?.text ?? "none"}</output>
       <button onClick={() => onEditsChange((current: any) => ({ ...current, trimStartMs: 500 }))}>change-edits</button>
+      <button disabled={!canUndo} onClick={onUndo}>undo-edits</button>
+      <button disabled={!canRedo} onClick={onRedo}>redo-edits</button>
     </section>
   ),
 }));
@@ -36,10 +38,12 @@ const recording = {
   projectPath: "/Movies/ScreenSway/Recording-1.screensway",
   videoPath: "/Movies/ScreenSway/Recording-1.screensway/media/screen.mp4",
   pointerEventsPath: "/Movies/ScreenSway/Recording-1.screensway/metadata/pointer-events.json",
+  keystrokesPath: "/Movies/ScreenSway/Recording-1.screensway/metadata/keystrokes.json",
   durationMs: 5_000,
   width: 1920,
   height: 1080,
   pointerEvents: [],
+  keystrokes: [],
 };
 
 describe("RecordingStudio orchestration", () => {
@@ -98,8 +102,20 @@ describe("RecordingStudio orchestration", () => {
 
     expect(tauri.invoke).toHaveBeenCalledWith("save_edits", {
       projectPath: recording.projectPath,
-      edits: { trimStartMs: 500, trimEndMs: 4_500, zooms: [] },
+      edits: expect.objectContaining({ trimStartMs: 500, trimEndMs: 4_500, zooms: [], cuts: [], redactions: [] }),
     });
+  });
+
+  it("undoes and redoes timeline edits", async () => {
+    render(<RecordingStudio recording={recording} />);
+    await flushEffects();
+
+    fireEvent.click(screen.getByText("change-edits"));
+    expect(screen.getByTestId("trim").textContent).toBe("500");
+    fireEvent.click(screen.getByText("undo-edits"));
+    expect(screen.getByTestId("trim").textContent).toBe("250");
+    fireEvent.click(screen.getByText("redo-edits"));
+    expect(screen.getByTestId("trim").textContent).toBe("500");
   });
 
   it("turns timed transcription words into editable captions and persists them", async () => {

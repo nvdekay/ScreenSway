@@ -1,4 +1,4 @@
-import type { FrameLayout } from "@screensway/core";
+import { safeArea, type FrameLayout, type KeystrokeEvent, type KeystrokeOverlay } from "@screensway/core";
 
 export type CaptionSize = "s" | "m" | "l";
 export type CaptionLook = "dark" | "light" | "outline";
@@ -81,7 +81,8 @@ export function paintCaption(text: string, layout: FrameLayout, style: CaptionSt
     context.fillText(line, width / 2, y);
   });
 
-  const bottom = layout.video.y + layout.video.height - layout.video.height * 0.06;
+  // In a vertical frame, above the part social apps cover.
+  const bottom = Math.min(layout.video.y + layout.video.height - layout.video.height * 0.06, layout.height - safeArea(layout).bottom);
   return {
     canvas,
     x: Math.round(layout.video.x + (layout.video.width - width) / 2),
@@ -108,4 +109,53 @@ function wrap(context: CanvasRenderingContext2D, text: string, fontSize: number,
   }
   if (current) lines.push(current);
   return lines;
+}
+
+/** How long a shortcut stays on screen: until the next one, at most 1.2 s. */
+const KEY_SHOWN_MS = 1_200;
+const KEY_SIZE_RATIO: Record<KeystrokeOverlay["size"], number> = { small: 0.026, medium: 0.034, large: 0.044 };
+
+export function keystrokeEnd(keys: KeystrokeEvent[], index: number): number {
+  return Math.min(keys[index].timeMs + KEY_SHOWN_MS, keys[index + 1]?.timeMs ?? Infinity);
+}
+
+/** The shortcut on screen at `timeMs`, if any. */
+export function keystrokeAt(keys: KeystrokeEvent[], timeMs: number): KeystrokeEvent | null {
+  let low = 0;
+  let high = keys.length - 1;
+  let found = -1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (keys[middle].timeMs <= timeMs) { found = middle; low = middle + 1; } else high = middle - 1;
+  }
+  return found >= 0 && timeMs < keystrokeEnd(keys, found) ? keys[found] : null;
+}
+
+/** A shortcut as a key cap, drawn the same way for the preview and the export. */
+export function paintKeystroke(keys: string[], layout: FrameLayout, overlay: KeystrokeOverlay): PaintedCaption {
+  const text = keys.join(" ");
+  const fontSize = Math.max(10, Math.round(Math.min(layout.width, layout.height) * KEY_SIZE_RATIO[overlay.size]));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d")!;
+  context.font = `700 ${fontSize}px ${FONT_FAMILY}`;
+  const padding = Math.round(fontSize * 0.7);
+  canvas.width = Math.ceil(context.measureText(text).width + padding * 2);
+  canvas.height = Math.ceil(fontSize * 1.9);
+  context.fillStyle = overlay.theme === "dark" ? "rgba(17, 17, 17, 0.9)" : "rgba(255, 255, 255, 0.94)";
+  context.beginPath();
+  context.roundRect(0, 0, canvas.width, canvas.height, fontSize * 0.45);
+  context.fill();
+  context.font = `700 ${fontSize}px ${FONT_FAMILY}`;
+  context.fillStyle = overlay.theme === "dark" ? "#ffffff" : "#111118";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+  const safe = safeArea(layout);
+  const top = Math.max(layout.height * 0.07, safe.top);
+  const bottom = Math.min(layout.height * 0.93, layout.height - safe.bottom);
+  return {
+    canvas,
+    x: Math.round((layout.width - canvas.width) / 2),
+    y: Math.round(overlay.position === "top" ? top : bottom - canvas.height),
+  };
 }

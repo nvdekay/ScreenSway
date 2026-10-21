@@ -203,7 +203,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Slider({ label, value, min, max, step, format, onChange }: {
+export function Slider({ label, value, min, max, step, format, onChange }: {
   label: string;
   value: number;
   min: number;
@@ -395,6 +395,13 @@ export function FrameEditor({ settings, onChange, onImage, hasImage, onMagic, ma
             </button>
           ))}
         </div>
+        {settings.aspect !== "auto" && (
+          <label className="audio-toggle compact">
+            <span>{t("frame.fill")}<small>{t("frame.fillHint")}</small></span>
+            <input type="checkbox" role="switch" checked={settings.fill ?? false} onChange={(event) => onChange({ fill: event.target.checked })} />
+            <span className="switch" aria-hidden="true" />
+          </label>
+        )}
         <Slider label={t("frame.padding")} value={settings.padding} min={0} max={0.25} step={0.005} format={percent} onChange={(padding) => onChange({ padding })} />
         <Slider label={t("frame.radius")} value={settings.radius} min={0} max={0.06} step={0.001} format={(value) => `${Math.round((value / 0.06) * 100)}%`} onChange={(radius) => onChange({ radius })} />
         <Slider label={t("frame.shadow")} value={settings.shadow} min={0} max={1} step={0.05} format={percent} onChange={(shadow) => onChange({ shadow })} />
