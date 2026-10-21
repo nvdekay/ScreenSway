@@ -14,10 +14,17 @@ struct CaptureSummary {
     project_path: String,
     video_path: String,
     pointer_events_path: String,
+    keystrokes_path: String,
+    #[serde(default)]
+    camera_path: Option<String>,
+    /// How much later than the screen the camera started, in milliseconds.
+    #[serde(default)]
+    camera_offset_ms: f64,
     duration_ms: u64,
     width: u32,
     height: u32,
     pointer_events: Vec<PointerSample>,
+    keystrokes: Vec<KeystrokeSample>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -27,6 +34,13 @@ struct PointerSample {
     r#type: String,
     x: f64,
     y: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KeystrokeSample {
+    time_ms: u64,
+    keys: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -46,6 +60,55 @@ struct Microphone {
     id: String,
     name: String,
     is_default: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Camera {
+    id: String,
+    name: String,
+    is_default: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureRegion {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl CaptureRegion {
+    fn validate(&self) -> Result<(), String> {
+        if [self.x, self.y, self.width, self.height].into_iter().all(f64::is_finite)
+            && self.x >= 0.0 && self.y >= 0.0 && self.width >= 0.05 && self.height >= 0.05
+            && self.x + self.width <= 1.0 && self.y + self.height <= 1.0 {
+            Ok(())
+        } else {
+            Err("The capture region must be inside the selected display and at least 5% wide and tall.".into())
+        }
+    }
+}
+
+const CAPTURE_MARKER: &str = ".capture-in-progress";
+const LOW_DISK_WARNING_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+const LOW_DISK_BLOCK_BYTES: u64 = 1024 * 1024 * 1024;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageStatus {
+    available_bytes: u64,
+    warning: bool,
+    blocked: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterruptedRecording {
+    project_path: String,
+    name: String,
+    recoverable: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,6 +223,10 @@ async fn start_recording(
     source_id: String,
     system_audio: Option<bool>,
     microphone: Option<String>,
+    region: Option<CaptureRegion>,
+    capture_keystrokes: Option<bool>,
+    camera: Option<String>,
+    echo_cancellation: Option<bool>,
 ) -> Result<RecordingStarted, String> {
     let system_audio = system_audio.unwrap_or(false);
     // A device ID from `list_microphones`, or "default" for the system input.
@@ -167,13 +234,17 @@ async fn start_recording(
     if source_kind != "display" && source_kind != "window" {
         return Err("Capture source must be a display or window.".into());
     }
+    if source_kind == "window" && region.is_some() {
+        return Err("A capture region can only be used with a display.".into());
+    }
+    if let Some(region) = &region { region.validate()?; }
 
     #[cfg(capture)]
     {
         reserve_recording(&app)?;
         tauri::async_runtime::spawn_blocking(move || {
             let result =
-                start_recording_blocking(&app, &source_kind, &source_id, system_audio, microphone.as_deref());
+                start_recording_blocking(&app, &source_kind, &source_id, system_audio, microphone.as_deref(), region.as_ref(), capture_keystrokes.unwrap_or(false), camera.as_deref(), echo_cancellation.unwrap_or(false));
             if result.is_err() {
                 hide_hud(&app);
                 publish_state(&app, RecordingState { status: "idle", ..Default::default() });
@@ -187,7 +258,7 @@ async fn start_recording(
 
     #[cfg(not(capture))]
     {
-        let _ = (app, source_id, system_audio, microphone);
+        let _ = (app, source_id, system_audio, microphone, region, capture_keystrokes, camera, echo_cancellation);
         Err("The first ScreenSway capture prototype is not supported on this platform.".into())
     }
 }
@@ -211,6 +282,67 @@ async fn list_microphones() -> Result<Vec<Microphone>, String> {
     {
         Ok(Vec::new())
     }
+}
+
+#[tauri::command]
+async fn list_cameras() -> Result<Vec<Camera>, String> {
+    #[cfg(capture)]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            let output = helper_command()?.arg("--list-cameras").output()
+                .map_err(|error| format!("Could not list cameras: {error}"))?;
+            parse_helper_output(output, "Camera discovery")
+        }).await.map_err(|error| format!("Camera discovery task failed: {error}"))?
+    }
+    #[cfg(not(capture))]
+    { Ok(Vec::new()) }
+}
+
+/// Whether shortcut keys can be recorded. macOS asks for Input Monitoring the first time;
+/// Windows needs no permission.
+#[tauri::command]
+async fn keystroke_access() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            let output = helper_command()?
+                .arg("--keystroke-access")
+                .output()
+                .map_err(|error| format!("Could not check keyboard access: {error}"))?;
+            Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
+        })
+        .await
+        .map_err(|error| format!("Keyboard access task failed: {error}"))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+fn open_camera_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:privacy-webcam")
+        .spawn()
+        .map_err(|error| format!("Could not open camera settings: {error}"))?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
+        .spawn()
+        .map_err(|error| format!("Could not open System Settings: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_keystroke_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        .spawn()
+        .map_err(|error| format!("Could not open System Settings: {error}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -329,12 +461,19 @@ fn start_recording_blocking(
     source_id: &str,
     system_audio: bool,
     microphone: Option<&str>,
+    region: Option<&CaptureRegion>,
+    capture_keystrokes: bool,
+    camera: Option<&str>,
+    echo_cancellation: bool,
 ) -> Result<RecordingStarted, String> {
     use std::io::{BufRead, Read};
     use std::process::Stdio;
 
     let manager = app.state::<CaptureManager>();
     manager.cancel_countdown.store(false, Ordering::SeqCst);
+    if get_storage_status()?.blocked {
+        return Err("SCREENSWAY_LOW_DISK: Less than 1 GB is available for recording.".into());
+    }
 
     // Get the app out of the way and give the user a moment before frames are captured.
     show_hud(app, HudLayout::Countdown)?;
@@ -361,6 +500,8 @@ fn start_recording_blocking(
     let control_path = project_path.join(".capture-control");
     std::fs::write(&control_path, "recording")
         .map_err(|error| format!("Could not initialize recording controls: {error}"))?;
+    std::fs::write(project_path.join(CAPTURE_MARKER), b"recording")
+        .map_err(|error| format!("Could not initialize recording recovery: {error}"))?;
 
     let _query = HELPER_QUERY_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut command = helper_command()?;
@@ -369,6 +510,12 @@ fn start_recording_blocking(
     }
     if let Some(microphone) = microphone {
         command.arg("--microphone").arg(microphone);
+    }
+    if capture_keystrokes { command.arg("--keystrokes"); }
+    if echo_cancellation && microphone.is_some() { command.arg("--echo-cancellation"); }
+    if let Some(camera) = camera { command.arg("--camera").arg(camera); }
+    if let Some(region) = region {
+        command.arg("--region").arg(format!("{},{},{},{}", region.x, region.y, region.width, region.height));
     }
     let mut child = command
         .arg("--output")
@@ -384,7 +531,11 @@ fn start_recording_blocking(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Could not start the native capture helper: {error}"))?;
+        .map_err(|error| {
+            // Nothing was recorded: leave no project (or recovery marker) behind.
+            let _ = std::fs::remove_dir_all(&project_path);
+            format!("Could not start the native capture helper: {error}")
+        })?;
 
     // Auto-finished recordings can contain a pointer log larger than a pipe buffer.
     // Drain it immediately, otherwise the helper cannot exit and the monitor cannot save it.
@@ -542,6 +693,7 @@ fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String
     publish_state(app, RecordingState { status: "idle", ..Default::default() });
     match result {
         Ok(summary) => {
+            let _ = std::fs::remove_file(std::path::Path::new(&summary.project_path).join(CAPTURE_MARKER));
             let _ = app.emit(RECORDING_FINISHED_EVENT, summary.clone());
         }
         Err(message) => {
@@ -666,24 +818,36 @@ fn restore_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    restore_main_window(&app);
+}
+
+fn request_quick_record(app: &tauri::AppHandle) {
+    restore_main_window(app);
+    let _ = app.emit("quick-record-requested", ());
+}
+
 #[cfg(capture)]
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let pause = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Stop Recording", true, None::<&str>)?;
+    let quick = MenuItem::with_id(app, "quick", "Quick Record", true, None::<&str>)?;
+    let pause = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", "Stop Recording", false, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show ScreenSway", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&stop, &pause, &separator, &show])?;
+    let separator_one = PredefinedMenuItem::separator(app)?;
+    let separator_two = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&quick, &separator_one, &stop, &pause, &separator_two, &show])?;
 
     let builder = TrayIconBuilder::with_id(TRAY_ID);
-    // The macOS menu bar shows only the timer text; the Windows notification area needs an icon.
-    #[cfg(target_os = "windows")]
     let builder = match app.default_window_icon() {
         Some(icon) => builder.icon(icon.clone()),
         None => builder,
     };
+    #[cfg(target_os = "macos")]
+    let builder = builder.icon_as_template(true);
     let tray = builder
         .menu(&menu)
         .show_menu_on_left_click(true)
@@ -707,18 +871,20 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                         let _ = set_recording_paused_blocking(&app, !paused);
                     });
                 }
+                "quick" => request_quick_record(&app),
                 "show" => restore_main_window(&app),
                 _ => {}
             }
         })
         .build(app)?;
-    tray.set_visible(false)?;
-    app.manage(TrayMenu { pause, stop, show, labels: Mutex::default() });
+    tray.set_visible(true)?;
+    app.manage(TrayMenu { quick, pause, stop, show, labels: Mutex::default() });
     Ok(())
 }
 
 #[cfg(capture)]
 struct TrayMenu {
+    quick: tauri::menu::MenuItem<tauri::Wry>,
     pause: tauri::menu::MenuItem<tauri::Wry>,
     stop: tauri::menu::MenuItem<tauri::Wry>,
     show: tauri::menu::MenuItem<tauri::Wry>,
@@ -747,6 +913,7 @@ fn set_native_labels(app: tauri::AppHandle, labels: std::collections::HashMap<St
             *current = labels;
         }
         let _ = menu.stop.set_text(menu.label("stop", "Stop Recording"));
+        let _ = menu.quick.set_text(menu.label("quick", "Quick Record"));
         let _ = menu.show.set_text(menu.label("show", "Show ScreenSway"));
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
             let _ = tray.set_tooltip(Some(menu.label("tooltip", "ScreenSway is recording")));
@@ -768,7 +935,12 @@ fn update_tray(app: &tauri::AppHandle) {
         .ok()
         .and_then(|active| active.as_ref().map(ActiveRecording::state));
     let Some(state) = state else {
-        let _ = tray.set_visible(false);
+        let _ = tray.set_title(None::<&str>);
+        if let Some(menu) = app.try_state::<TrayMenu>() {
+            let _ = menu.stop.set_enabled(false);
+            let _ = menu.pause.set_enabled(false);
+            let _ = menu.quick.set_enabled(true);
+        }
         return;
     };
 
@@ -783,6 +955,9 @@ fn update_tray(app: &tauri::AppHandle) {
     }
     let _ = tray.set_visible(true);
     if let Some(menu) = app.try_state::<TrayMenu>() {
+        let _ = menu.stop.set_enabled(true);
+        let _ = menu.pause.set_enabled(true);
+        let _ = menu.quick.set_enabled(false);
         let label = if state.status == "paused" {
             menu.label("resume", "Resume")
         } else {
@@ -812,6 +987,68 @@ fn recordings_directory() -> Result<std::path::PathBuf, String> {
     Ok(videos.join("ScreenSway"))
 }
 
+#[tauri::command]
+fn get_storage_status() -> Result<StorageStatus, String> {
+    let directory = recordings_directory()?;
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create the ScreenSway recordings directory: {error}"))?;
+    let available_bytes = fs2::available_space(&directory)
+        .map_err(|error| format!("Could not check available recording space: {error}"))?;
+    Ok(StorageStatus {
+        available_bytes,
+        warning: available_bytes < LOW_DISK_WARNING_BYTES,
+        blocked: available_bytes < LOW_DISK_BLOCK_BYTES,
+    })
+}
+
+fn interrupted_recordings_in(root: &std::path::Path) -> Vec<InterruptedRecording> {
+    let Ok(entries) = std::fs::read_dir(root) else { return Vec::new() };
+    let mut interrupted = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "screensway"))
+        .filter(|path| path.join(CAPTURE_MARKER).is_file())
+        .map(|project| {
+            let recoverable = read_manifest(&project)
+                .ok()
+                .is_some_and(|manifest| project.join(manifest.media.screen).is_file());
+            InterruptedRecording {
+                name: project.file_stem().and_then(|name| name.to_str()).unwrap_or("Interrupted recording").to_owned(),
+                project_path: project.to_string_lossy().into_owned(),
+                recoverable,
+            }
+        })
+        .collect::<Vec<_>>();
+    interrupted.sort_by(|a, b| b.name.cmp(&a.name));
+    interrupted
+}
+
+#[tauri::command]
+async fn list_interrupted_recordings(state: tauri::State<'_, CaptureManager>) -> Result<Vec<InterruptedRecording>, String> {
+    // The recording in progress has a marker too; it is not interrupted.
+    #[cfg(capture)]
+    let active = state.active.lock().ok().and_then(|active| active.as_ref().map(|recording| recording.project_path.to_string_lossy().into_owned()));
+    #[cfg(not(capture))]
+    let active: Option<String> = { let _ = &state; None };
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = recordings_directory()?;
+        Ok(interrupted_recordings_in(&root).into_iter().filter(|item| Some(&item.project_path) != active.as_ref()).collect())
+    })
+    .await
+    .map_err(|error| format!("Recovery scan failed: {error}"))?
+}
+
+#[tauri::command]
+fn recover_recording(project_path: String) -> Result<(), String> {
+    let project = resolve_project(&project_path)?;
+    let manifest = read_manifest(&project)?;
+    if !project.join(manifest.media.screen).is_file() {
+        return Err("The interrupted recording has no playable video and cannot be recovered.".into());
+    }
+    std::fs::remove_file(project.join(CAPTURE_MARKER))
+        .map_err(|error| format!("Could not recover the recording: {error}"))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectManifest {
@@ -821,7 +1058,11 @@ struct ProjectManifest {
     canvas: ProjectCanvas,
     media: ProjectMedia,
     pointer_events: String,
+    #[serde(default = "default_keystrokes_path")]
+    keystrokes: String,
 }
+
+fn default_keystrokes_path() -> String { "metadata/keystrokes.json".into() }
 
 #[derive(Deserialize)]
 struct ProjectCanvas {
@@ -830,8 +1071,13 @@ struct ProjectCanvas {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ProjectMedia {
     screen: String,
+    #[serde(default)]
+    camera: Option<String>,
+    #[serde(default)]
+    camera_offset_ms: f64,
 }
 
 #[derive(Serialize)]
@@ -1026,14 +1272,26 @@ async fn load_recording(project_path: String) -> Result<CaptureSummary, String> 
             .and_then(|data| serde_json::from_slice(&data).ok())
             .unwrap_or_default();
         let pointer_events_path = pointer_events_path.unwrap_or_else(|_| project.join("metadata").join("pointer-events.json"));
+        // Shortcut keys are optional too: older recordings have none.
+        let keystrokes_path = project_member(&project, &manifest.keystrokes)
+            .unwrap_or_else(|_| project.join("metadata").join("keystrokes.json"));
+        let keystrokes = std::fs::read(&keystrokes_path)
+            .ok()
+            .and_then(|data| serde_json::from_slice(&data).ok())
+            .unwrap_or_default();
+        let camera_path = manifest.media.camera.as_deref().and_then(|path| project_member(&project, path).ok());
         Ok(CaptureSummary {
             project_path: project.to_string_lossy().into_owned(),
             video_path: video_path.to_string_lossy().into_owned(),
+            camera_path: camera_path.map(|path| path.to_string_lossy().into_owned()),
+            camera_offset_ms: manifest.media.camera_offset_ms,
             pointer_events_path: pointer_events_path.to_string_lossy().into_owned(),
+            keystrokes_path: keystrokes_path.to_string_lossy().into_owned(),
             duration_ms: manifest.duration_ms,
             width: manifest.canvas.width,
             height: manifest.canvas.height,
             pointer_events,
+            keystrokes,
         })
     })
     .await
@@ -1045,6 +1303,192 @@ const CAPTIONS_FILE: &str = "captions.json";
 const TRANSCRIPT_FILE: &str = "transcript.json";
 
 /// Trim and zoom edits made in the studio, or null when the recording is untouched.
+/// Copies a video chosen by the user into the library as a new project, so it can be edited
+/// and exported in the Studio. It has no pointer data, so zooms are added by hand.
+/// Returns the project, or None when the user closed the picker.
+#[tauri::command]
+async fn import_recording(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    #[cfg(capture)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let Some(picked) = app
+            .dialog()
+            .file()
+            .add_filter("Video", &["mp4", "mov", "m4v"])
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        let source = picked.into_path().map_err(|error| format!("Could not open the video: {error}"))?;
+        tauri::async_runtime::spawn_blocking(move || import_recording_blocking(&source).map(Some))
+            .await
+            .map_err(|error| format!("Import task failed: {error}"))?
+    }
+    #[cfg(not(capture))]
+    {
+        let _ = app;
+        Err("Import is not supported on this platform.".into())
+    }
+}
+
+#[cfg(capture)]
+fn import_recording_blocking(source: &std::path::Path) -> Result<String, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Probe {
+        width: u32,
+        height: u32,
+        duration_ms: u64,
+    }
+    let extension = source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|extension| ["mp4", "mov", "m4v"].contains(&extension.as_str()))
+        .ok_or("Only MP4 and MOV videos can be imported.")?;
+    let project = create_project_path()?;
+    let media = project.join("media");
+    let metadata = project.join("metadata");
+    let thumbnail = media.join("thumbnail.jpg");
+    let result = (|| {
+        std::fs::create_dir_all(&media).map_err(|error| format!("Could not create the project: {error}"))?;
+        std::fs::create_dir_all(&metadata).map_err(|error| format!("Could not create the project: {error}"))?;
+        let output = helper_command()?
+            .arg("--probe")
+            .arg(source)
+            .arg("--thumbnail")
+            .arg(&thumbnail)
+            .output()
+            .map_err(|error| format!("Could not read the video: {error}"))?;
+        let probe: Probe = parse_helper_output(output, "Reading the video")?;
+        if probe.width == 0 || probe.height == 0 || probe.duration_ms == 0 {
+            return Err("This video could not be read.".to_string());
+        }
+        let screen = format!("media/screen.{extension}");
+        std::fs::copy(source, project.join(&screen)).map_err(|error| format!("Could not copy the video: {error}"))?;
+        std::fs::write(metadata.join("pointer-events.json"), "[]").map_err(|error| error.to_string())?;
+        std::fs::write(metadata.join("keystrokes.json"), "[]").map_err(|error| error.to_string())?;
+        let title = source.file_stem().map_or("Imported video".into(), |stem| stem.to_string_lossy().chars().take(120).collect::<String>());
+        let manifest = serde_json::json!({
+            "schemaVersion": 1,
+            "title": title,
+            "createdAt": chrono_now(),
+            "durationMs": probe.duration_ms,
+            "canvas": { "width": probe.width, "height": probe.height },
+            "media": { "screen": screen },
+            "pointerEvents": "metadata/pointer-events.json",
+            "keystrokes": "metadata/keystrokes.json",
+        });
+        std::fs::write(project.join("project.json"), serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("Could not create the project: {error}"))
+    })();
+    if let Err(error) = result {
+        let _ = std::fs::remove_dir_all(&project);
+        return Err(error);
+    }
+    Ok(project.to_string_lossy().into_owned())
+}
+
+/// The current time as ISO 8601 in UTC, like the capture helpers write it.
+#[cfg(capture)]
+fn chrono_now() -> String {
+    iso8601_utc(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs() as i64),
+    )
+}
+
+#[cfg_attr(not(capture), allow(dead_code))]
+fn iso8601_utc(seconds: i64) -> String {
+    let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+    // Civil date from days since 1970 (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3_600, rest % 3_600 / 60, rest % 60)
+}
+
+/// A request from a `screensway://` link, for scripts and launchers. The app shows each one
+/// and the user can cancel it; starting a recording always asks first.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "action")]
+enum AutomationRequest {
+    /// screensway://record?source=display|window&audio=1&mic=1
+    Record { source: String, system_audio: bool, microphone: bool },
+    /// screensway://open?project=Recording-123.screensway
+    Open { project: String },
+    /// screensway://export?project=Recording-123.screensway&preset=docs|social|square
+    Export { project: String, preset: Option<String> },
+}
+
+const AUTOMATION_EVENT: &str = "automation-request";
+
+fn parse_automation(link: &str) -> Option<AutomationRequest> {
+    let url = tauri::Url::parse(link).ok()?;
+    if url.scheme() != "screensway" {
+        return None;
+    }
+    let query = |name: &str| url.query_pairs().find(|(key, _)| key == name).map(|(_, value)| value.into_owned());
+    let flag = |name: &str| query(name).is_some_and(|value| value == "1" || value == "true");
+    // A project is named by its folder in the library, never by a path.
+    let project = || {
+        query("project").filter(|name| {
+            name.ends_with(".screensway") && !name.contains(['/', '\\']) && !name.starts_with('.') && name.len() <= 200
+        })
+    };
+    // screensway://record has the action as its host; screensway:record as its path.
+    let action = url.host_str().map(str::to_owned).unwrap_or_else(|| url.path().trim_matches('/').to_owned());
+    match action.as_str() {
+        "record" => Some(AutomationRequest::Record {
+            source: query("source").filter(|source| source == "window").unwrap_or_else(|| "display".into()),
+            system_audio: flag("audio"),
+            microphone: flag("mic"),
+        }),
+        "open" => Some(AutomationRequest::Open { project: project()? }),
+        "export" => Some(AutomationRequest::Export {
+            project: project()?,
+            preset: query("preset").filter(|preset| ["docs", "social", "square"].contains(&preset.as_str())),
+        }),
+        _ => None,
+    }
+}
+
+/// The last link handled and when: macOS can deliver the link that launched the app twice.
+static LAST_LINK: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+fn handle_automation_links(app: &tauri::AppHandle, links: impl IntoIterator<Item = String>) {
+    for link in links {
+        if let Ok(mut last) = LAST_LINK.lock() {
+            if last.as_ref().is_some_and(|(previous, at)| *previous == link && at.elapsed() < Duration::from_secs(3)) {
+                continue;
+            }
+            *last = Some((link.clone(), Instant::now()));
+        }
+        if let Some(request) = parse_automation(&link) {
+            restore_main_window(app);
+            let _ = app.emit(AUTOMATION_EVENT, request);
+        }
+    }
+}
+
+/// The project folder in the library for a name from a link.
+#[tauri::command]
+fn resolve_library_project(name: String) -> Result<String, String> {
+    if !name.ends_with(".screensway") || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err("This recording name is invalid.".into());
+    }
+    let project = recordings_directory()?.join(&name);
+    let project = resolve_project(&project.to_string_lossy())?;
+    Ok(project.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 fn load_edits(project_path: String) -> Result<Option<serde_json::Value>, String> {
     let project = resolve_project(&project_path)?;
@@ -1089,6 +1533,50 @@ fn write_project_json(project: &std::path::Path, name: &str, value: &serde_json:
 #[tauri::command]
 fn load_captions(project_path: String) -> Result<Option<serde_json::Value>, String> {
     Ok(read_project_json(&resolve_project(&project_path)?, CAPTIONS_FILE))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpokenLine {
+    start_ms: f64,
+    text: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Transcript {
+    project_path: String,
+    lines: Vec<SpokenLine>,
+}
+
+/// The caption lines of every recording in the library, for searching what was said.
+#[tauri::command]
+async fn list_transcripts() -> Result<Vec<Transcript>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let root = recordings_directory()?;
+        let Ok(entries) = std::fs::read_dir(&root) else { return Ok(Vec::new()) };
+        Ok(entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "screensway"))
+            .filter_map(|project| {
+                let captions = read_project_json(&project, CAPTIONS_FILE)?;
+                let lines = captions.get("lines")?.as_array()?;
+                Some(Transcript {
+                    project_path: project.to_string_lossy().into_owned(),
+                    lines: lines
+                        .iter()
+                        .filter_map(|line| Some(SpokenLine {
+                            start_ms: line.get("startMs")?.as_f64()?,
+                            text: line.get("text")?.as_str()?.chars().take(400).collect(),
+                        }))
+                        .collect(),
+                })
+            })
+            .collect())
+    })
+    .await
+    .map_err(|error| format!("Library task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -1261,19 +1749,88 @@ struct CaptionImage {
 const EXPORT_PROGRESS_EVENT: &str = "export-progress";
 const EXPORT_PROGRESS_PREFIX: &str = "SCREENSWAY_PROGRESS ";
 
+/// A folder the user picked for exports (for example one synced by iCloud Drive, Dropbox or
+/// OneDrive), remembered in the app's config folder. Only the native folder picker sets it.
+static EXPORT_FOLDER: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+const EXPORT_FOLDER_FILE: &str = "export-folder.json";
+
 fn exports_directory() -> Result<std::path::PathBuf, String> {
+    if let Some(folder) = EXPORT_FOLDER.lock().ok().and_then(|folder| folder.clone()) {
+        return Ok(folder);
+    }
     Ok(recordings_directory()?.join("Exports"))
 }
 
-/// Accepts only files inside the ScreenSway folder, so the UI cannot open arbitrary paths.
-fn resolve_library_file(path: &str) -> Result<std::path::PathBuf, String> {
-    let root = recordings_directory()?
+fn load_export_folder(app: &tauri::AppHandle) {
+    let Ok(directory) = app.path().app_config_dir() else { return };
+    let folder = std::fs::read(directory.join(EXPORT_FOLDER_FILE))
+        .ok()
+        .and_then(|data| serde_json::from_slice::<String>(&data).ok())
+        .map(std::path::PathBuf::from)
+        .filter(|folder| folder.is_dir());
+    if let Ok(mut current) = EXPORT_FOLDER.lock() {
+        *current = folder;
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportFolder {
+    path: String,
+    custom: bool,
+}
+
+fn export_folder_status() -> Result<ExportFolder, String> {
+    let custom = EXPORT_FOLDER.lock().map(|folder| folder.is_some()).unwrap_or(false);
+    Ok(ExportFolder { path: exports_directory()?.to_string_lossy().into_owned(), custom })
+}
+
+#[tauri::command]
+fn get_export_folder() -> Result<ExportFolder, String> {
+    export_folder_status()
+}
+
+/// Lets the user pick where exports go; None keeps the current folder.
+#[tauri::command]
+async fn choose_export_folder(app: tauri::AppHandle) -> Result<ExportFolder, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(picked) = app.dialog().file().blocking_pick_folder() else { return export_folder_status() };
+    let folder = picked
+        .into_path()
+        .map_err(|error| format!("Could not use this folder: {error}"))?
         .canonicalize()
-        .map_err(|_| "The ScreenSway folder does not exist yet.".to_string())?;
+        .map_err(|error| format!("Could not use this folder: {error}"))?;
+    let directory = app.path().app_config_dir().map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    let value = serde_json::to_vec(&folder.to_string_lossy()).map_err(|error| error.to_string())?;
+    std::fs::write(directory.join(EXPORT_FOLDER_FILE), value).map_err(|error| format!("Could not remember the folder: {error}"))?;
+    load_export_folder(&app);
+    export_folder_status()
+}
+
+#[tauri::command]
+fn reset_export_folder(app: tauri::AppHandle) -> Result<ExportFolder, String> {
+    if let Ok(directory) = app.path().app_config_dir() {
+        let _ = std::fs::remove_file(directory.join(EXPORT_FOLDER_FILE));
+    }
+    if let Ok(mut current) = EXPORT_FOLDER.lock() {
+        *current = None;
+    }
+    export_folder_status()
+}
+
+/// Accepts only files inside the ScreenSway folder or the chosen export folder, so the UI
+/// cannot open arbitrary paths.
+fn resolve_library_file(path: &str) -> Result<std::path::PathBuf, String> {
     let file = std::path::Path::new(path)
         .canonicalize()
         .map_err(|_| "This file no longer exists.".to_string())?;
-    if !file.starts_with(&root) {
+    let library = recordings_directory()?.canonicalize().ok();
+    // In a chosen export folder only the files directly inside it, which ScreenSway wrote.
+    let exports = exports_directory()?.canonicalize().ok();
+    let inside_library = library.as_ref().is_some_and(|root| file.starts_with(root));
+    let in_exports = exports.as_deref().is_some_and(|root| file.parent() == Some(root));
+    if !inside_library && !in_exports {
         return Err("This file is outside the ScreenSway folder.".into());
     }
     Ok(file)
@@ -1385,6 +1942,17 @@ fn export_recording_blocking(
         fields.insert("output".into(), path(&output));
         fields.insert("baseLayer".into(), path(&base_path));
         fields.insert("cursor".into(), path(&cursor_path));
+        // The webcam is drawn from the project's own camera file, never a path from the UI.
+        let camera_file = manifest.media.camera.as_deref().and_then(|file| project_member(&project, file).ok());
+        match (fields.get_mut("camera").and_then(|camera| camera.as_object_mut()), camera_file) {
+            (Some(camera), Some(file)) => {
+                camera.insert("path".into(), path(&file));
+                camera.insert("offsetMs".into(), serde_json::json!(manifest.media.camera_offset_ms));
+            }
+            _ => {
+                fields.remove("camera");
+            }
+        }
         let mut caption_jobs = Vec::with_capacity(captions.len());
         for (index, caption) in captions.iter().enumerate() {
             let image_path = work.join(format!("caption-{index}.png"));
@@ -1462,6 +2030,9 @@ fn export_recording_blocking(
                         result.subtitles_path = Some(subtitles_path.to_string_lossy().into_owned());
                     }
                 }
+                // The Studio reads the video back to make a GIF; a chosen export folder is
+                // outside the asset scope, so only this file is let in.
+                let _ = app.asset_protocol_scope().allow_file(&output);
                 Ok(result)
             }
             _ => {
@@ -1593,6 +2164,31 @@ fn save_background_image(image: String, thumbnail: String) -> Result<String, Str
     Ok(path.to_string_lossy().into_owned())
 }
 
+fn brand_directory() -> Result<std::path::PathBuf, String> {
+    Ok(recordings_directory()?.join("Brand"))
+}
+
+/// Saves a logo for the brand kit in Movies › ScreenSway › Brand, apart from the backgrounds.
+#[tauri::command]
+fn save_logo(image: String, thumbnail: String) -> Result<String, String> {
+    let path = save_background_image_in(&brand_directory()?, &image, &thumbnail)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn read_logo(path: String) -> Result<String, String> {
+    let root = brand_directory()?
+        .canonicalize()
+        .map_err(|_| "No logo is saved yet.".to_string())?;
+    let file = std::path::Path::new(&path)
+        .canonicalize()
+        .map_err(|_| "This logo no longer exists.".to_string())?;
+    if file.parent() != Some(root.as_path()) {
+        return Err("This image is outside the ScreenSway brand folder.".into());
+    }
+    data_url(&file)
+}
+
 #[tauri::command]
 fn list_background_images() -> Result<Vec<BackgroundImage>, String> {
     Ok(list_background_images_in(&backgrounds_directory()?))
@@ -1639,6 +2235,72 @@ fn cancel_export(state: tauri::State<'_, ExportManager>) {
 }
 
 /// Opens an exported video in the default player, or reveals it in Finder / File Explorer.
+/// Largest GIF the Studio may save (base64 text), well above a minute at 800 px.
+const MAX_GIF_CHARS: usize = 400 * 1024 * 1024;
+
+/// Saves a GIF made from an exported video next to it, as "<video name>.gif".
+#[tauri::command]
+fn save_export_gif(video_path: String, data: String) -> Result<String, String> {
+    use base64::Engine;
+    let video = resolve_library_file(&video_path)?;
+    let exports = exports_directory()?.canonicalize().map_err(|error| error.to_string())?;
+    if !video.starts_with(&exports) || !video.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("mp4")) {
+        return Err("Only exported videos can be turned into a GIF.".into());
+    }
+    if data.len() > MAX_GIF_CHARS {
+        return Err("The GIF is too large.".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|error| format!("The GIF is invalid: {error}"))?;
+    if !bytes.starts_with(b"GIF89a") {
+        return Err("The GIF is invalid.".into());
+    }
+    let path = video.with_extension("gif");
+    std::fs::write(&path, bytes).map_err(|error| format!("Could not save the GIF: {error}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Puts an exported file on the clipboard, ready to paste into a chat, mail or document.
+#[tauri::command]
+fn copy_export(path: String) -> Result<(), String> {
+    let file = resolve_library_file(&path)?;
+    let exports = exports_directory()?.canonicalize().map_err(|error| error.to_string())?;
+    if !file.starts_with(&exports) {
+        return Err("Only exported files can be copied.".into());
+    }
+    copy_file_to_clipboard(&file).map_err(|error| format!("Could not copy the file: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn copy_file_to_clipboard(file: &std::path::Path) -> std::io::Result<()> {
+    // The path is passed as an argument, never spliced into the script.
+    let status = std::process::Command::new("osascript")
+        .args(["-e", "on run argv", "-e", "set the clipboard to (POSIX file (item 1 of argv))", "-e", "end run"])
+        .arg(file)
+        .status()?;
+    status.success().then_some(()).ok_or_else(|| std::io::Error::other("osascript failed"))
+}
+
+#[cfg(target_os = "windows")]
+fn copy_file_to_clipboard(file: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    // The path travels in an environment variable, never as part of the command text
+    // (with -Command, PowerShell would parse further arguments as code).
+    let status = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", "Set-Clipboard -LiteralPath $env:SCREENSWAY_CLIPBOARD_FILE"])
+        .env("SCREENSWAY_CLIPBOARD_FILE", file)
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()?;
+    status.success().then_some(()).ok_or_else(|| std::io::Error::other("Set-Clipboard failed"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn copy_file_to_clipboard(_file: &std::path::Path) -> std::io::Result<()> {
+    Err(std::io::Error::other("not supported on this platform"))
+}
+
 #[tauri::command]
 fn open_export(path: String, reveal: bool) -> Result<(), String> {
     let file = resolve_library_file(&path)?;
@@ -1646,7 +2308,7 @@ fn open_export(path: String, reveal: bool) -> Result<(), String> {
     let exported = file
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp4") || extension.eq_ignore_ascii_case("srt"));
+        .is_some_and(|extension| ["mp4", "srt", "gif"].iter().any(|allowed| extension.eq_ignore_ascii_case(allowed)));
     if !exported {
         return Err("Only exported videos can be opened.".into());
     }
@@ -1744,8 +2406,14 @@ fn parse_helper_output<T: serde::de::DeserializeOwned>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second launch (for example from a screensway:// link on Windows) goes to
+        // the running app; the deep-link feature passes the link on to its handler.
+        .plugin(tauri_plugin_single_instance::init(|app, _arguments, _directory| restore_main_window(app)))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(ExportManager::default())
         .manage(TranscriptionManager::default())
         .manage(telemetry::Telemetry::default())
@@ -1758,6 +2426,27 @@ pub fn run() {
             setup_tray(app)?;
             if let Ok(directory) = app.path().app_config_dir() {
                 app.state::<telemetry::Telemetry>().init(directory);
+            }
+            load_export_folder(app.handle());
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    handle_automation_links(&handle, event.urls().into_iter().map(|url| url.to_string()));
+                });
+                // A link that launched the app.
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    let handle = app.handle().clone();
+                    let links: Vec<String> = urls.into_iter().map(|url| url.to_string()).collect();
+                    // Give the UI a moment to start listening.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1_500));
+                        handle_automation_links(&handle, links);
+                    });
+                }
+                // Windows installs register the scheme in the installer; this covers portable runs.
+                #[cfg(windows)]
+                let _ = app.deep_link().register_all();
             }
             Ok(())
         })
@@ -1794,11 +2483,16 @@ pub fn run() {
             get_recording_state,
             list_capture_sources,
             list_microphones,
+            list_cameras,
             start_recording,
             cancel_countdown,
             set_recording_paused,
             stop_recording,
             set_native_labels,
+            show_main_window,
+            get_storage_status,
+            list_interrupted_recordings,
+            recover_recording,
             list_recordings,
             load_recording,
             rename_recording,
@@ -1807,6 +2501,19 @@ pub fn run() {
             open_screen_recording_settings,
             background_work_active,
             open_microphone_settings,
+            keystroke_access,
+            open_camera_settings,
+            save_export_gif,
+            save_logo,
+            import_recording,
+            list_transcripts,
+            get_export_folder,
+            resolve_library_project,
+            choose_export_folder,
+            reset_export_folder,
+            read_logo,
+            copy_export,
+            open_keystroke_settings,
             export_recording,
             cancel_export,
             open_export,
@@ -1841,6 +2548,13 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_regions_must_stay_inside_the_display() {
+        assert!(CaptureRegion { x: 0.1, y: 0.2, width: 0.5, height: 0.6 }.validate().is_ok());
+        assert!(CaptureRegion { x: 0.98, y: 0.0, width: 0.05, height: 1.0 }.validate().is_err());
+        assert!(CaptureRegion { x: 0.0, y: 0.0, width: 0.04, height: 1.0 }.validate().is_err());
+    }
 
     #[test]
     fn decodes_png_data_urls_and_plain_base64() {
@@ -1883,6 +2597,21 @@ mod tests {
         assert!(write_edits(&project, &huge).unwrap_err().contains("too large"));
         assert!(!project.join("edits.json.tmp").exists());
         assert!(decode_png(&"A".repeat(MAX_DATA_URL_CHARS + 1)).unwrap_err().contains("too large"));
+        assert_eq!(iso8601_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(
+            parse_automation("screensway://record?source=window&audio=1"),
+            Some(AutomationRequest::Record { source: "window".into(), system_audio: true, microphone: false })
+        );
+        assert_eq!(
+            parse_automation("screensway://export?project=Recording-1.screensway&preset=social"),
+            Some(AutomationRequest::Export { project: "Recording-1.screensway".into(), preset: Some("social".into()) })
+        );
+        assert_eq!(parse_automation("screensway://open?project=../../etc.screensway"), None);
+        assert_eq!(parse_automation("screensway://open?project=Recording-1"), None);
+        assert_eq!(parse_automation("https://record?source=display"), None);
+        assert_eq!(parse_automation("screensway://delete?project=Recording-1.screensway"), None);
+        assert_eq!(iso8601_utc(1_761_048_000), "2025-10-21T12:00:00Z");
+        assert_eq!(iso8601_utc(951_782_400), "2000-02-29T00:00:00Z");
         std::fs::remove_dir_all(&project).unwrap();
     }
 
@@ -1970,6 +2699,32 @@ mod tests {
         assert!(save_background_image_in(&directory, "data:text/html;base64,aGk=", thumbnail).is_err());
         assert!(save_background_image_in(&directory, "not a data url", thumbnail).is_err());
         std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn interrupted_projects_are_classified_by_recoverability() {
+        let root = std::env::temp_dir().join(format!("screensway-recovery-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let valid = root.join("Recording-2.screensway");
+        let broken = root.join("Recording-1.screensway");
+        std::fs::create_dir_all(valid.join("media")).unwrap();
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(valid.join(CAPTURE_MARKER), b"recording").unwrap();
+        std::fs::write(broken.join(CAPTURE_MARKER), b"recording").unwrap();
+        std::fs::write(valid.join("media/screen.mp4"), b"video").unwrap();
+        std::fs::write(valid.join("project.json"), br#"{
+          "title":"Recovered", "createdAt":"2026-01-01T00:00:00Z", "durationMs":1000,
+          "canvas":{"width":100,"height":100}, "media":{"screen":"media/screen.mp4"},
+          "pointerEvents":"metadata/pointer-events.json"
+        }"#).unwrap();
+
+        let found = interrupted_recordings_in(&root);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].name, "Recording-2");
+        assert!(found[0].recoverable);
+        assert!(!found[1].recoverable);
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

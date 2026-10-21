@@ -9,7 +9,9 @@
     "process:allow-restart",
     "updater:allow-check",
     "updater:allow-download",
-    "updater:allow-install"
+    "updater:allow-install",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
   ]
 }
 
