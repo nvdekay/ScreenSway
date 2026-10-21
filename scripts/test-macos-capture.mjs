@@ -42,7 +42,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function record(source, name, commands, { systemAudio = false, microphone = false } = {}) {
+async function record(source, name, commands, { systemAudio = false, microphone = false, extra = [] } = {}) {
   const projectPath = path.join(testRoot, `${name}.screensway`);
   const controlPath = path.join(projectPath, ".capture-control");
   mkdirSync(projectPath, { recursive: true });
@@ -55,6 +55,7 @@ async function record(source, name, commands, { systemAudio = false, microphone 
     "--source-id", source.id,
     ...(systemAudio ? ["--system-audio"] : []),
     ...(microphone ? ["--microphone", "default"] : []),
+    ...extra,
   ]);
   let stdout = "";
   let stderr = "";
@@ -85,6 +86,8 @@ async function record(source, name, commands, { systemAudio = false, microphone 
   assert.equal(manifest.canvas.width, result.width);
   assert.equal(manifest.canvas.height, result.height);
   assert.equal(manifest.media.screen, "media/screen.mp4");
+  // Shortcut keys are only recorded when asked; the file is always there, so projects look alike.
+  assert.deepEqual(JSON.parse(readFileSync(path.join(projectPath, "metadata/keystrokes.json"), "utf8")), result.keystrokes);
   assert.deepEqual(pointerEvents, result.pointerEvents);
   assert(existsSync(videoPath), `${name} video was not created.`);
   assert(!existsSync(path.join(projectPath, "media/segments")), `${name} left temporary segments behind.`);
@@ -162,6 +165,14 @@ if (hasMicrophone) {
     { afterMs: 1_500, value: "stop" },
   ], { microphone: true });
   assert(Math.abs(microphoneCapture.videoDurationMs - microphoneCapture.result.durationMs) <= 60);
+}
+
+{
+  // A region of the display is cropped by ScreenCaptureKit, so nothing outside it is stored.
+  const regionCapture = await record(display, "Region", [{ afterMs: 1_200, value: "stop" }], { extra: ["--region", "0.25,0.25,0.5,0.5"] });
+  const ratio = regionCapture.result.width / displayCapture.result.width;
+  assert(ratio > 0.45 && ratio < 0.55, `the region is half the display's width (${ratio.toFixed(2)})`);
+  assert(Math.abs(regionCapture.result.height / displayCapture.result.height - 0.5) < 0.05, "the region is half the display's height");
 }
 
 if (windowSource) {

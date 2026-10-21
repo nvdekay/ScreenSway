@@ -8,6 +8,8 @@
   <string>ScreenSway</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>ScreenSway records your voice with the screen when you turn on the microphone.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>ScreenSway records your camera as a separate local track when you turn on the webcam.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>ScreenSway turns the speech in your recordings into captions, entirely on this Mac.</string>
 </dict>
