@@ -31,6 +31,10 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
     let temporary = output.with_extension("video.mp4");
     let start = (job.start_ms * 10_000.0).round() as i64;
     let mut source = reader::VideoReader::new(Path::new(&job.source), start)?;
+    let mut camera = match &job.camera {
+        Some(camera) => Some(reader::VideoReader::new(Path::new(&camera.path), 0)?),
+        None => None,
+    };
     let gpu = Gpu::new()?;
     let converter = Converter::new(&gpu, (job.width, job.height), (job.width, job.height))?;
     let mut encoder = Encoder::new(&temporary, &gpu, job.width, job.height)?;
@@ -42,27 +46,29 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
             D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
         )
         .step("Creating export texture")?;
-    let mut loaded_caption: Option<(usize, image::RgbaImage)> = None;
+    let mut loaded_captions = std::collections::HashMap::<usize, image::RgbaImage>::new();
     let mut reported = usize::MAX;
     for (index, plan) in job.frames.iter().enumerate() {
         let time = index as i64 * 10_000_000 / job.fps as i64;
-        let frame = source.frame(start + time)?;
+        let source_time = job.source_times_ms.get(index).map(|ms| (ms * 10_000.0).round() as i64).unwrap_or(start + time);
+        let frame = source.frame(source_time)?;
         let mut composed = render::compose(&job, plan, frame, &base, &cursor);
+        if let (Some(reader), Some(placement)) = (camera.as_mut(), job.camera.as_ref()) {
+            let camera_time = source_time - (placement.offset_ms * 10_000.0).round() as i64;
+            render::overlay_camera(&mut composed, reader.frame(camera_time)?, placement);
+        }
         let ms = time as f64 / 10_000.0;
-        if let Some((ci, c)) = job
+        for (ci, c) in job
             .captions
             .iter()
             .enumerate()
-            .find(|(_, c)| c.start_ms <= ms && ms < c.end_ms)
+            .filter(|(_, c)| c.start_ms <= ms && ms < c.end_ms)
         {
-            if loaded_caption.as_ref().map(|(i, _)| *i) != Some(ci) {
-                loaded_caption = Some((
-                    ci,
-                    image::open(&c.image).map_err(|e| e.to_string())?.to_rgba8(),
-                ));
-            }
-            render::overlay(&mut composed, &loaded_caption.as_ref().unwrap().1, c.x, c.y);
+            if !loaded_captions.contains_key(&ci) { loaded_captions.insert(ci, image::open(&c.image).map_err(|e| e.to_string())?.to_rgba8()); }
+            render::overlay(&mut composed, loaded_captions.get(&ci).unwrap(), c.x, c.y);
         }
+        // Only the overlays still to come stay in memory.
+        loaded_captions.retain(|ci, _| job.captions[*ci].end_ms > ms);
         // Media Foundation RGB textures use BGRA byte order.
         for p in composed.pixels_mut() {
             p.0.swap(0, 2);
@@ -89,7 +95,12 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
     }
     let duration = job.frames.len() as i64 * 10_000_000 / job.fps as i64;
     encoder.finish(duration).step("Finishing exported video")?;
-    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, start, duration)?;
+    let audio_ranges = if job.source_ranges.is_empty() {
+        vec![(start, start + duration)]
+    } else {
+        job.source_ranges.iter().map(|range| ((range.start_ms * 10_000.0).round() as i64, (range.end_ms * 10_000.0).round() as i64)).collect()
+    };
+    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, &audio_ranges, (job.lead_in_ms * 10_000.0).round() as i64)?;
     std::fs::remove_file(&temporary).map_err(|e| e.to_string())?;
     eprintln!("SCREENSWAY_PROGRESS 100");
     Ok(ExportResult {

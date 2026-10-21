@@ -2,11 +2,12 @@
 //! conversion, Media Foundation for H.264.
 
 pub mod audio;
+pub mod camera;
 mod capture;
 mod encoder;
 pub mod export;
 mod mux;
-mod reader;
+pub mod reader;
 pub mod recorder;
 pub mod sources;
 mod thumbnail;

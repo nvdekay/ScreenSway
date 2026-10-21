@@ -113,10 +113,15 @@ pub struct Converter {
     enumerator: ID3D11VideoProcessorEnumerator,
     processor: ID3D11VideoProcessor,
     output: (u32, u32),
+    source_rect: RECT,
 }
 
 impl Converter {
     pub fn new(gpu: &Gpu, input: (u32, u32), output: (u32, u32)) -> std::result::Result<Self, String> {
+        Self::new_cropped(gpu, input, RECT { left: 0, top: 0, right: input.0 as i32, bottom: input.1 as i32 }, output)
+    }
+
+    pub fn new_cropped(gpu: &Gpu, input: (u32, u32), source_rect: RECT, output: (u32, u32)) -> std::result::Result<Self, String> {
         // Missing on GPUs without video support, such as Microsoft's basic display driver.
         let video_device: ID3D11VideoDevice = gpu.device.cast().step("Opening the GPU video processor (ID3D11VideoDevice)")?;
         let video_context: ID3D11VideoContext =
@@ -154,7 +159,7 @@ impl Converter {
             // Captured frames are opaque; never let the processor blend or auto-enhance them.
             video_context.VideoProcessorSetStreamAutoProcessingMode(&processor, 0, false);
         }
-        Ok(Self { video_device, video_context, enumerator, processor, output })
+        Ok(Self { video_device, video_context, enumerator, processor, output, source_rect })
     }
 
     /// Draws the `content` area of `source` into a new NV12 texture, scaled to fit while
@@ -183,8 +188,14 @@ impl Converter {
         }
         let output = output.expect("CreateVideoProcessorOutputView returned no view");
 
-        let source_rect = RECT { left: 0, top: 0, right: content.0 as i32, bottom: content.1 as i32 };
-        let destination = fit(content, self.output);
+        let source_rect = RECT {
+            left: self.source_rect.left.min(content.0.saturating_sub(1) as i32),
+            top: self.source_rect.top.min(content.1.saturating_sub(1) as i32),
+            right: self.source_rect.right.min(content.0 as i32),
+            bottom: self.source_rect.bottom.min(content.1 as i32),
+        };
+        let cropped = ((source_rect.right - source_rect.left).max(1) as u32, (source_rect.bottom - source_rect.top).max(1) as u32);
+        let destination = fit(cropped, self.output);
         let mut stream = D3D11_VIDEO_PROCESSOR_STREAM {
             Enable: true.into(),
             pInputSurface: std::mem::ManuallyDrop::new(input),

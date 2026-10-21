@@ -12,6 +12,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod audio;
+mod keys;
 mod model;
 #[cfg(windows)]
 mod platform;
@@ -63,6 +64,12 @@ fn run(arguments: &[String]) -> Result<String, String> {
         .any(|argument| argument == "--list-microphones")
     {
         return Ok(json(&platform::audio::microphones().map_err(failure)?));
+    }
+    if let Some(path) = argument(arguments, "--probe") {
+        return Ok(json(&platform::reader::probe(std::path::Path::new(path)).map_err(failure)?));
+    }
+    if arguments.iter().any(|argument| argument == "--list-cameras") {
+        return Ok(json(&platform::camera::list().map_err(failure)?));
     }
     let summary = platform::recorder::run(arguments).map_err(failure)?;
     Ok(json(&summary))

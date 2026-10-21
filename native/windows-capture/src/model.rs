@@ -25,6 +25,14 @@ pub struct Microphone {
     pub is_default: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Camera {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PointerSample {
@@ -34,16 +42,27 @@ pub struct PointerSample {
     pub y: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeystrokeSample {
+    pub time_ms: u64,
+    pub keys: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureSummary {
     pub project_path: String,
     pub video_path: String,
     pub pointer_events_path: String,
+    pub keystrokes_path: String,
+    pub camera_path: Option<String>,
+    pub camera_offset_ms: f64,
     pub duration_ms: u64,
     pub width: u32,
     pub height: u32,
     pub pointer_events: Vec<PointerSample>,
+    pub keystrokes: Vec<KeystrokeSample>,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +75,7 @@ pub struct ProjectManifest {
     pub canvas: Canvas,
     pub media: Media,
     pub pointer_events: String,
+    pub keystrokes: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,8 +85,11 @@ pub struct Canvas {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Media {
     pub screen: String,
+    pub camera: Option<String>,
+    pub camera_offset_ms: f64,
 }
 
 /// Written next to the pointer log, so a choppy or soft recording can be diagnosed from

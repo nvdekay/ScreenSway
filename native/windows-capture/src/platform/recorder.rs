@@ -7,7 +7,7 @@ use super::sources::{self, size};
 use super::{now, thumbnail, ParentWatch, Step};
 use crate::argument;
 use crate::model::{
-    encoded_size, iso8601, Canvas, CaptureStats, CaptureSummary, Media, ProjectManifest,
+    encoded_size, iso8601, Canvas, CaptureStats, CaptureSummary, KeystrokeSample, Media, ProjectManifest,
 };
 use crate::timeline::{PointerLog, VideoTimeline, TICKS_PER_SECOND};
 use std::path::{Path, PathBuf};
@@ -23,12 +23,13 @@ use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Graphics::SizeInt32;
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Direct3D11::{
-    ID3D11Texture2D, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
+    ID3D11Texture2D, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX,
 };
+use windows::Win32::Foundation::RECT;
 use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_LMENU, VK_LWIN, VK_RBUTTON, VK_RMENU, VK_RWIN, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetSystemMetrics, IsWindow, IsIconic, SM_SWAPBUTTON};
 
 /// Where in the recording the library thumbnail is taken, like on macOS.
@@ -38,6 +39,16 @@ const DEFAULT_DURATION_SECONDS: f64 = 14_400.0;
 const POOL_BUFFERS: i32 = 3;
 
 type Error = Box<dyn std::error::Error>;
+
+fn normalized_region(arguments: &[String]) -> Option<(f64, f64, f64, f64)> {
+    let values: Vec<f64> = argument(arguments, "--region")?.split(',').filter_map(|value| value.parse().ok()).collect();
+    if values.len() == 4 && values[0] >= 0.0 && values[1] >= 0.0 && values[2] >= 0.05 && values[3] >= 0.05
+        && values[0] + values[2] <= 1.0 && values[1] + values[3] <= 1.0 {
+        Some((values[0], values[1], values[2], values[3]))
+    } else {
+        None
+    }
+}
 
 /// Everything the frame callback touches, behind one lock.
 struct Frames {
@@ -53,6 +64,7 @@ struct Frames {
     failure: Option<String>,
     stats: CaptureStats,
     frame_time_total_ms: f64,
+    source_rect: RECT,
 }
 
 impl Frames {
@@ -152,13 +164,21 @@ impl Frames {
 
     fn snapshot(&self) -> Option<(ID3D11Texture2D, (u32, u32))> {
         let (texture, content) = self.latest.as_ref()?;
-        let (width, height) = texture_size(texture);
+        let rect = RECT {
+            left: self.source_rect.left.min(content.0.saturating_sub(1) as i32),
+            top: self.source_rect.top.min(content.1.saturating_sub(1) as i32),
+            right: self.source_rect.right.min(content.0 as i32),
+            bottom: self.source_rect.bottom.min(content.1 as i32),
+        };
+        let width = (rect.right - rect.left).max(1) as u32;
+        let height = (rect.bottom - rect.top).max(1) as u32;
         let copy = self
             .gpu
             .texture(width, height, CAPTURE_FORMAT, D3D11_BIND_SHADER_RESOURCE)
             .ok()?;
-        unsafe { self.gpu.context.CopyResource(&copy, texture) };
-        Some((copy, *content))
+        let region = D3D11_BOX { left: rect.left as u32, top: rect.top as u32, front: 0, right: rect.right as u32, bottom: rect.bottom as u32, back: 1 };
+        unsafe { self.gpu.context.CopySubresourceRegion(&copy, 0, 0, 0, 0, texture, 0, Some(&region)) };
+        Some((copy, (width, height)))
     }
 }
 
@@ -218,7 +238,9 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     let media = project.join("media");
     let metadata = project.join("metadata");
     let video_path = media.join("screen.mp4");
+    let camera_path = media.join("camera.mp4");
     let pointer_events_path = metadata.join("pointer-events.json");
+    let keystrokes_path = metadata.join("keystrokes.json");
     std::fs::create_dir_all(&media)?;
     std::fs::create_dir_all(&metadata)?;
 
@@ -230,20 +252,35 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     } else {
         target.size
     };
-    let (width, height, encoder_scale) = encoded_size(source_size.0, source_size.1);
+    let source_rect = if let Some((x, y, width, height)) = normalized_region(arguments) {
+        let left = (x * source_size.0 as f64).round() as i32;
+        let top = (y * source_size.1 as f64).round() as i32;
+        RECT {
+            left,
+            top,
+            right: ((x + width) * source_size.0 as f64).round() as i32,
+            bottom: ((y + height) * source_size.1 as f64).round() as i32,
+        }
+    } else {
+        RECT { left: 0, top: 0, right: source_size.0 as i32, bottom: source_size.1 as i32 }
+    };
+    let cropped_size = ((source_rect.right - source_rect.left).max(1) as u32, (source_rect.bottom - source_rect.top).max(1) as u32);
+    let (width, height, encoder_scale) = encoded_size(cropped_size.0, cropped_size.1);
+    let capture_origin = (target.origin.0 + f64::from(source_rect.left), target.origin.1 + f64::from(source_rect.top));
 
     let gpu = Arc::new(Gpu::new()?);
     let audio = super::audio::Session::new(
         media.join(".capture-audio.wav"),
         arguments.iter().any(|arg| arg == "--system-audio"),
         argument(arguments, "--microphone").map(str::to_owned),
+        arguments.iter().any(|arg| arg == "--echo-cancellation"),
     )?;
     let encoder = Encoder::new(&video_path, &gpu, width, height)?;
     let encoder_name = encoder.name.clone();
     let frames = Arc::new(Mutex::new(Frames {
         gpu: gpu.clone(),
         timeline: VideoTimeline::default(),
-        converter: Converter::new(&gpu, source_size, (width, height))?,
+        converter: Converter::new_cropped(&gpu, source_size, source_rect, (width, height))?,
         encoder: Some(encoder),
         latest: None,
         thumbnail: None,
@@ -251,13 +288,14 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         failure: None,
         stats: CaptureStats {
             encoder: encoder_name,
-            source_width: source_size.0,
-            source_height: source_size.1,
+            source_width: cropped_size.0,
+            source_height: cropped_size.1,
             width,
             height,
             ..Default::default()
         },
         frame_time_total_ms: 0.0,
+        source_rect,
     }));
 
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
@@ -327,7 +365,18 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         std::thread::sleep(Duration::from_millis(5));
     }
 
+    let mut camera = argument(arguments, "--camera")
+        .map(|id| super::camera::Session::prepare(&camera_path, Some(id)))
+        .transpose().map_err(|message| format!("Starting the camera failed: {message}"))?;
     let recording_start = now();
+    // The camera's file starts when it does; the Studio shifts it by this much.
+    let camera_offset_ms = match &camera {
+        Some(camera) => {
+            camera.start().map_err(|message| format!("Starting the camera failed: {message}"))?;
+            ((now() - recording_start) as f64 / 10_000.0).max(0.0)
+        }
+        None => 0.0,
+    };
     if let Some(audio) = &audio {
         audio.start(recording_start);
     }
@@ -342,15 +391,18 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     }
     let pointer = Arc::new(Mutex::new(PointerLog::new(
         recording_start,
-        target.origin,
+        capture_origin,
         encoder_scale,
     )));
     let pointer_running = Arc::new(AtomicBool::new(true));
+    let keystrokes = Arc::new(Mutex::new(Vec::<KeystrokeSample>::new()));
     let pointer_thread = {
         let pointer = pointer.clone();
         let running = pointer_running.clone();
         let window = target.window;
-        std::thread::spawn(move || poll_pointer(&pointer, &running, window, (width, height)))
+        let keystrokes = keystrokes.clone();
+        let capture_keystrokes = arguments.iter().any(|argument| argument == "--keystrokes");
+        std::thread::spawn(move || poll_input(&pointer, &keystrokes, &running, window, (width, height), capture_keystrokes))
     };
     // Tells the desktop shell that frames are being recorded, so its timer starts in sync.
     eprintln!("SCREENSWAY_READY");
@@ -382,10 +434,12 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
                 "stop" => break,
                 "pause" if !paused => {
                     set_paused(&frames, &pointer, audio.as_ref(), true);
+                    if let Some(camera) = &camera { camera.pause(true).map_err(|message| format!("Pausing the camera failed: {message}"))?; }
                     paused = true;
                 }
                 "recording" if paused => {
                     set_paused(&frames, &pointer, audio.as_ref(), false);
+                    if let Some(camera) = &camera { camera.pause(false).map_err(|message| format!("Resuming the camera failed: {message}"))?; }
                     paused = false;
                 }
                 _ => {}
@@ -439,6 +493,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     if let Some(audio) = audio {
         audio.finish(recording_end, &video_path, video_end)?;
     }
+    if let Some(camera) = camera.take() { camera.finish().map_err(|message| format!("Finishing the camera failed: {message}"))?; }
     // The library shows this instead of decoding the full video for every card.
     if let Some((texture, content)) = thumbnail {
         let _ = thumbnail::write(&gpu, &texture, content, &media.join("thumbnail.jpg"));
@@ -457,6 +512,8 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         &pointer_events_path,
         serde_json::to_vec_pretty(&pointer_events)?,
     )?;
+    let keystrokes = keystrokes.lock().map_err(|_| "The keystroke log is unavailable.")?.clone();
+    std::fs::write(&keystrokes_path, serde_json::to_vec_pretty(&keystrokes)?)?;
     stats.duration_ms = duration_ms;
     let _ = std::fs::write(
         metadata.join("capture-stats.json"),
@@ -472,8 +529,11 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         canvas: Canvas { width, height },
         media: Media {
             screen: "media/screen.mp4".into(),
+            camera: camera_path.is_file().then(|| "media/camera.mp4".into()),
+            camera_offset_ms,
         },
         pointer_events: "metadata/pointer-events.json".into(),
+        keystrokes: "metadata/keystrokes.json".into(),
     };
     write_atomically(
         &project.join("project.json"),
@@ -484,10 +544,14 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         project_path: path_string(&project),
         video_path: path_string(&video_path),
         pointer_events_path: path_string(&pointer_events_path),
+        keystrokes_path: path_string(&keystrokes_path),
+        camera_path: camera_path.is_file().then(|| path_string(&camera_path)),
+        camera_offset_ms,
         duration_ms,
         width,
         height,
         pointer_events,
+        keystrokes,
     })
 }
 
@@ -512,8 +576,16 @@ fn set_paused(
 }
 
 /// Polls the pointer every few milliseconds; clicks last far longer than that.
-fn poll_pointer(pointer: &Mutex<PointerLog>, running: &AtomicBool, window: Option<usize>, canvas: (u32, u32)) {
+fn poll_input(
+    pointer: &Mutex<PointerLog>,
+    keystrokes: &Mutex<Vec<KeystrokeSample>>,
+    running: &AtomicBool,
+    window: Option<usize>,
+    canvas: (u32, u32),
+    capture_keystrokes: bool,
+) {
     unsafe { timeBeginPeriod(1) };
+    let mut previous = [false; 256];
     while running.load(Ordering::SeqCst) {
         let mut point = POINT::default();
         if unsafe { GetCursorPos(&mut point) }.is_ok() {
@@ -544,6 +616,22 @@ fn poll_pointer(pointer: &Mutex<PointerLog>, running: &AtomicBool, window: Optio
                 }
                 pointer.observe(now(), (f64::from(point.x), f64::from(point.y)), left, right);
             }
+        }
+        let down = |key: u16| unsafe { GetAsyncKeyState(i32::from(key)) } as u16 & 0x8000 != 0;
+        if !capture_keystrokes { std::thread::sleep(Duration::from_millis(4)); continue; }
+        let (ctrl, alt, shift, win) = (down(VK_CONTROL.0), down(VK_LMENU.0) || down(VK_RMENU.0), down(VK_SHIFT.0), down(VK_LWIN.0) || down(VK_RWIN.0));
+        for key in 8u16..=254 {
+            let pressed = down(key);
+            if pressed && !previous[key as usize] {
+                if let Some(keys) = crate::keys::chord(key, ctrl, alt, shift, win) {
+                    // Keys pressed while paused are not part of the recording.
+                    let time_ms = pointer.lock().ok().filter(|log| !log.is_paused()).map(|log| log.duration_ms(now()));
+                    if let (Some(time_ms), Ok(mut log)) = (time_ms, keystrokes.lock()) {
+                        log.push(KeystrokeSample { time_ms, keys });
+                    }
+                }
+            }
+            previous[key as usize] = pressed;
         }
         std::thread::sleep(Duration::from_millis(4));
     }

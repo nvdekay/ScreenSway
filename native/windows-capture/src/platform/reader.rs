@@ -169,3 +169,32 @@ impl VideoReader {
             .ok_or_else(|| "The recording contains no video frames.".into())
     }
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Probe {
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
+}
+
+/// The picture size and length of a video to import.
+pub fn probe(path: &std::path::Path) -> Result<Probe, String> {
+    let video = VideoReader::new(path, 0)?;
+    // The exporter crops the stored picture; a rotated one (a phone held upright) would come out sideways.
+    let rotation = unsafe { video.reader.GetNativeMediaType(VIDEO, 0) }
+        .ok()
+        .and_then(|native| unsafe { native.GetUINT32(&MF_MT_VIDEO_ROTATION) }.ok())
+        .unwrap_or(0);
+    if rotation != 0 {
+        return Err("Rotated videos can't be imported yet.".into());
+    }
+    let duration = unsafe {
+        video
+            .reader
+            .GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE.0 as u32, &MF_PD_DURATION)
+            .step("Reading the video's length")?
+    };
+    let ticks = u64::try_from(&duration).map_err(|_| "The video's length is unknown.".to_string())?;
+    Ok(Probe { width: video.width, height: video.height, duration_ms: ticks / 10_000 })
+}

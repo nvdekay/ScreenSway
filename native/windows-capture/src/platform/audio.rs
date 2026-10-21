@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 use windows::{
-    core::HSTRING,
+    core::{Interface, HSTRING},
     Win32::{
         Media::Audio::*,
         System::Com::{CoCreateInstance, CLSCTX_ALL},
@@ -51,7 +51,7 @@ struct Endpoint {
     expected: Option<i64>,
 }
 impl Endpoint {
-    fn new(mic: bool, id: Option<&str>) -> Result<Self, String> {
+    fn new(mic: bool, id: Option<&str>, echo_cancellation: bool) -> Result<Self, String> {
         unsafe {
             let enumerator: IMMDeviceEnumerator =
                 CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
@@ -78,6 +78,19 @@ impl Endpoint {
             let flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
                 | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY
                 | if mic { 0 } else { AUDCLNT_STREAMFLAGS_LOOPBACK };
+            if mic && echo_cancellation {
+                // The communications category turns on the device's voice processing, which
+                // includes echo cancellation where the driver or Windows provides it.
+                if let Ok(client2) = client.cast::<IAudioClient2>() {
+                    let properties = AudioClientProperties {
+                        cbSize: std::mem::size_of::<AudioClientProperties>() as u32,
+                        bIsOffload: false.into(),
+                        eCategory: AudioCategory_Communications,
+                        Options: AUDCLNT_STREAMOPTIONS_NONE,
+                    };
+                    let _ = client2.SetClientProperties(&properties);
+                }
+            }
             client
                 .Initialize(AUDCLNT_SHAREMODE_SHARED, flags, 1_000_000, 0, &format, None)
                 .step("Starting 48 kHz stereo audio capture")?;
@@ -179,6 +192,7 @@ impl Session {
         path: PathBuf,
         system: bool,
         microphone: Option<String>,
+        echo_cancellation: bool,
     ) -> Result<Option<Self>, String> {
         if !system && microphone.is_none() {
             return Ok(None);
@@ -198,10 +212,10 @@ impl Session {
                 super::initialize().map_err(|e| e.to_string())?;
                 let mut endpoints = Vec::new();
                 if system {
-                    endpoints.push(Endpoint::new(false, None)?);
+                    endpoints.push(Endpoint::new(false, None, false)?);
                 }
                 if let Some(id) = microphone {
-                    endpoints.push(Endpoint::new(true, Some(&id)).map_err(|e| {
+                    endpoints.push(Endpoint::new(true, Some(&id), echo_cancellation).map_err(|e| {
                         if e.contains("80070005") {
                             format!("SCREENSWAY_MICROPHONE_DENIED: {e}")
                         } else {
@@ -304,7 +318,7 @@ impl Session {
             worker.join().map_err(|_| "Audio capture thread failed")??;
         }
         let temp = video.with_extension("audio.mp4");
-        super::mux::with_source_audio(video, &self.path, &temp, 0, duration)?;
+        super::mux::with_source_audio(video, &self.path, &temp, &[(0, duration)], 0)?;
         std::fs::rename(&temp, video).map_err(|e| e.to_string())?;
         std::fs::remove_file(&self.path).map_err(|e| e.to_string())?;
         Ok(())

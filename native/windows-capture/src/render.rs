@@ -9,6 +9,8 @@ pub struct ExportJob {
     pub output: String,
     pub width: u32,
     pub height: u32,
+    pub source_width: u32,
+    pub source_height: u32,
     pub fps: u32,
     pub base_layer: String,
     pub cursor: String,
@@ -21,7 +23,51 @@ pub struct ExportJob {
     #[serde(default)]
     pub start_ms: f64,
     #[serde(default)]
+    pub source_times_ms: Vec<f64>,
+    #[serde(default)]
+    pub source_ranges: Vec<SourceRange>,
+    /// Silence before the recording's sound, under an intro card.
+    #[serde(default)]
+    pub lead_in_ms: f64,
+    #[serde(default)]
+    pub redactions: Vec<Redaction>,
+    #[serde(default)]
     pub captions: Vec<Caption>,
+    /// The webcam, drawn over the finished frame.
+    #[serde(default)]
+    pub camera: Option<CameraJob>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraJob {
+    pub path: String,
+    /// How much later than the screen the camera file starts.
+    #[serde(default)]
+    pub offset_ms: f64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub radius: f64,
+    #[serde(default)]
+    pub mirror: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRange {
+    pub start_ms: f64,
+    pub end_ms: f64,
+}
+
+#[derive(Deserialize)]
+pub struct Redaction {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub mode: String,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +108,8 @@ impl ExportJob {
             || self.height % 2 != 0
             || self.fps != 60
             || self.frames.is_empty()
+            || self.source_width < 1
+            || self.source_height < 1
         {
             return Err(
                 "Export requires an even output size and a nonempty 60 fps render plan.".into(),
@@ -91,6 +139,12 @@ impl ExportJob {
             || self.frames.iter().any(|f| {
                 f.len() != 11 || !f.iter().copied().all(finite) || f[2] <= 0.0 || f[3] <= 0.0
             })
+            || (!self.source_times_ms.is_empty()
+                && (self.source_times_ms.len() != self.frames.len()
+                    || self.source_times_ms.iter().copied().any(|time| !finite(time) || time < 0.0)
+                    || self.source_times_ms.windows(2).any(|pair| pair[1] < pair[0])))
+            || self.source_ranges.iter().any(|range| !finite(range.start_ms) || !finite(range.end_ms) || range.start_ms < 0.0 || range.end_ms <= range.start_ms)
+            || self.redactions.iter().any(|r| ![r.x, r.y, r.width, r.height].into_iter().all(finite) || r.width <= 0.0 || r.height <= 0.0 || (r.mode != "blur" && r.mode != "solid"))
             || self.captions.iter().any(|c| {
                 ![c.start_ms, c.end_ms, c.x, c.y].into_iter().all(finite) || c.end_ms <= c.start_ms
             })
@@ -303,6 +357,24 @@ pub fn compose(
         for x in xmin..xmax {
             let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
             let mut pixel = *resized.get_pixel(x - xmin, y - ymin);
+            // Hidden parts of the screen; the cursor and clicks stay visible above them.
+            let source_x = frame[0] + ((px - v.x) / v.width) * frame[2];
+            let source_y = frame[1] + ((py - v.y) / v.height) * frame[3];
+            if let Some(redaction) = job.redactions.iter().find(|r| {
+                let left = r.x * job.source_width as f64;
+                let top = r.y * job.source_height as f64;
+                source_x >= left && source_x < left + r.width * job.source_width as f64
+                    && source_y >= top && source_y < top + r.height * job.source_height as f64
+            }) {
+                if redaction.mode == "solid" {
+                    pixel = Rgba([17, 17, 17, 255]);
+                } else {
+                    let block = 14u32;
+                    let rx = ((x - xmin) / block * block + block / 2).min(resized.width().saturating_sub(1));
+                    let ry = ((y - ymin) / block * block + block / 2).min(resized.height().saturating_sub(1));
+                    pixel = *resized.get_pixel(rx, ry);
+                }
+            }
             if frame[9] > 0.0 && frame[10] > 0.0 {
                 let line = frame[9] * 0.045;
                 let radius = (frame[9] - line) / 2.0;
@@ -346,11 +418,45 @@ pub fn overlay(output: &mut RgbaImage, image: &RgbaImage, x: f64, y: f64) {
     }
 }
 
+/// Draws a camera frame into its box, filling it (the middle of the picture is kept) with rounded corners.
+pub fn overlay_camera(output: &mut RgbaImage, frame: &RgbaImage, camera: &CameraJob) {
+    let (fw, fh) = (frame.width() as f64, frame.height() as f64);
+    if fw <= 0.0 || fh <= 0.0 || camera.width <= 0.0 || camera.height <= 0.0 {
+        return;
+    }
+    let scale = (camera.width / fw).max(camera.height / fh);
+    let (crop_x, crop_y) = ((fw - camera.width / scale) / 2.0, (fh - camera.height / scale) / 2.0);
+    let r = camera.radius.min(camera.width / 2.0).min(camera.height / 2.0).max(0.0);
+    let xmin = camera.x.floor().max(0.0) as u32;
+    let ymin = camera.y.floor().max(0.0) as u32;
+    let xmax = ((camera.x + camera.width).ceil().max(0.0) as u32).min(output.width());
+    let ymax = ((camera.y + camera.height).ceil().max(0.0) as u32).min(output.height());
+    for y in ymin..ymax {
+        for x in xmin..xmax {
+            let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+            let cx = px.clamp(camera.x + r, camera.x + camera.width - r);
+            let cy = py.clamp(camera.y + r, camera.y + camera.height - r);
+            let inside_x = (px - camera.x).min(camera.x + camera.width - px) + 0.5;
+            let inside_y = (py - camera.y).min(camera.y + camera.height - py) + 0.5;
+            let coverage = (r + 0.5 - (px - cx).hypot(py - cy)).min(inside_x).min(inside_y).clamp(0.0, 1.0);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let mut u = (px - camera.x) / scale;
+            if camera.mirror {
+                u = camera.width / scale - u;
+            }
+            let v = (py - camera.y) / scale;
+            over(output.get_pixel_mut(x, y), sample(frame, crop_x + u - 0.5, crop_y + v - 0.5), coverage);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn job() -> ExportJob {
-        serde_json::from_value(serde_json::json!({"source":"s","output":"o","width":4,"height":4,"fps":60,
+        serde_json::from_value(serde_json::json!({"source":"s","output":"o","width":4,"height":4,"sourceWidth":2,"sourceHeight":2,"fps":60,
         "baseLayer":"b","cursor":"c","cursorHotspotX":0,"cursorHotspotY":0,"video":{"x":1,"y":1,"width":2,"height":2},
         "radius":0,"roundTopCorners":true,"frames":[[0,0,2,2,0,0,0,0,0,0,0]]})).unwrap()
     }
@@ -374,6 +480,39 @@ mod tests {
         );
         assert_eq!(*out.get_pixel(0, 0), Rgba([100, 0, 0, 255]));
         assert_eq!(*out.get_pixel(1, 1), Rgba([0, 0, 0, 255]));
+    }
+    fn camera(mirror: bool) -> CameraJob {
+        serde_json::from_value(serde_json::json!({"path":"c","x":2,"y":2,"width":8,"height":8,"radius":4,"mirror":mirror})).unwrap()
+    }
+    #[test]
+    fn camera_fills_a_round_box_and_can_be_mirrored() {
+        // A 4x2 picture, left half red and right half blue: filling a square keeps its middle.
+        let mut frame = RgbaImage::from_pixel(4, 2, Rgba([255, 0, 0, 255]));
+        for y in 0..2 { for x in 2..4 { frame.put_pixel(x, y, Rgba([0, 0, 255, 255])); } }
+        let mut out = RgbaImage::from_pixel(12, 12, Rgba([0, 0, 0, 255]));
+        overlay_camera(&mut out, &frame, &camera(false));
+        assert_eq!(*out.get_pixel(2, 2), Rgba([0, 0, 0, 255]), "the corner is outside the circle");
+        assert!(out.get_pixel(3, 6)[0] > 200, "left side shows the left of the picture");
+        assert!(out.get_pixel(8, 6)[2] > 200, "right side shows the right of the picture");
+        assert_eq!(*out.get_pixel(11, 11), Rgba([0, 0, 0, 255]));
+        let mut mirrored = RgbaImage::from_pixel(12, 12, Rgba([0, 0, 0, 255]));
+        overlay_camera(&mut mirrored, &frame, &camera(true));
+        assert!(mirrored.get_pixel(3, 6)[2] > 200);
+    }
+    #[test]
+    fn redactions_hide_the_screen_but_not_the_cursor() {
+        let mut j = job();
+        j.redactions = vec![Redaction { x: 0.0, y: 0.0, width: 1.0, height: 1.0, mode: "solid".into() }];
+        let src = RgbaImage::from_pixel(2, 2, Rgba([200, 100, 50, 255]));
+        let base = RgbaImage::from_pixel(4, 4, Rgba([10, 20, 30, 255]));
+        let cursor = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
+        let mut plan = j.frames[0].clone();
+        plan[4] = 1.0;
+        plan[5] = 1.0;
+        plan[6] = 1.0;
+        let out = compose(&j, &plan, &src, &base, &cursor);
+        assert_eq!(*out.get_pixel(2, 2), Rgba([17, 17, 17, 255]));
+        assert_eq!(*out.get_pixel(1, 1), Rgba([255, 255, 255, 255]));
     }
     #[test]
     fn rejects_broken_render_plans() {

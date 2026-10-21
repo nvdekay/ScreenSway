@@ -56,8 +56,8 @@ pub fn with_source_audio(
     video: &Path,
     source: &Path,
     output: &Path,
-    start: i64,
-    duration: i64,
+    ranges: &[(i64, i64)],
+    lead_in: i64,
 ) -> Result<(), String> {
     let audio = reader::open(source, false)?;
     // A recording made with both audio switches off is a normal silent export.
@@ -72,9 +72,6 @@ pub fn with_source_audio(
         audio
             .SetCurrentMediaType(reader::AUDIO, None, &pcm)
             .step("Decoding audio for export")?;
-    }
-    if start > 0 {
-        reader::seek(&audio, start)?;
     }
     let v = reader::open(video, false)?;
     reader::select(&v, reader::VIDEO)?;
@@ -106,8 +103,23 @@ pub fn with_source_audio(
             .SetInputMediaType(aus, &pcm, None)
             .step("Encoding AAC audio")?;
         writer.BeginWriting().step("Starting MP4 muxer")?;
+        // Real silence under an intro card: a track whose first sample is late may be
+        // played from zero by some players.
+        let mut silent = 0i64;
+        while silent < lead_in {
+            let length = (lead_in - silent).min(1_000_000);
+            let frames = (length as i128 * 48_000 / 10_000_000) as usize;
+            if frames == 0 {
+                break;
+            }
+            writer.WriteSample(aus, &sample(&vec![0u8; frames * 4], silent, length)?).step("Writing silence")?;
+            silent += length;
+        }
         let mut vp = reader::next(&v, reader::VIDEO)?;
-        let mut ap = next_audio(&audio, start, duration)?;
+        let mut range_index = 0usize;
+        let mut range_started = false;
+        let mut audio_offset = lead_in;
+        let mut ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset)?;
         while vp.is_some() || ap.is_some() {
             if vp
                 .as_ref()
@@ -119,12 +131,36 @@ pub fn with_source_audio(
             } else {
                 let (s, _) = ap.take().unwrap();
                 writer.WriteSample(aus, &s).step("Writing exported audio")?;
-                ap = next_audio(&audio, start, duration)?;
+                ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset)?;
             }
         }
         writer.Finalize().step("Finalizing MP4 with audio")?;
     }
     Ok(())
+}
+
+fn next_audio_ranges(
+    reader: &IMFSourceReader,
+    ranges: &[(i64, i64)],
+    index: &mut usize,
+    started: &mut bool,
+    output_offset: &mut i64,
+) -> Result<Option<(IMFSample, i64)>, String> {
+    loop {
+        let Some(&(start, end)) = ranges.get(*index) else { return Ok(None) };
+        if !*started {
+            reader::seek(reader, start)?;
+            *started = true;
+        }
+        if let Some((sample, relative_time)) = next_audio(reader, start, end - start)? {
+            let output_time = *output_offset + relative_time;
+            unsafe { sample.SetSampleTime(output_time).step("Retiming edited audio")?; }
+            return Ok(Some((sample, output_time)));
+        }
+        *output_offset += end - start;
+        *index += 1;
+        *started = false;
+    }
 }
 
 fn next_audio(

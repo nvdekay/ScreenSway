@@ -102,6 +102,10 @@ impl PointerLog {
     }
 
     /// Recorded time up to the stop command, without pauses.
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
+    }
+
     pub fn duration_ms(&self, now: i64) -> u64 {
         let now = self.stopped_at.unwrap_or(now);
         let current_pause = self.paused_at.map_or(0, |at| now - at);
