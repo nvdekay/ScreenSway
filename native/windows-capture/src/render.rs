@@ -9,7 +9,10 @@ pub struct ExportJob {
     pub output: String,
     pub width: u32,
     pub height: u32,
+    /// The recording's size, for redactions; older jobs leave it out and the decoded size is used.
+    #[serde(default)]
     pub source_width: u32,
+    #[serde(default)]
     pub source_height: u32,
     pub fps: u32,
     pub base_layer: String,
@@ -108,8 +111,6 @@ impl ExportJob {
             || self.height % 2 != 0
             || self.fps != 60
             || self.frames.is_empty()
-            || self.source_width < 1
-            || self.source_height < 1
         {
             return Err(
                 "Export requires an even output size and a nonempty 60 fps render plan.".into(),
@@ -456,7 +457,7 @@ pub fn overlay_camera(output: &mut RgbaImage, frame: &RgbaImage, camera: &Camera
 mod tests {
     use super::*;
     fn job() -> ExportJob {
-        serde_json::from_value(serde_json::json!({"source":"s","output":"o","width":4,"height":4,"sourceWidth":2,"sourceHeight":2,"fps":60,
+        serde_json::from_value(serde_json::json!({"source":"s","output":"o","width":4,"height":4,"fps":60,
         "baseLayer":"b","cursor":"c","cursorHotspotX":0,"cursorHotspotY":0,"video":{"x":1,"y":1,"width":2,"height":2},
         "radius":0,"roundTopCorners":true,"frames":[[0,0,2,2,0,0,0,0,0,0,0]]})).unwrap()
     }
@@ -502,6 +503,7 @@ mod tests {
     #[test]
     fn redactions_hide_the_screen_but_not_the_cursor() {
         let mut j = job();
+        (j.source_width, j.source_height) = (2, 2);
         j.redactions = vec![Redaction { x: 0.0, y: 0.0, width: 1.0, height: 1.0, mode: "solid".into() }];
         let src = RgbaImage::from_pixel(2, 2, Rgba([200, 100, 50, 255]));
         let base = RgbaImage::from_pixel(4, 4, Rgba([10, 20, 30, 255]));

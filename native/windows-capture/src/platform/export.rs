@@ -9,7 +9,7 @@ use std::path::Path;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE};
 
 pub fn run(path: &Path) -> Result<ExportResult, String> {
-    let job: ExportJob = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
+    let mut job: ExportJob = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     job.validate()?;
     let output = Path::new(&job.output);
@@ -31,6 +31,9 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
     let temporary = output.with_extension("video.mp4");
     let start = (job.start_ms * 10_000.0).round() as i64;
     let mut source = reader::VideoReader::new(Path::new(&job.source), start)?;
+    if job.source_width == 0 || job.source_height == 0 {
+        (job.source_width, job.source_height) = (source.width, source.height);
+    }
     let mut camera = match &job.camera {
         Some(camera) => Some(reader::VideoReader::new(Path::new(&camera.path), 0)?),
         None => None,
