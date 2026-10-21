@@ -90,6 +90,8 @@ jobs:
           name: ScreenSway-windows-x64-setup
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+          # About 500 MB each: keep test installers briefly so they do not fill the storage quota.
+          retention-days: 3
 
   publish-windows:
     needs: build-windows
