@@ -69,9 +69,12 @@ async function read(id: string, input: Input, captured: CapturedRecording): Prom
     projectPath: id,
     videoPath: url,
     pointerEventsPath: "",
+    // Browsers do not report keys pressed in other apps.
+    keystrokesPath: "",
     durationMs,
     width,
     height,
     pointerEvents: pointerEvents(samples, width),
+    keystrokes: [],
   };
 }

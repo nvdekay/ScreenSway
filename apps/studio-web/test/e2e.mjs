@@ -411,6 +411,34 @@ try {
     console.log("short recording trimmed at both ends: ok");
   }
 
+  // 7b. A part cut from the middle is left out of the picture and the sound.
+  {
+    const page = await openApp();
+    await record(page, 3_500);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    await page.evaluate(() => {
+      const video = document.querySelector(".player-content video");
+      video.pause();
+      video.currentTime = 1.6;
+    });
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Cut 1 second" }).click();
+    const [cutStart, cutEnd] = await page.locator(".cut-inspector input").evaluateAll((inputs) => inputs.map((input) => Number(input.value)));
+    assert.ok(cutEnd - cutStart > 0.5, `a middle part is cut (${cutStart}–${cutEnd} s)`);
+    const handle = async (name) => Number(await page.getByRole("slider", { name }).or(page.getByLabel(name)).first().getAttribute("aria-valuenow"));
+    const keptSeconds = ((await handle("End of the video")) - (await handle("Start of the video"))) / 1_000 - (cutEnd - cutStart);
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.locator(".export-done").waitFor({ timeout: 60_000 });
+    const exported = await readExport(page);
+    // The cut is shown to a tenth of a second, and the picture is whole frames.
+    assert.ok(Math.abs(exported.videoDuration - keptSeconds) < 0.1, `the picture leaves out the cut (${exported.videoDuration.toFixed(3)} of ${keptSeconds.toFixed(3)} s)`);
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, `sound leaves it out too (${exported.audioDuration.toFixed(3)} / ${exported.videoDuration.toFixed(3)} s)`);
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("middle cut leaves out picture and sound: ok");
+  }
+
   // 8. In Vietnamese, a file that refuses to open is explained in Vietnamese, not in the
   //    browser's technical English, and the chosen file is untouched.
   {

@@ -24,6 +24,12 @@ export interface ExportJob {
   radius: number;
   roundTopCorners: boolean;
   startMs: number;
+  /** The recording's time for every frame, which skips parts cut from the middle. */
+  sourceTimesMs?: number[];
+  /** The parts of the recording that are kept, in order. */
+  sourceRanges?: { startMs: number; endMs: number }[];
+  /** Silence before the recording's sound, under an intro card. */
+  leadInMs?: number;
   frames: RenderFrame[];
 }
 
@@ -93,10 +99,10 @@ export async function renderExport(
     await output.start();
     checkpoint();
 
-    const { video, radius, roundTopCorners, frames, fps, startMs } = job;
+    const { video, radius, roundTopCorners, frames, fps, startMs, sourceTimesMs } = job;
     const corners = roundTopCorners ? [radius, radius, radius, radius] : [0, 0, radius, radius];
     const first = await videoTrack.getFirstTimestamp();
-    const times = frames.map((_, index) => Math.max(first, (startMs + (index * 1_000) / fps) / 1_000));
+    const times = frames.map((_, index) => Math.max(first, (sourceTimesMs?.[index] ?? startMs + (index * 1_000) / fps) / 1_000));
     const sink = new VideoSampleSink(videoTrack);
     let index = 0;
     let shown = -1;
@@ -124,22 +130,31 @@ export async function renderExport(
     videoSource.close();
 
     if (audioTrack && audioSource) {
-      const start = startMs / 1_000;
-      const end = start + frames.length / fps;
+      const length = frames.length / fps;
+      const ranges = job.sourceRanges?.length
+        ? job.sourceRanges.map((range) => ({ start: range.startMs / 1_000, end: range.endMs / 1_000 }))
+        : [{ start: startMs / 1_000, end: startMs / 1_000 + length }];
+      const leadIn = (job.leadInMs ?? 0) / 1_000;
+      if (leadIn > 0.01) await audioSource.add(silence(leadIn, audioTrack.sampleRate, audioTrack.numberOfChannels));
       // Sound is laid end to end, so gaps in the recording are filled with silence to stay in sync.
-      let written = start;
-      for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack).buffers(start, end)) {
-        checkpoint();
-        const gap = timestamp - written;
-        if (gap > 0.01) await audioSource.add(silence(Math.min(gap, end - written), buffer.sampleRate, buffer.numberOfChannels));
-        const kept = keep(buffer, Math.max(timestamp, written), timestamp, end);
-        if (kept) {
-          await audioSource.add(kept);
-          written = Math.max(timestamp, written) + kept.duration;
+      let total = leadIn;
+      for (const range of ranges) {
+        const end = Math.min(range.end, range.start + length - total);
+        let written = range.start;
+        for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack).buffers(range.start, end)) {
+          checkpoint();
+          const gap = timestamp - written;
+          if (gap > 0.01) await audioSource.add(silence(Math.min(gap, end - written), buffer.sampleRate, buffer.numberOfChannels));
+          const kept = keep(buffer, Math.max(timestamp, written), timestamp, end);
+          if (kept) {
+            await audioSource.add(kept);
+            written = Math.max(timestamp, written) + kept.duration;
+          }
         }
+        // Sound that ends before the picture is padded too, so both tracks end together.
+        if (end - written > 0.01) await audioSource.add(silence(end - written, audioTrack.sampleRate, audioTrack.numberOfChannels));
+        total += end - range.start;
       }
-      // Sound that ends before the picture is padded too, so both tracks end together.
-      if (end - written > 0.01) await audioSource.add(silence(end - written, audioTrack.sampleRate, audioTrack.numberOfChannels));
       audioSource.close();
     }
     checkpoint();
