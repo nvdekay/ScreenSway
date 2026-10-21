@@ -20,6 +20,53 @@ export interface ZoomSegment {
   scale: number;
 }
 
+export interface CutSegment {
+  id: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface Redaction {
+  id: string;
+  /** Normalized coordinates in the source recording. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  mode: "blur" | "solid";
+}
+
+export interface KeystrokeEvent { timeMs: number; keys: string[] }
+export interface KeystrokeOverlay {
+  enabled: boolean;
+  position: "top" | "bottom";
+  size: "small" | "medium" | "large";
+  theme: "dark" | "light";
+}
+
+/** Where the webcam recording sits on the finished frame. It is a separate file, so all of this can change after recording. */
+export interface CameraOverlay {
+  visible: boolean;
+  /** Centre of the camera, as fractions of the output frame. */
+  x: number;
+  y: number;
+  /** Width as a fraction of the output frame's shorter side. */
+  size: number;
+  shape: "circle" | "rounded";
+  mirror: boolean;
+}
+
+export const DEFAULT_CAMERA_OVERLAY: CameraOverlay = { visible: true, x: 0.86, y: 0.8, size: 0.26, shape: "circle", mirror: true };
+
+/** The camera's box on an output frame of `width` × `height` pixels, kept fully inside it. */
+export function cameraRect(overlay: CameraOverlay, width: number, height: number): { x: number; y: number; width: number; height: number; radius: number } {
+  const boxWidth = Math.round(Math.min(width, height) * Math.min(0.6, Math.max(0.08, overlay.size)));
+  const boxHeight = overlay.shape === "circle" ? boxWidth : Math.round(boxWidth * 0.75);
+  const x = Math.round(Math.min(width - boxWidth, Math.max(0, overlay.x * width - boxWidth / 2)));
+  const y = Math.round(Math.min(height - boxHeight, Math.max(0, overlay.y * height - boxHeight / 2)));
+  return { x, y, width: boxWidth, height: boxHeight, radius: overlay.shape === "circle" ? boxWidth / 2 : Math.round(boxWidth * 0.08) };
+}
+
 export interface ScreenSwayProject {
   schemaVersion: 1;
   title: string;
@@ -63,9 +110,86 @@ export interface RecordingEdits {
   /** Null keeps the recording to its end. */
   trimEndMs: number | null;
   zooms: ZoomSegment[] | null;
+  /** Source-time ranges removed from the finished timeline. */
+  cuts?: CutSegment[];
+  redactions?: Redaction[];
+  keystrokeOverlay?: KeystrokeOverlay;
+  camera?: CameraOverlay;
+  /** Where a frame narrower than the recording (for example 9:16) is held instead of following the pointer. */
+  framing?: FramingSegment[];
+  /** Chapters in recording time; the first one starts the video. */
+  chapters?: { startMs: number; title: string }[];
 }
 
-export const NO_EDITS: RecordingEdits = { trimStartMs: 0, trimEndMs: null, zooms: null };
+export interface FramingSegment {
+  id: string;
+  startMs: number;
+  endMs: number;
+  /** Centre of the view, as a fraction of the recording's width. */
+  x: number;
+}
+
+export const DEFAULT_KEYSTROKE_OVERLAY: KeystrokeOverlay = { enabled: true, position: "bottom", size: "medium", theme: "dark" };
+export const NO_EDITS: RecordingEdits = { trimStartMs: 0, trimEndMs: null, zooms: null, cuts: [], redactions: [], keystrokeOverlay: DEFAULT_KEYSTROKE_OVERLAY };
+
+export interface SourceRange { startMs: number; endMs: number }
+
+/** Sorted, non-overlapping cuts inside the trimmed recording. */
+export function normalizeCuts(cuts: CutSegment[], range: SourceRange): CutSegment[] {
+  const result: CutSegment[] = [];
+  for (const cut of [...cuts].sort((a, b) => a.startMs - b.startMs)) {
+    const startMs = Math.max(range.startMs, result.at(-1)?.endMs ?? range.startMs, Math.round(cut.startMs));
+    const endMs = Math.min(range.endMs, Math.round(cut.endMs));
+    if (endMs - startMs < 100) continue;
+    result.push({ ...cut, startMs, endMs });
+  }
+  // A project must retain enough material to remain playable.
+  while (result.reduce((sum, cut) => sum + cut.endMs - cut.startMs, 0) > range.endMs - range.startMs - MIN_TRIM_MS) result.pop();
+  return result;
+}
+
+/** Source ranges that remain after trim and middle cuts. */
+export function keptRanges(edits: RecordingEdits, durationMs: number): SourceRange[] {
+  const range = trimRange(edits, durationMs);
+  const cuts = normalizeCuts(edits.cuts ?? [], range);
+  const kept: SourceRange[] = [];
+  let cursor = range.startMs;
+  for (const cut of cuts) {
+    if (cut.startMs > cursor) kept.push({ startMs: cursor, endMs: cut.startMs });
+    cursor = cut.endMs;
+  }
+  if (cursor < range.endMs) kept.push({ startMs: cursor, endMs: range.endMs });
+  return kept;
+}
+
+export function keptDuration(ranges: SourceRange[]): number {
+  return ranges.reduce((sum, range) => sum + range.endMs - range.startMs, 0);
+}
+
+export function sourceToOutputTime(ranges: SourceRange[], sourceMs: number): number {
+  let output = 0;
+  for (const range of ranges) {
+    if (sourceMs < range.startMs) return output;
+    if (sourceMs <= range.endMs) return output + sourceMs - range.startMs;
+    output += range.endMs - range.startMs;
+  }
+  return output;
+}
+
+export function outputToSourceTime(ranges: SourceRange[], outputMs: number): number {
+  let remaining = Math.max(0, outputMs);
+  for (const range of ranges) {
+    const length = range.endMs - range.startMs;
+    if (remaining < length) return range.startMs + remaining;
+    remaining -= length;
+  }
+  return ranges.at(-1)?.endMs ?? 0;
+}
+
+export function buildSourceTimes(ranges: SourceRange[], fps: number): number[] {
+  const count = Math.max(1, Math.ceil((keptDuration(ranges) / 1_000) * fps));
+  return Array.from({ length: count }, (_, index) => outputToSourceTime(ranges, (index * 1_000) / fps));
+}
 
 /** The kept part of the recording, always at least MIN_TRIM_MS long and inside it. */
 export function trimRange(edits: RecordingEdits, durationMs: number): { startMs: number; endMs: number } {
@@ -257,6 +381,55 @@ export function sampleCameraTrack(track: CameraTrack, timeMs: number): CameraSta
     y: current.y + (next.y - current.y) * progress,
     scale: current.scale + (next.scale - current.scale) * progress,
   };
+}
+
+/**
+ * The horizontal centre of a view narrower than the recording, as a fraction of its width,
+ * one value per camera frame. It follows the pointer with a dead zone (and the same spring as
+ * the zoom), so a vertical video keeps the action in view; framing segments hold it where the
+ * user put it. `viewWidth` is the view's width at 1× as a fraction of the recording's width.
+ */
+export function buildFollowTrack(
+  events: PointerEvent[],
+  camera: CameraTrack,
+  canvas: Canvas,
+  viewWidth: number,
+  framing: FramingSegment[] = [],
+): number[] {
+  const dt = 1 / camera.fps;
+  const result: number[] = [];
+  let x = 0.5;
+  let velocity = 0;
+  let target = 0.5;
+  const first = events.find((event) => event.type !== "focus");
+  if (first) target = x = first.x / canvas.width;
+  for (let frame = 0; frame < camera.frames.length; frame++) {
+    const timeMs = (frame * 1_000) / camera.fps;
+    const half = viewWidth / (2 * camera.frames[frame].scale);
+    const held = framing.find((segment) => timeMs >= segment.startMs && timeMs < segment.endMs);
+    if (held) {
+      target = held.x;
+    } else {
+      const pointer = samplePointer(events, timeMs);
+      if (pointer) {
+        // The pointer may move freely in the middle of the view before the view follows.
+        const pointerX = pointer.x / canvas.width;
+        const deadZone = half * 0.5;
+        if (Math.abs(pointerX - target) > deadZone) target = pointerX - Math.sign(pointerX - target) * deadZone;
+      }
+    }
+    target = Math.min(1 - half, Math.max(half, target));
+    [x, velocity] = stepSpring(x, velocity, target, PAN_SPRING, dt);
+    result.push(Math.min(1 - half, Math.max(half, x)));
+  }
+  return result;
+}
+
+export function sampleFollowTrack(track: number[], fps: number, timeMs: number): number {
+  const position = Math.max(0, (timeMs / 1_000) * fps);
+  const index = Math.min(Math.floor(position), track.length - 1);
+  const next = track[index + 1];
+  return next === undefined ? track[index] : track[index] + (next - track[index]) * (position - index);
 }
 
 /** Keeps the zoomed viewport inside the canvas so no empty edges are ever shown. */

@@ -130,6 +130,22 @@ export function trimCaptions(lines: CaptionLine[], startMs: number, endMs: numbe
     }));
 }
 
+/** Clips source-timed captions to kept ranges and retimes them onto the edited output. */
+export function retimeCaptions(lines: CaptionLine[], ranges: { startMs: number; endMs: number }[]): CaptionLine[] {
+  const result: CaptionLine[] = [];
+  let offset = 0;
+  for (const range of ranges) {
+    for (const line of lines) {
+      const start = Math.max(line.startMs, range.startMs);
+      const end = Math.min(line.endMs, range.endMs);
+      if (!line.text.trim() || end <= start) continue;
+      result.push({ ...line, id: `${line.id}-${result.length}`, startMs: offset + start - range.startMs, endMs: offset + end - range.startMs });
+    }
+    offset += range.endMs - range.startMs;
+  }
+  return result;
+}
+
 /** SubRip subtitles, accepted by YouTube, Premiere, Final Cut and most players. */
 export function toSrt(lines: CaptionLine[]): string {
   const time = (milliseconds: number) => {
@@ -143,4 +159,51 @@ export function toSrt(lines: CaptionLine[]): string {
   return lines
     .map((line, index) => `${index + 1}\n${time(line.startMs)} --> ${time(line.endMs)}\n${line.text.trim()}\n`)
     .join("\n");
+}
+
+export interface Chapter {
+  startMs: number;
+  title: string;
+}
+
+/** A short name from the first thing said: its first sentence, at most `maxLength` characters. */
+export function suggestTitle(lines: CaptionLine[], maxLength = 60): string {
+  const first = lines.map((line) => line.text.trim()).find(Boolean) ?? "";
+  const sentence = first.split(/(?<=[.!?…])\s/)[0];
+  if (sentence.length <= maxLength) return sentence.replace(/[.,;:!?…]+$/, "");
+  const cut = sentence.slice(0, maxLength + 1);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), maxLength * 0.6)).trim()}…`;
+}
+
+/**
+ * Chapters at the longer pauses between lines, each named after its first words. The first
+ * chapter starts at 0, as YouTube requires; chapters are at least `minChapterMs` long.
+ */
+export function suggestChapters(lines: CaptionLine[], minChapterMs = 30_000, minPauseMs = 1_500): Chapter[] {
+  const spoken = lines.filter((line) => line.text.trim()).sort((a, b) => a.startMs - b.startMs);
+  if (spoken.length === 0) return [];
+  const name = (line: CaptionLine) => {
+    const words = line.text.trim().replace(/[.,;:!?…]+$/, "").split(/\s+/);
+    return words.length > 6 ? `${words.slice(0, 6).join(" ")}…` : words.join(" ");
+  };
+  const chapters: Chapter[] = [{ startMs: 0, title: name(spoken[0]) }];
+  for (let index = 1; index < spoken.length; index++) {
+    const pause = spoken[index].startMs - spoken[index - 1].endMs;
+    if (pause >= minPauseMs && spoken[index].startMs - chapters[chapters.length - 1].startMs >= minChapterMs) {
+      chapters.push({ startMs: spoken[index].startMs, title: name(spoken[index]) });
+    }
+  }
+  return chapters;
+}
+
+/** "0:00 Title" lines, as YouTube and most players read chapters from a description. */
+export function formatChapters(chapters: Chapter[]): string {
+  const time = (milliseconds: number) => {
+    const total = Math.floor(milliseconds / 1_000);
+    const hours = Math.floor(total / 3_600);
+    const minutes = Math.floor((total % 3_600) / 60);
+    const seconds = String(total % 60).padStart(2, "0");
+    return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+  };
+  return chapters.map((chapter) => `${time(chapter.startMs)} ${chapter.title}`).join("\n");
 }

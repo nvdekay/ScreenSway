@@ -1,10 +1,14 @@
 import {
   buildCameraTrack,
+  buildFollowTrack,
   generateZoomSegments,
   sampleCameraTrack,
+  sampleFollowTrack,
   samplePointer,
   type Canvas,
   type CameraState,
+  type CameraTrack,
+  type FramingSegment,
   type PointerEvent,
   type ZoomSegment,
 } from "./index";
@@ -51,6 +55,8 @@ export interface FrameSettings {
   /** Shadow strength from 0 (none) to 1. */
   shadow: number;
   quality: QualityPreset;
+  /** The video fills the frame's shape (cropping the sides of the recording) and the view follows the action. */
+  fill?: boolean;
 }
 
 export interface Rect {
@@ -264,11 +270,12 @@ export function computeLayout(settings: FrameSettings, source: Canvas, shortSide
   const available = { width: width - inset * 2, height: height - inset * 2 };
   const chrome = CHROME[settings.frame];
   // Everything is measured in video widths: the whole footprint is `units` wide and tall.
-  const videoAspect = source.height / source.width;
-  const units = {
-    width: 1 + chrome.bezel * 2 + chrome.overhang * 2,
-    height: videoAspect + chrome.titleBar + chrome.bezel * 2 + chrome.base,
-  };
+  const unitsWidth = 1 + chrome.bezel * 2 + chrome.overhang * 2;
+  const chromeHeight = chrome.titleBar + chrome.bezel * 2 + chrome.base;
+  // Filling, the video takes whatever shape fills the space; the view over the recording is cropped to it.
+  const filledAspect = (available.height / available.width) * unitsWidth - chromeHeight;
+  const videoAspect = settings.fill && filledAspect > 0.1 ? filledAspect : source.height / source.width;
+  const units = { width: unitsWidth, height: videoAspect + chromeHeight };
   const videoWidth = Math.min(available.width / units.width, available.height / units.height);
   const origin = { x: (width - units.width * videoWidth) / 2, y: (height - units.height * videoWidth) / 2 };
 
@@ -316,6 +323,58 @@ export interface RenderOptions {
   /** The part of the recording to render (defaults to all of it). */
   startMs?: number;
   endMs?: number;
+  /** Explicit source time for every output frame, used by non-contiguous cuts. */
+  sourceTimesMs?: number[];
+  /** Where a filled frame narrower than the recording is held. */
+  framing?: FramingSegment[];
+}
+
+/**
+ * Margins of a tall (vertical) frame that social apps cover with their own buttons and text,
+ * in output pixels; zero for other frames. Captions and shortcut keys stay out of them.
+ */
+export function safeArea(layout: FrameLayout): { top: number; bottom: number } {
+  return layout.height > layout.width * 1.5
+    ? { top: Math.round(layout.height * 0.1), bottom: Math.round(layout.height * 0.22) }
+    : { top: 0, bottom: 0 };
+}
+
+/** What moves the view over the recording: the zoom camera and, in a filled frame narrower than the recording, the follow track. */
+export interface ViewPlan {
+  camera: CameraTrack;
+  follow: number[] | null;
+  /** The view's size at 1×, in recording pixels. */
+  base: Canvas;
+}
+
+export function buildViewPlan(
+  events: PointerEvent[],
+  segments: ZoomSegment[],
+  source: Canvas,
+  layout: FrameLayout,
+  durationMs: number,
+  framing: FramingSegment[] = [],
+): ViewPlan {
+  const camera = buildCameraTrack(events, segments, source, durationMs);
+  const videoAspect = layout.video.width / layout.video.height;
+  const sourceAspect = source.width / source.height;
+  if (Math.abs(videoAspect - sourceAspect) < 0.005) return { camera, follow: null, base: source };
+  const base = videoAspect < sourceAspect
+    ? { width: source.height * videoAspect, height: source.height }
+    : { width: source.width, height: source.width / videoAspect };
+  const follow = base.width < source.width ? buildFollowTrack(events, camera, source, base.width / source.width, framing) : null;
+  return { camera, follow, base };
+}
+
+/** The part of the recording shown at `timeMs`, in recording pixels, and the zoom it was made with. */
+export function viewAt(plan: ViewPlan, timeMs: number, source: Canvas, autoZoom: boolean): { x: number; y: number; width: number; height: number; scale: number } {
+  const camera: CameraState = autoZoom ? sampleCameraTrack(plan.camera, timeMs) : { x: 0.5, y: 0.5, scale: 1 };
+  const width = plan.base.width / camera.scale;
+  const height = plan.base.height / camera.scale;
+  const centerX = plan.follow ? sampleFollowTrack(plan.follow, plan.camera.fps, timeMs) * source.width : camera.x * source.width;
+  const x = Math.min(source.width - width, Math.max(0, centerX - width / 2));
+  const y = Math.min(source.height - height, Math.max(0, camera.y * source.height - height / 2));
+  return { x, y, width, height, scale: camera.scale };
 }
 
 /**
@@ -334,20 +393,20 @@ export function buildRenderFrames(
   const segments = options.zooms ?? generateZoomSegments(events);
   const startMs = Math.max(0, options.startMs ?? 0);
   const endMs = Math.min(durationMs, options.endMs ?? durationMs);
-  const track = buildCameraTrack(events, segments, source, durationMs + 1_000);
+  const plan = buildViewPlan(events, segments, source, layout, durationMs + 1_000, options.framing);
   const clicks = events.filter((event) => event.type !== "move");
   const frames: RenderFrame[] = [];
-  const count = Math.max(1, Math.ceil(((endMs - startMs) / 1_000) * fps));
+  const sourceTimes = options.sourceTimesMs;
+  const count = sourceTimes?.length ?? Math.max(1, Math.ceil(((endMs - startMs) / 1_000) * fps));
   const round = (value: number) => Math.round(value * 100) / 100;
   let clickIndex = -1;
 
   for (let index = 0; index < count; index++) {
-    const timeMs = startMs + (index * 1_000) / fps;
-    const camera: CameraState = autoZoom ? sampleCameraTrack(track, timeMs) : { x: 0.5, y: 0.5, scale: 1 };
-    const cropWidth = source.width / camera.scale;
-    const cropHeight = source.height / camera.scale;
-    const cropX = camera.x * source.width - cropWidth / 2;
-    const cropY = camera.y * source.height - cropHeight / 2;
+    const timeMs = sourceTimes?.[index] ?? startMs + (index * 1_000) / fps;
+    const view = viewAt(plan, timeMs, source, autoZoom);
+    const [cropX, cropY, cropWidth, cropHeight] = [view.x, view.y, view.width, view.height];
+    // Output pixels per recording pixel: the cursor keeps its size relative to the recording.
+    const magnification = (layout.video.width / cropWidth) * source.width;
     const toOutput = (x: number, y: number) => [
       layout.video.x + ((x - cropX) / cropWidth) * layout.video.width,
       layout.video.y + ((y - cropY) / cropHeight) * layout.video.height,
@@ -355,7 +414,7 @@ export function buildRenderFrames(
 
     const pointer = samplePointer(events, timeMs);
     const [cursorX, cursorY] = pointer ? toOutput(pointer.x, pointer.y) : [0, 0];
-    const cursorSize = pointer ? layout.video.width * CURSOR_SIZE_RATIO * camera.scale : 0;
+    const cursorSize = pointer ? magnification * CURSOR_SIZE_RATIO : 0;
 
     while (clickIndex + 1 < clicks.length && clicks[clickIndex + 1].timeMs <= timeMs) clickIndex++;
     const click = clicks[clickIndex];
@@ -364,7 +423,7 @@ export function buildRenderFrames(
     if (click && age < RIPPLE_MS) {
       const progress = age / RIPPLE_MS;
       const [x, y] = toOutput(click.x, click.y);
-      ripple = [x, y, layout.video.width * RIPPLE_SIZE_RATIO * camera.scale * (0.4 + progress * 0.9), 1 - progress];
+      ripple = [x, y, magnification * RIPPLE_SIZE_RATIO * (0.4 + progress * 0.9), 1 - progress];
     }
 
     frames.push([

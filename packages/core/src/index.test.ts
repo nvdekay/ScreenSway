@@ -1,18 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSourceTimes,
   buildCameraTrack,
   clampCamera,
   generateZoomSegments,
+  keptDuration,
+  keptRanges,
   sampleCameraTrack,
   MAX_ZOOM_SCALE,
   MIN_ZOOM_MS,
   MIN_ZOOM_SCALE,
   NO_EDITS,
   normalizeZooms,
+  outputToSourceTime,
   resolveZooms,
   samplePointer,
+  sourceToOutputTime,
   trimRange,
   type PointerEvent,
+  cameraRect,
+  DEFAULT_CAMERA_OVERLAY,
 } from "./index";
 
 describe("generateZoomSegments", () => {
@@ -140,5 +147,47 @@ describe("edits", () => {
     expect(normalized.find((z) => z.id === "overlap")!.startMs).toBe(3_000);
     // A zoom with no room left after its neighbor is dropped instead of overlapping.
     expect(normalizeZooms([zoom("a", 0, 9_800), zoom("b", 9_700, 10_000)], 10_000).map((z) => z.id)).toEqual(["a"]);
+  });
+});
+
+describe("middle cuts", () => {
+  const edits = { ...NO_EDITS, trimStartMs: 1_000, trimEndMs: 9_000, cuts: [
+    { id: "a", startMs: 2_000, endMs: 3_000 },
+    { id: "b", startMs: 5_000, endMs: 7_000 },
+  ] };
+
+  it("turns trim and cuts into kept source ranges", () => {
+    const ranges = keptRanges(edits, 10_000);
+    expect(ranges).toEqual([
+      { startMs: 1_000, endMs: 2_000 },
+      { startMs: 3_000, endMs: 5_000 },
+      { startMs: 7_000, endMs: 9_000 },
+    ]);
+    expect(keptDuration(ranges)).toBe(5_000);
+  });
+
+  it("maps source and output time across cuts", () => {
+    const ranges = keptRanges(edits, 10_000);
+    expect(sourceToOutputTime(ranges, 4_000)).toBe(2_000);
+    expect(outputToSourceTime(ranges, 3_500)).toBe(7_500);
+    expect(buildSourceTimes(ranges, 2)).toEqual([1_000, 1_500, 3_000, 3_500, 4_000, 4_500, 7_000, 7_500, 8_000, 8_500]);
+  });
+});
+
+describe("cameraRect", () => {
+  it("places the camera by its centre and keeps it inside the frame", () => {
+    const box = cameraRect(DEFAULT_CAMERA_OVERLAY, 1920, 1080);
+    expect(box.width).toBe(281);
+    expect(box.height).toBe(281);
+    expect(box.radius).toBe(140.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(1920);
+    const corner = cameraRect({ ...DEFAULT_CAMERA_OVERLAY, x: 1, y: 1 }, 1920, 1080);
+    expect(corner.x + corner.width).toBe(1920);
+    expect(corner.y + corner.height).toBe(1080);
+  });
+
+  it("uses a landscape box with small corners for the rounded shape", () => {
+    const box = cameraRect({ ...DEFAULT_CAMERA_OVERLAY, shape: "rounded", size: 0.4 }, 1080, 1920);
+    expect(box).toMatchObject({ width: 432, height: 324, radius: 35 });
   });
 });

@@ -158,6 +158,12 @@ describe("buildRenderFrames", () => {
     expect(none.every((frame) => frame[2] === source.width)).toBe(true);
   });
 
+  it("renders non-contiguous source times for middle cuts", () => {
+    const full = buildRenderFrames(events, source, layout, 4_000, 2, true);
+    const cut = buildRenderFrames(events, source, layout, 4_000, 2, true, { sourceTimesMs: [0, 500, 2_000, 2_500] });
+    expect(cut).toEqual([full[0], full[1], full[4], full[5]]);
+  });
+
   it("maps the cursor into the video rectangle and shows a ripple after a click", () => {
     const frames = buildRenderFrames(events, source, layout, 2_000, 60, false);
     const [, , , , cursorX, cursorY] = frames[0];
@@ -166,5 +172,55 @@ describe("buildRenderFrames", () => {
     const afterClick = frames[Math.round(1.1 * 60)];
     expect(afterClick[10]).toBeGreaterThan(0);
     expect(frames[30][10]).toBe(0);
+  });
+});
+
+describe("filled frames", () => {
+  const source = { width: 1920, height: 1080 };
+  const settings = { ...DEFAULT_FRAME_SETTINGS, aspect: "9:16" as const, padding: 0, frame: "none" as const, fill: true };
+
+  it("gives the video the frame's shape", () => {
+    const layout = computeLayout(settings, source);
+    expect(layout.video.width / layout.video.height).toBeCloseTo(9 / 16, 3);
+    const letterboxed = computeLayout({ ...settings, fill: false }, source);
+    expect(letterboxed.video.width / letterboxed.video.height).toBeCloseTo(16 / 9, 3);
+  });
+
+  it("crops a view of the same shape that follows the pointer", () => {
+    const layout = computeLayout(settings, source);
+    const events = [
+      { timeMs: 0, type: "move" as const, x: 200, y: 500 },
+      { timeMs: 3_000, type: "move" as const, x: 200, y: 500 },
+      { timeMs: 3_100, type: "move" as const, x: 1700, y: 500 },
+      { timeMs: 8_000, type: "move" as const, x: 1700, y: 500 },
+    ];
+    const frames = buildRenderFrames(events, source, layout, 8_000, 30, false, { zooms: [] });
+    const [startX, , width, height] = frames[0];
+    expect(width / height).toBeCloseTo(9 / 16, 2);
+    expect(height).toBeCloseTo(1080, 0);
+    // The pointer is on the left at first and on the right at the end, always inside the view.
+    expect(startX).toBe(0);
+    const last = frames.at(-1)!;
+    expect(last[0]).toBeGreaterThan(1_100);
+    expect(last[4]).toBeGreaterThan(layout.width * 0.2);
+    expect(last[4]).toBeLessThan(layout.width * 0.8);
+  });
+
+  it("holds the view where a framing segment puts it", () => {
+    const layout = computeLayout(settings, source);
+    const events = [{ timeMs: 0, type: "move" as const, x: 1800, y: 500 }, { timeMs: 6_000, type: "move" as const, x: 1800, y: 500 }];
+    const frames = buildRenderFrames(events, source, layout, 6_000, 30, false, { zooms: [], framing: [{ id: "f", startMs: 0, endMs: 6_000, x: 0.5 }] });
+    const last = frames.at(-1)!;
+    expect(last[0] + last[2] / 2).toBeCloseTo(960, 0);
+  });
+
+  it("magnifies the cursor with the view, as a zoom does", () => {
+    const filled = computeLayout(settings, source);
+    const events = [{ timeMs: 0, type: "move" as const, x: 960, y: 540 }];
+    const [frame] = buildRenderFrames(events, source, filled, 100, 30, false, { zooms: [] });
+    const plain = computeLayout({ ...settings, aspect: "16:9" }, source);
+    const [reference] = buildRenderFrames(events, source, plain, 100, 30, false, { zooms: [] });
+    // The 9:16 frame shows the recording's full height on a 1920 px tall frame instead of 1080.
+    expect(frame[6]).toBeCloseTo((reference[6] * 1920) / 1080, 1);
   });
 });

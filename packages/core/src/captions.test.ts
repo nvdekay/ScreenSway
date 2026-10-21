@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionLines, captionAt, toSrt, trimCaptions, type CaptionWord } from "./captions";
+import { buildCaptionLines, captionAt, formatChapters, retimeCaptions, suggestChapters, suggestTitle, toSrt, trimCaptions, type CaptionWord } from "./captions";
 
 const words = (text: string, startMs: number, gapMs = 0, wordMs = 300): CaptionWord[] =>
   text.split(" ").map((word, index) => ({
@@ -87,5 +87,37 @@ describe("captions on the timeline", () => {
       { id: "b", startMs: 3_723_005, endMs: 3_725_000, text: " Tạm biệt " },
     ]);
     expect(srt).toBe("1\n00:00:00,000 --> 00:00:01,234\nXin chào\n\n2\n01:02:03,005 --> 01:02:05,000\nTạm biệt\n");
+  });
+
+  it("clips and retimes captions around middle cuts", () => {
+    const source = [{ id: "one", startMs: 500, endMs: 2_500, text: "Hello" }, { id: "two", startMs: 3_200, endMs: 4_000, text: "Again" }];
+    expect(retimeCaptions(source, [{ startMs: 1_000, endMs: 2_000 }, { startMs: 3_000, endMs: 5_000 }])).toEqual([
+      { id: "one-0", startMs: 0, endMs: 1_000, text: "Hello" },
+      { id: "two-1", startMs: 1_200, endMs: 2_000, text: "Again" },
+    ]);
+  });
+});
+
+describe("titles and chapters", () => {
+  const line = (id: string, startMs: number, endMs: number, text: string) => ({ id, startMs, endMs, text });
+  const lines = [
+    line("a", 500, 3_000, "Today we set up the billing page. Then we test it."),
+    line("b", 3_200, 9_000, "First open the settings"),
+    line("c", 42_000, 45_000, "Now add a payment method to the account please"),
+    line("d", 46_000, 48_000, "and save"),
+  ];
+
+  it("names a recording after its first sentence", () => {
+    expect(suggestTitle(lines)).toBe("Today we set up the billing page");
+    expect(suggestTitle([line("x", 0, 1, "word ".repeat(30))], 20).length).toBeLessThanOrEqual(21);
+  });
+
+  it("starts chapters at 0 and at long pauses", () => {
+    const chapters = suggestChapters(lines);
+    expect(chapters).toEqual([
+      { startMs: 0, title: "Today we set up the billing…" },
+      { startMs: 42_000, title: "Now add a payment method to…" },
+    ]);
+    expect(formatChapters(chapters)).toBe("0:00 Today we set up the billing…\n0:42 Now add a payment method to…");
   });
 });
