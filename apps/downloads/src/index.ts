@@ -4,11 +4,14 @@
 //   GET|HEAD /latest/<file>    the file from the release the landing page offers
 //   GET|HEAD /<tag>/<file>     a file from one release (the updater feed uses these)
 //   GET      /current          {"tag": "vX.Y.Z"} of that release
+//   GET|HEAD /update/latest.json  the signed updater feed, also routed from screensway.site
+//                                 (anything else there, or a missing feed, goes on to Pages)
 // Deploy workflow only (Authorization: Bearer UPLOAD_TOKEN):
 //   POST /admin/uploads/<tag>/<file>                      start a multipart upload
 //   PUT  /admin/uploads/<tag>/<file>?uploadId=&part=N     upload one part
 //   POST /admin/uploads/<tag>/<file>/complete?uploadId=   finish it
 //   PUT  /admin/current                                    {"tag"} switch releases, keep one previous
+//   PUT  /admin/update                                     the updater feed (latest.json)
 
 export interface Env {
   BUCKET: R2Bucket;
@@ -24,6 +27,9 @@ const FILES = new Set([
 // A release is only offered once every installer is there.
 const REQUIRED = ["ScreenSway-macos-universal.dmg", "ScreenSway-windows-x64-setup.exe"];
 const CURRENT_KEY = "current";
+const UPDATE_KEY = "update/latest.json";
+// The site the updater feed is routed from; every other path there is GitHub Pages.
+const SITE_HOST = "screensway.site";
 const SHA256 = /^[0-9a-f]{64}$/;
 
 const key = (tag: string, file: string) => `releases/${tag}/${file}`;
@@ -88,6 +94,15 @@ function authorized(request: Request, env: Env): boolean {
 async function admin(request: Request, env: Env, url: URL, parts: string[]): Promise<Response> {
   if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
 
+  if (parts[1] === "update" && parts.length === 2 && request.method === "PUT") {
+    const feed = (await request.json().catch(() => null)) as { version?: unknown; platforms?: unknown } | null;
+    if (!feed || typeof feed.version !== "string" || !feed.platforms || typeof feed.platforms !== "object") {
+      return json({ error: "invalid feed" }, 400);
+    }
+    await env.BUCKET.put(UPDATE_KEY, JSON.stringify(feed, null, 2), { httpMetadata: { contentType: "application/json" } });
+    return json({ version: feed.version });
+  }
+
   if (parts[1] === "current" && request.method === "PUT") {
     const { tag } = (await request.json().catch(() => ({}))) as { tag?: string };
     if (!tag || !TAG.test(tag)) return json({ error: "invalid tag" }, 400);
@@ -141,9 +156,21 @@ async function admin(request: Request, env: Env, url: URL, parts: string[]): Pro
   return notFound();
 }
 
+// The feed is published by every landing deploy, so it changes without a new URL.
+async function serveFeed(request: Request, env: Env): Promise<Response | null> {
+  const object = await env.BUCKET.get(UPDATE_KEY);
+  if (!object) return null;
+  const headers = { "Content-Type": "application/json", "Cache-Control": "public, max-age=300", ETag: object.httpEtag };
+  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.hostname === SITE_HOST) {
+      const feed = url.pathname === `/${UPDATE_KEY}` && (request.method === "GET" || request.method === "HEAD");
+      return (feed && (await serveFeed(request, env).catch(() => null))) || fetch(request);
+    }
     let parts: string[];
     try {
       parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -154,6 +181,7 @@ export default {
       if (parts[0] === "admin") return await admin(request, env, url, parts);
       if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "method not allowed" }, 405);
       if (parts.length === 1 && parts[0] === "current") return json({ tag: await currentTag(env) });
+      if (url.pathname === `/${UPDATE_KEY}`) return (await serveFeed(request, env)) ?? notFound();
       if (parts.length !== 2 || !FILES.has(parts[1])) return notFound();
       if (parts[0] === "latest") {
         const tag = await currentTag(env);

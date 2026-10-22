@@ -118,6 +118,18 @@ try {
   assert.match(run.output, /previous: v0\.3\.2; removed 3 old files/);
   assert.equal((await fetch(`${base}/v0.3.1/${DMG}`)).status, 404);
   assert.equal((await fetch(`${base}/v0.3.2/${DMG}`)).status, 200);
+
+  // The updater feed: only the workflow can replace it, and it must look like a feed.
+  const feedUrl = `${base}/update/latest.json`;
+  assert.equal((await fetch(feedUrl)).status, 404);
+  const feed = { version: "0.3.3", platforms: { "darwin-aarch64": { url: `${base}/v0.3.3/${MAC_UPDATE}`, signature: "sig" } } };
+  assert.equal((await fetch(`${base}/admin/update`, { method: "PUT", body: JSON.stringify(feed) })).status, 401);
+  assert.equal((await fetch(`${base}/admin/update`, { method: "PUT", headers: { Authorization: "Bearer secret" }, body: "{}" })).status, 400);
+  response = await fetch(`${base}/admin/update`, { method: "PUT", headers: { Authorization: "Bearer secret" }, body: JSON.stringify(feed) });
+  assert.equal(response.status, 200);
+  response = await fetch(feedUrl);
+  assert.equal(response.headers.get("Content-Type"), "application/json");
+  assert.deepEqual(await response.json(), feed);
   console.log("downloads e2e: ok");
 } finally {
   server.kill("SIGTERM");

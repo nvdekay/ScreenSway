@@ -4,7 +4,12 @@ compatibility_date = "2025-01-01"
 
 # Served on the site's own domain; the workers.dev address stays on for links and
 # updater feeds published before the move.
-routes = [{ pattern = "download.screensway.site", custom_domain = true }]
+# screensway.site/update/* serves the updater feed from R2 too, so app updates do not depend
+# on a Pages deploy (needs the apex DNS records proxied; other paths pass through to Pages).
+routes = [
+  { pattern = "download.screensway.site", custom_domain = true },
+  { pattern = "screensway.site/update/*", zone_name = "screensway.site" },
+]
 workers_dev = true
 
 # Installers and updater bundles, served from R2 instead of GitHub Pages

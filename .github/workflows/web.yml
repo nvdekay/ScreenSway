@@ -119,6 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.downloads.outputs.tag }}
+          DOWNLOADS_UPLOAD_TOKEN: ${{ secrets.DOWNLOADS_UPLOAD_TOKEN }}
         run: |
           mkdir -p apps/web/dist/update
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
@@ -134,6 +135,11 @@ jobs:
           rm apps/web/dist/update/*.sig
           node -e "JSON.parse(require('fs').readFileSync('apps/web/dist/update/latest.json'))"
           cat apps/web/dist/update/latest.json
+          # The downloads Worker serves screensway.site/update/, so app updates do not wait
+          # for the Pages deploy below; Pages keeps a copy as the fallback.
+          curl -fsS -X PUT -H "Authorization: Bearer $DOWNLOADS_UPLOAD_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @apps/web/dist/update/latest.json "$DOWNLOADS_URL/admin/update"
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true

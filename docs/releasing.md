@@ -17,9 +17,11 @@ GitHub Pages used to host these files, but the Windows installer alone is about 
 
 The "Deploy landing page" workflow runs `scripts/publish-downloads.mjs`. The script copies the latest release's DMG, macOS updater bundle and Windows installer to R2 through the Worker's token-protected multipart upload API. Files whose checksum already matches are skipped, so re-deploys upload nothing. It then makes that release current. Switching keeps the previous release, for clients that are mid-update, and deletes older ones. A release that does not have its Windows installer yet is left alone (exit code 2), and the site keeps offering the current one.
 
-The workflow then builds `update/latest.json` on Pages from the current release's `.sig` files. The feed's version comes from the tag, not from `main`, and its URLs point at the versioned Worker paths. If you replace an asset of the current release, re-run the workflow (`gh workflow run web.yml`).
+The workflow then builds `update/latest.json` from the current release's `.sig` files. The feed's version comes from the tag, not from `main`, and its URLs point at the versioned Worker paths. The feed is uploaded to the Worker (`PUT /admin/update`) before the Pages deploy. The Worker also has the route `screensway.site/update/*`, so the feed address the apps check is served from R2. A Pages deploy that fails, for example on a full Actions artifact quota, therefore no longer holds back app updates. The apex DNS records must stay proxied (orange cloud) for that route to run. Other paths on the site pass through to GitHub Pages, as does the feed while R2 has none. Pages keeps its own copy as the fallback.
 
-Secrets: the Worker's `UPLOAD_TOKEN` (`wrangler secret put UPLOAD_TOKEN` in `apps/downloads`) and the GitHub secret `DOWNLOADS_UPLOAD_TOKEN` must hold the same value. Deploy Worker changes with `pnpm --filter @screensway/downloads deploy`. `pnpm --filter @screensway/downloads test:e2e` checks the Worker and the publish script against a local R2 bucket.
+Jobs hand files to each other through the Actions cache (`actions/cache/save` and `restore`, keyed by the run id), not artifacts, so a full artifact quota cannot block a release. Only the Pages upload itself still needs an artifact. If you replace an asset of the current release, re-run the workflow (`gh workflow run web.yml`).
+
+Secrets: the Worker's `UPLOAD_TOKEN` (`wrangler secret put UPLOAD_TOKEN` in `apps/downloads`) and the GitHub secret `DOWNLOADS_UPLOAD_TOKEN` must hold the same value. Deploy Worker changes with `pnpm --filter @screensway/downloads run deploy`. `pnpm --filter @screensway/downloads test:e2e` checks the Worker and the publish script against a local R2 bucket.
 
 ## Publish a release
 
