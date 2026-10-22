@@ -18,5 +18,12 @@ workers_dev = true
 binding = "BUCKET"
 bucket_name = "screensway-downloads"
 
-# Secret (set with `wrangler secret put`, mirrored in the GitHub secret DOWNLOADS_UPLOAD_TOKEN):
+# Download starts are reported to the analytics Worker over a service binding (no public hop).
+[[services]]
+binding = "ANALYTICS"
+service = "screensway-analytics"
+
+# Secrets (set with `wrangler secret put`):
 #   UPLOAD_TOKEN  bearer token for the /admin upload API used by the deploy workflow
+#                 (mirrored in the GitHub secret DOWNLOADS_UPLOAD_TOKEN)
+#   DOWNLOADS_EVENT_TOKEN  the same value as the analytics Worker's, for /v1/internal/downloads

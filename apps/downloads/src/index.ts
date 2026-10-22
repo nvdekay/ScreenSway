@@ -4,6 +4,7 @@
 //   GET|HEAD /latest/<file>    the file from the release the landing page offers
 //   GET|HEAD /<tag>/<file>     a file from one release (the updater feed uses these)
 //   GET      /current          {"tag": "vX.Y.Z"} of that release
+// Each installer GET from its first byte is reported to analytics as a started download.
 //   GET|HEAD /update/latest.json  the signed updater feed, also routed from screensway.site
 //                                 (anything else there, or a missing feed, goes on to Pages)
 // Deploy workflow only (Authorization: Bearer UPLOAD_TOKEN):
@@ -16,6 +17,42 @@
 export interface Env {
   BUCKET: R2Bucket;
   UPLOAD_TOKEN: string;
+  /** The analytics Worker (service binding), told when a download starts. Optional. */
+  ANALYTICS?: Fetcher;
+  DOWNLOADS_EVENT_TOKEN?: string;
+}
+
+const PLATFORMS: Record<string, string> = {
+  "ScreenSway-macos-universal.dmg": "macos",
+  "ScreenSway-windows-x64-setup.exe": "windows",
+  "ScreenSway-macos-universal.app.tar.gz": "macos_update",
+};
+
+/**
+ * Tells analytics that a download started: a GET from the first byte (a resumed download asks
+ * for a later range and is not counted again). Whether it finished cannot be seen from here,
+ * so no completion is reported. The address and browser only feed the daily visitor hash
+ * there; neither is stored. Never delays or fails the download.
+ */
+function reportDownload(request: Request, env: Env, context: ExecutionContext, file: string, channel: "latest" | "versioned", tag: string | null) {
+  if (!env.ANALYTICS || !env.DOWNLOADS_EVENT_TOKEN || request.method !== "GET") return;
+  const range = request.headers.get("Range");
+  if (range && !/^bytes=0-/.test(range.trim())) return;
+  const body = JSON.stringify({
+    platform: PLATFORMS[file],
+    channel,
+    tag,
+    country: (request as Request<unknown, IncomingRequestCfProperties>).cf?.country ?? null,
+    address: request.headers.get("CF-Connecting-IP") ?? "",
+    agent: request.headers.get("User-Agent") ?? "",
+  });
+  context.waitUntil(
+    env.ANALYTICS.fetch("https://analytics.internal/v1/internal/downloads", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.DOWNLOADS_EVENT_TOKEN}`, "Content-Type": "application/json" },
+      body,
+    }).then(() => undefined, () => undefined),
+  );
 }
 
 const TAG = /^v\d+\.\d+\.\d+$/;
@@ -165,7 +202,7 @@ async function serveFeed(request: Request, env: Env): Promise<Response | null> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.hostname === SITE_HOST) {
       const feed = url.pathname === `/${UPDATE_KEY}` && (request.method === "GET" || request.method === "HEAD");
@@ -185,9 +222,14 @@ export default {
       if (parts.length !== 2 || !FILES.has(parts[1])) return notFound();
       if (parts[0] === "latest") {
         const tag = await currentTag(env);
-        return tag ? await serveFile(request, env, tag, parts[1], false) : notFound();
+        const response = tag ? await serveFile(request, env, tag, parts[1], false) : notFound();
+        if (response.ok) reportDownload(request, env, context, parts[1], "latest", tag);
+        return response;
       }
-      return TAG.test(parts[0]) ? await serveFile(request, env, parts[0], parts[1], true) : notFound();
+      if (!TAG.test(parts[0])) return notFound();
+      const response = await serveFile(request, env, parts[0], parts[1], true);
+      if (response.ok) reportDownload(request, env, context, parts[1], "versioned", parts[0]);
+      return response;
     } catch (error) {
       console.error(error);
       return json({ error: "internal error" }, 500);
