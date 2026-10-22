@@ -27,6 +27,72 @@ const stats = async (token = "secret", query = "") => {
 };
 const installA = "a".repeat(32), installB = "b".repeat(32);
 
+/**
+ * Opens the dashboard in Edge (BROWSER=chrome for Chrome) with an admin session. Skipped with
+ * SCREENSWAY_SKIP_BROWSER=1. SCREENSWAY_SCREENSHOTS=<folder> saves a screenshot of each view.
+ */
+async function dashboardInBrowser(sessionCookie, message) {
+  if (process.env.SCREENSWAY_SKIP_BROWSER === "1") return;
+  const { chromium } = await import("playwright-core");
+  const browser = await chromium.launch({ channel: process.env.BROWSER ?? "msedge" });
+  try {
+    // A viewer far from Vietnam: times must still be Vietnam's.
+    const context = await browser.newContext({ timezoneId: "America/Los_Angeles", locale: "en-US" });
+    const [name, value] = sessionCookie.split("=");
+    await context.addCookies([{ name, value, url: base }]);
+    const page = await context.newPage();
+    const problems = [];
+    page.on("dialog", (dialog) => { problems.push(`dialog: ${dialog.message()}`); void dialog.dismiss(); });
+    page.on("pageerror", (error) => problems.push(`page error: ${error.message}`));
+    page.on("console", (entry) => { if (entry.type() === "error" && !entry.text().startsWith("Failed to load resource")) problems.push(`console: ${entry.text()}`); });
+    // The browser asks for /favicon.ico on its own; any other failed request is a problem.
+    page.on("response", (response) => { if (response.status() >= 400 && !response.url().endsWith("/favicon.ico")) problems.push(`HTTP ${response.status()} ${response.url()}`); });
+    const shot = async (view) => {
+      if (process.env.SCREENSWAY_SCREENSHOTS) await page.screenshot({ path: join(process.env.SCREENSWAY_SCREENSHOTS, `${view}.png`), fullPage: true });
+    };
+    await page.goto(`${base}/#overview`);
+    await page.waitForSelector("#app:not([hidden]) .tile");
+    const updated = await page.textContent("#updated");
+    assert.match(updated, /giờ Việt Nam \(Asia\/Ho_Chi_Minh\)/);
+    await shot("overview");
+    for (const view of ["journey", "activity"]) {
+      await page.click(`[data-nav="${view}"]`);
+      await page.waitForSelector(`[data-view="${view}"]:not([hidden])`);
+      await shot(view);
+    }
+    const activity = await page.textContent('[data-view="activity"]');
+    assert.match(activity, /Thời gian \(giờ VN\)/);
+    assert.match(activity, /Windows/);
+    assert.doesNotMatch(activity, /macos-aarch64|page_view|export_finished/, "raw codes are translated");
+    // The newest row's time, read back as Vietnam time, is within a minute of now.
+    const firstTime = await page.textContent('[data-view="activity"] tbody tr td');
+    const vietnamNow = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
+    assert.ok(firstTime.includes(vietnamNow), `${firstTime} is not Vietnam's date ${vietnamNow}`);
+    const journey = await page.textContent('[data-view="journey"]');
+    assert.match(journey, /Chưa đủ ngày/);
+    assert.match(journey, /Chưa có dữ liệu: ScreenSway chưa bán hàng/);
+
+    await page.click('[data-nav="feedback"]');
+    await page.waitForSelector(".fb-item");
+    await shot("feedback");
+    const shown = await page.$$eval(".fb-message", (nodes) => nodes.map((node) => node.textContent));
+    assert.ok(shown.includes(message), "the message is shown exactly as typed");
+    assert.equal(await page.$$eval(".fb-list script, .fb-list b", (nodes) => nodes.length), 0, "no HTML from a message is parsed");
+    assert.match(await page.textContent("#feedback-view"), /nguoi\.dung@example\.com/, "the admin sees the email");
+    // Filter, open a message and change its status from the page.
+    await page.selectOption('#fb-filters select[name="category"]', "idea");
+    await page.click('#fb-filters button[type="submit"]');
+    await page.waitForFunction(() => document.querySelectorAll(".fb-item").length === 1);
+    await page.click(".fb-item .btn");
+    await page.click('.fb-item .fb-actions .btn:text-is("Đang xử lý")');
+    await page.waitForFunction(() => document.querySelector("#fb-status")?.textContent?.includes("Đã lưu"));
+    assert.deepEqual(problems, []);
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+}
+
 try {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -309,6 +375,9 @@ try {
   const submitted = (await stats("secret", "?fresh=1")).body;
   assert.deepEqual(submitted.feedbackSubmitted, [{ key: "bug", count: 1 }]);
   assert.ok(!JSON.stringify(submitted.recent).includes("Một câu góp ý"), "free text never lands in props");
+
+  // The dashboard in a real browser: Vietnamese, Vietnam time, and feedback shown as text.
+  await dashboardInBrowser(adminSession, message);
 
   // Feedback has its own rate limit per address.
   let feedbackLimited = false;
