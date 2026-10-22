@@ -10,7 +10,7 @@ Local-first screen recorder with automatic cursor-aware zooms. macOS and Windows
 - `native/windows-capture` — Rust sidecar for Windows with the same CLI contract (capture, WASAPI audio, Media Foundation export and Whisper captions). Shell code shared by both platforms is gated with `cfg(capture)`.
 - `apps/web` — landing page (served by the `apps/site` Cloudflare Worker), bilingual, dark only, CSS tokens in `src/styles.css` (black stage with the system-blue accent shared with the browser app, the same flat blue `LogoMark`, and a looping globe video shifted to blue behind the page; see `docs/landing-page.md`).
 - `apps/studio-web` — browser version (beta) at `/app/`: reuses the desktop studio through `@tauri-apps/api` aliases (`src/tauri/`, `src/backend.ts`) and `isWeb`, records with `getDisplayMedia`, finds the pointer in the video (`src/pointer/`) and exports with mediabunny/WebCodecs. See `docs/web-studio.md`.
-- `apps/analytics` — Cloudflare Worker + D1: public event ingestion, the stats API and the private dashboard page (one admin account in Worker secrets, signed session cookie; bearer token for scripts). Events, API and deployment: `docs/analytics.md`.
+- `apps/analytics` — Cloudflare Worker + D1: public event and feedback ingestion, the stats API, the admin feedback API and the private Vietnamese dashboard (one admin account in Worker secrets, signed session cookie; bearer token for scripts). Days and times are Vietnam's (`Asia/Ho_Chi_Minh`); funnels join events by a random journey ID; retention uses only consented stable IDs; feedback lives in its own table (migration 0003). Events, feedback, API and deployment: `docs/analytics.md`.
 - `apps/downloads` — Cloudflare Worker + R2 that serves the installers and updater bundles (`/latest/<file>`, `/<tag>/<file>`); the landing deploy uploads releases with `scripts/publish-downloads.mjs`. See `docs/releasing.md`.
 
 ## Current state
@@ -40,7 +40,7 @@ pnpm build:web                                    # landing page
 pnpm dev:site                                     # landing + browser version on one address (app at /app/, as deployed)
 pnpm dev:studio-web / pnpm build:studio-web        # browser version alone (web.yml puts it in the site's app/ folder)
 pnpm --filter @screensway/studio-web test:e2e       # browser version end to end in Edge (BROWSER=chrome)
-pnpm --filter @screensway/analytics test:e2e        # analytics API end to end on a local D1
+pnpm --filter @screensway/analytics test:e2e        # analytics API + feedback end to end on a local D1, and the dashboard in Edge
 pnpm --filter @screensway/downloads test:e2e        # downloads Worker + publish script on a local R2
 (cd native/windows-capture && cargo test)          # Windows helper logic (runs on macOS too)
 (cd native/windows-capture && cargo check --target x86_64-pc-windows-msvc)  # type-check the Windows code from a Mac
@@ -50,7 +50,7 @@ pnpm test:capture:windows / pnpm build:windows    # on a Windows PC; CI runs the
 ## Conventions
 
 - Commits: focused, imperative subject, explanatory body. Never add Claude/Co-Authored-By attribution. Split unrelated changes into separate commits.
-- The app's only network use is opt-in anonymous usage statistics (`src-tauri/src/telemetry.rs`): nothing is sent before the user agrees, and never recording content, file names or paths. Fonts are bundled. New events must be added to the allow-lists on both sides (see `docs/analytics.md`). File access from the UI is restricted to `~/Movies/ScreenSway`.
+- The app's network use is opt-in anonymous usage statistics (`src-tauri/src/telemetry.rs`): nothing is sent before the user agrees, and never recording content, file names or paths. The one other send is feedback the user writes and submits on purpose (`src-tauri/src/feedback.rs`, `POST /v1/feedback`), with technical details only if they leave that box ticked; free text never goes into events. Fonts are bundled. New events must be added to the allow-lists on both sides (see `docs/analytics.md`). File access from the UI is restricted to `~/Movies/ScreenSway`.
 - Versions live in five places: root and desktop `package.json`, `tauri.conf.json`, and the `Cargo.toml` of `apps/desktop/src-tauri` and `native/windows-capture`. Release = push a matching `vX.Y.Z` tag; the workflow builds, verifies, publishes both platforms and redeploys the site and downloads. GitHub runs a tag's workflow files as they are at the tagged commit, so a workflow fix needs the tag moved (only before the release exists) or a new version.
 - The landing page and the browser app get a build-time CSP `<meta>` from `scripts/vite-csp.mjs` (inline blocks hashed automatically). A new external request (another API, CDN, font) must be added to `connect-src`/the matching directive in that app's `vite.config.ts`, or the browser blocks it.
 - The repository is private: the landing page links to the downloads Worker (`…/latest/ScreenSway-macos-universal.dmg`) and must not link to GitHub.

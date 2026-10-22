@@ -47,6 +47,8 @@ Measured on a real 35 s recording (Retina, animated Edge wallpaper) with the rea
 
 ## Privacy
 
+Feedback and statistics: the header has a "Send feedback" button and the export panel another, both opening the shared feedback form, which posts to the analytics API's `/v1/feedback` from `backend.ts`. A footer switch, off by default, lets the visitor be recognised on return visits (a random ID in `localStorage`, see `src/identity.ts`); without it, the only ID is the tab's journey in `sessionStorage`. Under Do Not Track or Global Privacy Control nothing is sent or stored and the switch and the feature card are hidden. Details: `docs/analytics.md`.
+
 Production builds carry a Content-Security-Policy `<meta>` (`scripts/vite-csp.mjs`, configured in `vite.config.ts`): scripts, styles, fonts and workers only from the site (plus `blob:` workers and media, `data:`/`blob:` images and Vite's inlined `data:` fonts), and `connect-src` limited to the analytics origin plus `data:`/`blob:` (the exporter decodes an image from a `data:` URL), so even injected code could not send a recording anywhere. `test:e2e` runs every scenario against the built page and fails on any CSP violation. No recording content is uploaded. The page sends anonymous, cookieless usage counts (source `studio`, see `docs/analytics.md`) when built with `VITE_ANALYTICS_URL`, honouring Do Not Track and Global Privacy Control: `src/analytics.ts` counts visits, unsupported browsers, recording starts, finishes and failures and clicks to the desktop app, and `backend.ts` answers the shared studio's `track_event` with the same sender (exports, styles); `telemetry_status` still reports the desktop opt-in as unavailable, so no settings switch appears.
 
 ## Validation
