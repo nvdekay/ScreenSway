@@ -9,6 +9,7 @@ export function Onboarding({
   sourceCount,
   onCheckScreen,
   onOpenScreenSettings,
+  onResetScreenPermission,
   onComplete,
   onTestRecording,
   canClose,
@@ -17,6 +18,8 @@ export function Onboarding({
   sourceCount: number;
   onCheckScreen: () => void;
   onOpenScreenSettings: () => void;
+  /** Clears a stale permission and relaunches (macOS only; absent elsewhere). */
+  onResetScreenPermission?: () => void;
   onComplete: () => void;
   onTestRecording: () => void;
   canClose: boolean;
@@ -64,12 +67,15 @@ export function Onboarding({
               <span>{screenCheck === "ready" ? <Check size={18} /> : <Monitor size={18} />}</span>
               <div>
                 <strong>{t(screenCheck === "ready" ? "onboarding.screenReady" : screenCheck === "checking" ? "onboarding.screenChecking" : screenCheck === "denied" ? "onboarding.screenDenied" : screenCheck === "error" ? "onboarding.screenError" : "onboarding.screenNeeded")}</strong>
-                <small>{screenCheck === "ready" ? t("onboarding.sourcesFound", { count: sourceCount }) : t("onboarding.screenWhenNeeded")}</small>
+                <small>{screenCheck === "ready" ? t("onboarding.sourcesFound", { count: sourceCount }) : screenCheck === "denied" && onResetScreenPermission ? t("onboarding.screenDeniedHint") : t("onboarding.screenWhenNeeded")}</small>
               </div>
             </div>
 
             {screenCheck === "denied" && (
-              <button className="secondary-button onboarding-settings" onClick={onOpenScreenSettings}>{t("permission.open")}</button>
+              <div className="onboarding-settings">
+                {onResetScreenPermission && <button className="secondary-button" onClick={onResetScreenPermission}>{t("permission.reset")}</button>}
+                <button className="secondary-button" onClick={onOpenScreenSettings}>{t("permission.open")}</button>
+              </div>
             )}
             <div className="onboarding-actions">
               {screenCheck !== "ready" && (

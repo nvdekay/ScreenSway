@@ -2365,6 +2365,26 @@ fn open_screen_recording_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// Forgets ScreenSway's Screen Recording permission so macOS asks again from the start. An
+/// ad-hoc signed update keeps the old switch on in System Settings without honoring it for the
+/// new build; resetting removes that stale entry. The UI relaunches the app afterwards.
+#[tauri::command]
+fn reset_screen_recording_permission(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("/usr/bin/tccutil")
+            .args(["reset", "ScreenCapture", &app.config().identifier])
+            .status()
+            .map_err(|error| format!("Could not reset screen access: {error}"))?;
+        if !status.success() {
+            return Err("Could not reset screen access".into());
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+    Ok(())
+}
+
 #[tauri::command]
 fn open_microphone_settings() -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -2500,6 +2520,7 @@ pub fn run() {
             delete_recording,
             reveal_recording,
             open_screen_recording_settings,
+            reset_screen_recording_permission,
             background_work_active,
             open_microphone_settings,
             keystroke_access,

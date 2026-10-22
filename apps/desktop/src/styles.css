@@ -540,7 +540,7 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .onboarding-actions { width: 100%; display: flex; gap: 10px; margin-top: auto; }
 .onboarding-actions.split > * { flex: 1; }
 .record-button.onboarding-primary { min-height: 46px; margin-left: auto; padding: 0 20px; }
-.onboarding-settings { margin: -12px 0 20px; }
+.onboarding-settings { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 20px; }
 .onboarding-test-note { align-self: center; margin-top: 12px; color: var(--text-subtle); font-size: 11px; line-height: 1.45; text-align: center; }
 
 

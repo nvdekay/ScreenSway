@@ -38,6 +38,16 @@ describe("first-run setup", () => {
     fireEvent.click(screen.getByRole("button", { name: /onboarding.continue/ }));
     fireEvent.click(screen.getByRole("button", { name: "permission.open" }));
     expect(actions.onOpenScreenSettings).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "permission.reset" })).toBeNull();
+  });
+
+  it("offers to reset a stale permission where the platform supports it", () => {
+    const onResetScreenPermission = vi.fn();
+    render(<Onboarding screenCheck="denied" sourceCount={0} canClose={false} onCheckScreen={vi.fn()} onOpenScreenSettings={vi.fn()} onResetScreenPermission={onResetScreenPermission} onComplete={vi.fn()} onTestRecording={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /onboarding.continue/ }));
+    expect(screen.getByText("onboarding.screenDeniedHint")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "permission.reset" }));
+    expect(onResetScreenPermission).toHaveBeenCalledOnce();
   });
 
   it("finishes setup or starts a local test after sources are ready", () => {

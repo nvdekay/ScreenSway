@@ -165,6 +165,18 @@ function useStoredString(key: string, fallback: string) {
   return [value, update] as const;
 }
 const PERMISSION_DENIED_MARKER = "SCREENSWAY_SCREEN_RECORDING_DENIED";
+
+/** Clears ScreenSway's stale Screen Recording entry (macOS) and relaunches, so macOS asks again. */
+async function resetScreenPermission() {
+  try {
+    await invoke("reset_screen_recording_permission");
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  } catch {
+    // The settings page still lets the person remove ScreenSway by hand.
+    void invoke("open_screen_recording_settings").catch(() => {});
+  }
+}
 const MICROPHONE_DENIED_MARKER = "SCREENSWAY_MICROPHONE_DENIED";
 const CAMERA_DENIED_MARKER = "SCREENSWAY_CAMERA_DENIED";
 
@@ -1264,6 +1276,11 @@ export default function App() {
                 >
                   {t("permission.open")}
                 </button>
+                {!isWindows && (
+                  <button className="secondary-button compact" onClick={() => void resetScreenPermission()}>
+                    {t("permission.reset")}
+                  </button>
+                )}
                 <button className="secondary-button compact" onClick={() => void loadSources()}>
                   <RotateCw size={14} aria-hidden="true" /> {t("permission.retry")}
                 </button>
@@ -1342,6 +1359,7 @@ export default function App() {
           sourceCount={sources.length}
           onCheckScreen={() => void loadSources()}
           onOpenScreenSettings={() => void invoke("open_screen_recording_settings").catch(() => {})}
+          onResetScreenPermission={isWindows ? undefined : () => void resetScreenPermission()}
           onComplete={completeOnboarding}
           onTestRecording={() => void startTestRecording()}
           canClose={onboardingComplete}
