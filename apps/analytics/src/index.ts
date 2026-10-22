@@ -137,6 +137,15 @@ function shiftDay(day: string, delta: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** The visitor's system from the browser's User-Agent, for events that do not say it themselves. */
+function osFromAgent(agent: string): string {
+  if (/Android|iPhone|iPad|iPod/i.test(agent)) return "mobile";
+  if (/Windows/i.test(agent)) return "windows";
+  if (/Macintosh|Mac OS X/i.test(agent)) return "macos";
+  if (/Linux|CrOS/i.test(agent)) return "linux";
+  return "other";
+}
+
 function shortText(value: unknown): string | null {
   return typeof value === "string" && SHORT_TEXT.test(value) ? value : null;
 }
@@ -187,6 +196,7 @@ async function ingest(request: Request, env: Env): Promise<Response> {
 
   const now = Date.now();
   const day = dayOf(now, env);
+  const agent = request.headers.get("User-Agent") ?? "";
   let actor: string;
   if (source === "app") {
     if (typeof body.installId !== "string" || !INSTALL_ID.test(body.installId)) return json({ error: "invalid installId" }, 400);
@@ -196,14 +206,16 @@ async function ingest(request: Request, env: Env): Promise<Response> {
     if (!env.ACTOR_SALT) return json({ error: "ACTOR_SALT is not configured" }, 503);
     // A visitor (of the landing page or the browser app) is "the same address and browser on the same day". The hash cannot be
     // reversed or linked across days, and the address itself is never stored.
-    const agent = request.headers.get("User-Agent") ?? "";
     actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT}`)).slice(0, 32);
   }
 
   const country = shortText((request as Request<unknown, IncomingRequestCfProperties>).cf?.country);
   const version = shortText(body.version);
-  const os = shortText(body.os);
-  const locale = shortText(body.locale);
+  // The landing page sends its system and language only as page_view properties: fill the
+  // columns from the browser for every web event, so each row says where it came from.
+  const os = shortText(body.os) ?? (source === "app" ? null : osFromAgent(agent));
+  const firstLang = (body.events as { props?: { lang?: unknown } }[])[0]?.props?.lang;
+  const locale = shortText(body.locale) ?? (source === "web" ? shortText(firstLang) : null);
   const insert = env.DB.prepare(
     "INSERT INTO events (ts, day, source, name, actor, version, os, country, locale, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
@@ -349,7 +361,8 @@ async function computeStats(env: Env, days: number): Promise<Response> {
     webProp("os"),
     webProp("lang"),
     webProp("theme"),
-    db.prepare("SELECT ts, source, name, version, os, country, props FROM events ORDER BY id DESC LIMIT 40"),
+    // Older landing rows kept the system only in their properties.
+    db.prepare("SELECT ts, source, name, version, COALESCE(os, json_extract(props, '$.os')) os, country, locale, props FROM events ORDER BY id DESC LIMIT 40"),
     db.prepare("SELECT MIN(day) first, COUNT(*) events, COUNT(DISTINCT CASE WHEN source = 'app' THEN actor END) installs, SUM(source = 'web' AND name = 'download_click') downloads FROM events"),
   ];
   const breakdownQueries = BREAKDOWNS.map(([, source, name, prop]) =>
@@ -429,6 +442,7 @@ async function computeStats(env: Env, days: number): Promise<Response> {
       version: row.version,
       os: row.os,
       country: row.country,
+      locale: row.locale,
       props: row.props ? (JSON.parse(String(row.props)) as unknown) : null,
     })),
   });

@@ -40,7 +40,7 @@ try {
   let response = await post({ source: "web", events: [{ name: "page_view", props: { referrer: "google.com", lang: "vi", theme: "dark", os: "macos" } }] }, { "User-Agent": "visitor-1" });
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { accepted: 1 });
-  await post({ source: "web", events: [{ name: "page_view", props: { referrer: "direct", lang: "en", os: "windows" } }, { name: "download_click", props: { platform: "windows", placement: "hero" } }] }, { "User-Agent": "visitor-2" });
+  await post({ source: "web", events: [{ name: "page_view", props: { referrer: "direct", lang: "en", os: "windows" } }, { name: "download_click", props: { platform: "windows", placement: "hero" } }] }, { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) visitor-2" });
   await post({ source: "web", events: [{ name: "download_click", props: { platform: "macos", placement: "hero" } }, { name: "download_click", props: { platform: "macos", placement: "guide" } }] }, { "User-Agent": "visitor-1" });
   await post({ source: "app", installId: installA, version: "0.3.1", os: "macos-aarch64", locale: "vi", events: [
     { name: "app_open" },
@@ -101,6 +101,11 @@ try {
   const exported = body.recent.find((event) => event.name === "export_finished" && event.props.quality === "4k");
   assert.deepEqual(exported.props, { quality: "4k", frame: "macos-dark", captions: true });
   assert.equal((await stats("secret", "?days=7")).body.series.length, 7);
+  // Landing rows get their system from the browser and their language from the page view.
+  const download = body.recent.find((event) => event.source === "web" && event.name === "download_click" && event.props.platform === "windows");
+  assert.equal(download.os, "windows");
+  assert.equal(download.locale, "en");
+  assert.equal(download.version, null);
 
   // The browser app has its own section, and its events never leak into the desktop numbers.
   const studio = body.studio;
