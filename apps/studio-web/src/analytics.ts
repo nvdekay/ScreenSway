@@ -2,8 +2,7 @@
  * Anonymous, cookieless usage counts for the browser app, sent to the ScreenSway analytics
  * API (apps/analytics) as source "studio", like the landing page's visit counts. Nothing is
  * sent or stored when the endpoint is not configured or the visitor asks not to be tracked;
- * otherwise a batch carries this tab's random journey ID and, only if the visitor turned it
- * on, a random visitor ID (identity.ts). Events carry short labels only (which browser, what
+ * otherwise a batch carries this tab's random journey ID (identity.ts). Events carry short labels only (which browser, what
  * kind of surface, export settings, coarse durations), never recording content, titles or files.
  */
 import { version } from "../../desktop/src-tauri/tauri.conf.json";

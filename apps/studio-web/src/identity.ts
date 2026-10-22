@@ -1,16 +1,16 @@
 /**
- * Anonymous identifiers for the statistics of the landing page and the browser app, which
- * share an origin. Neither is derived from the browser or device (no fingerprinting), and
+ * The anonymous journey ID for the statistics of the landing page and the browser app, which
+ * share an origin. It is not derived from the browser or device (no fingerprinting), and
  * when the visitor asks not to be tracked (Do Not Track, Global Privacy Control) none is
  * made, read or stored.
  *
- * - The journey ID lives in this tab's sessionStorage, so a visit from the landing page to
- *   /app/ in one tab counts as one journey; it ends when the tab closes.
- * - The visitor ID exists only after the visitor turns on "recognise this browser" in the
- *   browser app, and is deleted when they turn it off.
+ * It lives in this tab's sessionStorage, so a visit from the landing page to /app/ in one
+ * tab counts as one journey; it ends when the tab closes. Nothing recognises a browser
+ * across visits.
  */
 export const JOURNEY_KEY = "screensway.journey";
-export const VISITOR_KEY = "screensway.analytics.visitor";
+/** Where 0.4.1 kept an opt-in visitor ID; removed on load so none lingers. */
+export const OLD_VISITOR_KEY = "screensway.analytics.visitor";
 const ID = /^[0-9a-f]{32}$/;
 
 export function optedOut(): boolean {
@@ -41,36 +41,19 @@ export function journeyId(): string | null {
   }
 }
 
-/** The visitor ID the visitor agreed to, or null. */
-export function visitorId(): string | null {
-  if (optedOut()) return null;
-  try {
-    const stored = localStorage.getItem(VISITOR_KEY);
-    return stored && ID.test(stored) ? stored : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Turns recognition on (makes the ID) or off (deletes it); returns whether it is now on. */
-export function setVisitorConsent(on: boolean): boolean {
-  try {
-    if (!on || optedOut()) {
-      localStorage.removeItem(VISITOR_KEY);
-      return false;
-    }
-    if (!visitorId()) localStorage.setItem(VISITOR_KEY, randomId());
-    return visitorId() !== null;
-  } catch {
-    return false;
-  }
-}
-
-/** The fields every event batch carries to tell journeys and (consenting) visitors apart. */
-export function identityFields(): { sessionId?: string; visitorId?: string } {
+/** The fields every event batch carries to tell journeys apart. */
+export function identityFields(): { sessionId?: string } {
   const session = journeyId();
-  const visitor = visitorId();
-  return { ...(session ? { sessionId: session } : {}), ...(visitor ? { visitorId: visitor } : {}) };
+  return session ? { sessionId: session } : {};
+}
+
+/** Deletes the visitor ID an earlier build may have stored. */
+export function forgetOldVisitorId(): void {
+  try {
+    localStorage.removeItem(OLD_VISITOR_KEY);
+  } catch {
+    // No local storage: nothing was stored either.
+  }
 }
 
 export function visitorOs(): string {

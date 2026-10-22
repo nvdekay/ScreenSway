@@ -8,8 +8,8 @@ import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
-import { analyticsOn, durationBucket, track, trackOpen } from "./analytics";
-import { setVisitorConsent, visitorId } from "./identity";
+import { durationBucket, track, trackOpen } from "./analytics";
+import { forgetOldVisitorId } from "./identity";
 import { EXPORT_SAVED, removeRecording } from "./backend";
 import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
 import { ResultPreview } from "./ResultPreview";
@@ -38,26 +38,6 @@ function LanguageSwitch() {
   return <LanguageToggle language={language} onChange={setLanguage} label={t("web.language")} />;
 }
 
-/**
- * The opt-in to be recognised on return visits: on makes a random visitor ID, off deletes it.
- * Not offered when nothing is sent (no endpoint, or the browser asks not to be tracked).
- */
-function VisitorConsent() {
-  const { t } = useI18n();
-  const [on, setOn] = useState(() => visitorId() !== null);
-  if (!analyticsOn()) return null;
-  return (
-    <label className="web-visitor-consent">
-      <span>
-        <strong>{t("web.visitorTitle")}</strong>
-        <small>{t("web.visitorBody")}</small>
-      </span>
-      <input type="checkbox" role="switch" checked={on} onChange={(event) => setOn(setVisitorConsent(event.target.checked))} />
-      <i aria-hidden="true" />
-    </label>
-  );
-}
-
 /** A short label for a failed start, for the anonymous statistics (never the message itself). */
 function startFailure(error: unknown): string {
   if (error instanceof ShareCancelledError) return "share_denied";
@@ -84,6 +64,7 @@ export function WebApp() {
   const recording = status === "recording" || status === "finishing";
 
   useEffect(() => trackOpen(unsupported, language), [unsupported, language]);
+  useEffect(forgetOldVisitorId, []);
 
   useEffect(() => {
     if (status !== "recording") return;
@@ -313,9 +294,6 @@ export function WebApp() {
         </>
       )}
 
-      <footer className="web-footer">
-        <VisitorConsent />
-      </footer>
       {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </main>
   );

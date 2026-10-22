@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendFeedback } from "./backend";
-import { identityFields, JOURNEY_KEY, journeyId, setVisitorConsent, VISITOR_KEY, visitorId } from "./identity";
+import { forgetOldVisitorId, identityFields, JOURNEY_KEY, journeyId, OLD_VISITOR_KEY } from "./identity";
 
 const CHROME_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -52,40 +52,20 @@ describe("journey ID", () => {
 });
 
 describe("visitor ID", () => {
-  it("exists only after the visitor agrees and is deleted when they withdraw", () => {
-    expect(visitorId()).toBeNull();
-    expect(identityFields()).not.toHaveProperty("visitorId");
-
-    expect(setVisitorConsent(true)).toBe(true);
-    const id = local.values.get(VISITOR_KEY);
-    expect(id).toMatch(/^[0-9a-f]{32}$/);
-    expect(visitorId()).toBe(id);
-    expect(setVisitorConsent(true)).toBe(true);
-    expect(local.values.get(VISITOR_KEY)).toBe(id);
-    expect(identityFields()).toEqual({ sessionId: expect.stringMatching(/^[0-9a-f]{32}$/), visitorId: id });
-
-    expect(setVisitorConsent(false)).toBe(false);
-    expect(local.values.has(VISITOR_KEY)).toBe(false);
-    expect(visitorId()).toBeNull();
-  });
-
-  it("ignores a stored value that is not an ID", () => {
-    local.values.set(VISITOR_KEY, "someone@example.com");
-    expect(visitorId()).toBeNull();
+  it("is never sent, and one stored by an earlier build is deleted", () => {
+    local.values.set(OLD_VISITOR_KEY, "a".repeat(32));
+    expect(identityFields()).toEqual({ sessionId: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    forgetOldVisitorId();
+    expect(local.values.has(OLD_VISITOR_KEY)).toBe(false);
   });
 });
 
 describe("privacy signals", () => {
   it.each([{ doNotTrack: "1" }, { globalPrivacyControl: true }])("make and store no IDs (%o)", (privacy) => {
     browser(privacy);
-    local.values.set(VISITOR_KEY, "a".repeat(32));
     expect(journeyId()).toBeNull();
-    expect(visitorId()).toBeNull();
     expect(identityFields()).toEqual({});
-    expect(setVisitorConsent(true)).toBe(false);
     expect(session.values.size).toBe(0);
-    // Asking not to be tracked also removes an earlier consent.
-    expect(local.values.has(VISITOR_KEY)).toBe(false);
   });
 });
 

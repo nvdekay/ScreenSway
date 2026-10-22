@@ -451,8 +451,6 @@ const en = {
   "survey.submit": "Send answers",
   "survey.dismiss": "Not now",
   "survey.thanks": "Thanks, that helps!",
-  "web.visitorTitle": "Help improve ScreenSway",
-  "web.visitorBody": "Let this browser be recognised anonymously on return visits (no account, no cookies, no recording content).",
 };
 
 export type MessageKey = keyof typeof en;
@@ -904,8 +902,6 @@ const vi: Record<MessageKey, string> = {
   "survey.submit": "Gửi lựa chọn",
   "survey.dismiss": "Để sau",
   "survey.thanks": "Cảm ơn, rất hữu ích!",
-  "web.visitorTitle": "Giúp ScreenSway tốt hơn",
-  "web.visitorBody": "Cho phép nhận ra trình duyệt này một cách ẩn danh khi bạn quay lại (không cần tài khoản, không cookie, không gửi nội dung bản quay).",
 };
 
 /** Wording that names macOS places (Finder, Movies, "this Mac") reads differently on Windows. */

@@ -188,25 +188,10 @@ html.web :is(.icon-button, .player-button, .record-button, .editor-button, .chip
 html.web :is(.segmented, .editor-tabs) { border-radius: 9px; }
 html.web :is(.segmented button, .editor-tabs button) { border-radius: 6px; }
 
-/* Feedback (header button, the shared form) and the return-visit opt-in in the footer. */
+/* Feedback (header button, the shared form). */
 .web-header nav .web-feedback { font-family: inherit; cursor: pointer; }
-.web-footer { width: min(1560px, calc(100% - 64px)); display: flex; justify-content: flex-end; margin: 0 auto; padding: 8px 0 32px; }
-.web-footer:empty { display: none; }
-.web-visitor-consent { position: relative; max-width: 560px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid #ffffff13; border-radius: 8px; background: #0a0b0ecc; cursor: pointer; }
-.web-visitor-consent span { display: flex; flex-direction: column; gap: 2px; }
-.web-visitor-consent strong { font-size: 12px; font-weight: 650; }
-.web-visitor-consent small { color: #8b8e97; font-size: 12px; line-height: 1.45; }
-.web-visitor-consent input { position: absolute; opacity: 0; }
-.web-visitor-consent > i { position: relative; flex: none; width: 34px; height: 20px; border-radius: 99px; background: #ffffff20; }
-.web-visitor-consent > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
-.web-visitor-consent input:checked + i { background: #0a84ff; }
-.web-visitor-consent input:checked + i::after { transform: translateX(14px); }
-.web-visitor-consent input:focus-visible + i { outline: 2px solid #0a84ff; outline-offset: 3px; }
 html.web .feedback-dialog { background: #1a1b20; box-shadow: 0 32px 100px #000c; }
 html.web .feedback-primary { background: #0a84ff; color: #fff; box-shadow: none; }
 html.web .feedback-primary:hover:not(:disabled) { background: #2b95ff; box-shadow: none; transform: none; }
 html.web .feedback-rating label.selected { border-color: #0a84ff80; background: #0a84ff2e; }
 html.web .feedback-rating .update-link { color: #6cb8ff; }
-@media (max-width: 620px) {
-  .web-footer { width: calc(100% - 28px); }
-}

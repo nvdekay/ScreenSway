@@ -6,8 +6,8 @@ import type { DownloadPlatform } from "./downloads";
  * Anonymous, cookieless counts of visits and downloads, sent to the ScreenSway
  * analytics API (apps/analytics). Nothing is sent or stored when the endpoint is not
  * configured or the visitor asks not to be tracked. Otherwise each batch carries this
- * tab's random journey ID, shared with the browser app at /app/, and the visitor ID
- * only if the visitor turned recognition on there (see studio-web's identity.ts).
+ * tab's random journey ID, shared with the browser app at /app/ (see studio-web's
+ * identity.ts).
  */
 const ENDPOINT = (import.meta.env.VITE_ANALYTICS_URL as string | undefined)?.replace(/\/$/, "");
 

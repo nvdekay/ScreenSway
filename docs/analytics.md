@@ -20,7 +20,7 @@ downloads Worker ───── service binding: download starts ┘
 - The app identifies an installation by a random ID stored in `telemetry.json` in the app's config folder. It is not derived from hardware or the user account.
 - The landing page and the browser app use no cookies. A visitor is a salted hash of address, browser and day; it changes every day and the address is not stored. `Do Not Track` and Global Privacy Control are honoured: nothing is sent and nothing is stored. The browser app sends only labels (browser, kind of shared surface, export settings, coarse durations, failure kinds), never anything from the recording.
 - Journeys: the landing page and the browser app share one random ID per tab in `sessionStorage` (`screensway.journey`, 32 hex), so landing → `/app/` in the same tab is one journey. It disappears when the tab closes and is never derived from the address, the browser or any fingerprint. The desktop app makes a random ID per launch (`sessionId`).
-- Return visits: a stable browser ID exists only after the visitor switches on recognition in the browser app's footer (off by default, hidden when nothing is sent). It is a random 32-hex value in `localStorage` (`screensway.analytics.visitor`), deleted when the switch goes off. Without it, browser retention is not measured for that visitor. The desktop app's install ID is stable and already behind its consent prompt.
+- Return visits: browsers are not recognised across visits. 0.4.1 offered an opt-in footer switch that kept a random ID in `localStorage` (`screensway.analytics.visitor`); it was removed as hardly used, and the browser app now deletes that key on load. The desktop app's install ID is stable and already behind its consent prompt.
 - Feedback is the deliberate exception: what a person types in the feedback form, an optional email to reply to, and, only if they tick the box, technical details (source, version, system, browser, language; the server adds the country). It is stored in its own table, never in events, properties or breakdowns, and kept 24 months (`FEEDBACK_RETENTION_DAYS`). Only the admin can read it.
 - The Worker stores the country reported by Cloudflare (`request.cf.country`: an ISO 3166-1 alpha-2 code from IP geolocation, `T1` for Tor, `XX` when unknown; a VPN shows the VPN's country), never the IP address.
 
@@ -65,8 +65,8 @@ Keep the in-app wording in step with these rules when they change. The landing p
 Every batch carries `version`, `os`, `locale` and `sessionId`:
 
 - App: the app version, `os` as `<system>-<architecture>` (for example `macos-aarch64`), the UI language and a per-launch session.
-- Browser app: the app version it was built from, `os` (`macos`/`windows`/`linux`/`mobile`/`other`), the page language, the tab's journey and, after opt-in, `visitorId`. The browser name stays in `app_open` properties.
-- Landing page: its build version, `<app version>+<commit>` (for example `0.4.0+c235699`, set at build time in `apps/web/vite.config.ts`), `os`, the page language, the journey and, after opt-in in the browser app, `visitorId`.
+- Browser app: the app version it was built from, `os` (`macos`/`windows`/`linux`/`mobile`/`other`), the page language and the tab's journey. The browser name stays in `app_open` properties.
+- Landing page: its build version, `<app version>+<commit>` (for example `0.4.0+c235699`, set at build time in `apps/web/vite.config.ts`), `os`, the page language and the journey.
 
 Rows stored before this change keep `NULL` versions; nothing is back-filled. For landing rows without `os` the Worker reads the browser's User-Agent (same labels), and the activity list falls back to an old `page_view`'s `os` property. The country is always Cloudflare's: a `country` in the body is ignored.
 
@@ -80,7 +80,7 @@ Reports derive these on the server from stored events; no client claims a "first
 
 - **Funnels** join steps by `session_id`. A step counts only when every earlier step happened at or before it in the same journey, so a finish from another tab cannot complete a journey, and an export without a recording in that journey is not a funnel export. Browser: landing → open `/app/` (journeys that saw the landing page), and open → recording started → finished → export started → finished. Desktop: per launch, open → … → export finished. Breakdowns by system, browser, version, country, language and referrer use the journey's first studio values. Events without a session (older builds) are left out of funnels.
 - **First successes**: per desktop installation; in the browser per consenting visitor, otherwise per journey. A subject counts when its first event of all time falls in the range. First recording and first export are its earliest `recording_finished` and `export_finished` ever, so a second export is never another first. Time to first recording and to first export run from its first `app_open` (median and p90, nearest rank). "Tries" are recordings started up to the first export.
-- **Retention**: a cohort is the Vietnam day a stable ID was first seen; Dn is the share active again exactly n days later. Only desktop installs and consenting browser visitors count; daily hashes and journeys are excluded. A cohort younger than n days reports `null` ("Chưa đủ ngày"), and overall rates only use cohorts old enough, so young data never reads as 0%.
+- **Retention**: a cohort is the Vietnam day a stable ID was first seen; Dn is the share active again exactly n days later. Only desktop installs count (plus the few browser visitors who opted in under 0.4.1); daily hashes and journeys are excluded. A cohort younger than n days reports `null` ("Chưa đủ ngày"), and overall rates only use cohorts old enough, so young data never reads as 0%.
 
 ## Downloads and installs
 
@@ -129,7 +129,7 @@ Table `feedback` (migration 0003): `id`, `created_at`, `updated_at`, `day` (Viet
   "events": [{ "name": "export_finished", "props": { "quality": "4k", "captions": true } }] }
 ```
 
-`source: "web"` and `source: "studio"` need no `installId`. `sessionId` and `visitorId` are 16–64 letters, digits, `-` or `_`; anything else is dropped. `visitorId` is ignored for the app. Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 120 requests a minute (generous because mobile carriers share one address among many people) (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
+`source: "web"` and `source: "studio"` need no `installId`. `sessionId` and `visitorId` are 16–64 letters, digits, `-` or `_`; anything else is dropped. `visitorId` is ignored for the app; current web builds no longer send it (only 0.4.1 browser visitors who opted in did). Up to 50 events and 16 KiB (UTF-8 bytes) per request; the response is `202 {"accepted": n}`. Each client address may send 120 requests a minute (generous because mobile carriers share one address among many people) (the `INGEST_LIMITER` rate limit in `wrangler.toml`); more get `429`. Web and studio events are refused with `503` while `ACTOR_SALT` is not set, so visitors are never hashed without the salt.
 
 `GET /v1/stats?days=30` (`days` 1–365; the dashboard's session cookie, or header `Authorization: Bearer <DASHBOARD_TOKEN>` for scripts) returns one JSON document:
 
@@ -193,7 +193,7 @@ Then point the clients at the deployed URL:
 
 - The ingestion endpoint is public, as any client-side analytics endpoint is. The allow-lists keep junk out of the reports but a determined sender can still inflate counts within the per-address rate limit.
 - A download click is a click. Download starts are seen by the downloads Worker; completed downloads and installs are not observable (see "Downloads and installs").
-- Without opt-in, a browser visitor is a new visitor every day, so browser retention covers only consenting visitors and is a small, self-selected sample.
+- Browsers are not recognised across visits, so browser retention is not measured (it stays empty apart from the few 0.4.1 opt-ins); retention means the desktop app.
 - Journeys need the tab's sessionStorage: opening `/app/` in a new tab starts a new journey, and events from builds before the journey ID have none.
 - D1's free tier (5 GB, 100k writes per day at the time of writing) is far above current needs; reports aggregate at query time, so add rollup tables if the events table grows into millions of rows.
 
