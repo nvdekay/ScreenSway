@@ -1,0 +1,17 @@
+# Serves screensway.site (the landing page plus the browser version at /app/) as static
+# assets from Cloudflare, so a deploy does not depend on GitHub's artifact storage.
+# The deploy job of .github/workflows/web.yml uploads the built site (apps/web/dist).
+# screensway.site/update/* is routed to the downloads Worker instead (the more specific
+# route wins). GitHub Pages keeps the last site it deployed, only so the old
+# nvdekay.github.io/ScreenSway addresses keep redirecting here. See docs/releasing.md.
+name = "screensway-site"
+account_id = "664022a6c138f44a9bbd21e3de54a5a9"
+compatibility_date = "2025-01-01"
+workers_dev = false
+routes = [{ pattern = "screensway.site/*", zone_name = "screensway.site" }]
+
+[assets]
+directory = "../web/dist"
+# /app redirects to /app/, as on GitHub Pages.
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"

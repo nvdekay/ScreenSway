@@ -1,6 +1,6 @@
 # Landing page
 
-The marketing site lives in `apps/web` and deploys through the existing GitHub Pages workflow. Download links point at the downloads Worker's `/latest/` paths (`VITE_DOWNLOADS_URL`, set in `web.yml`; local builds fall back to `./download/`), because the source repository is private and the installers are too large for Pages (see `releasing.md`). Both platform downloads are active; keep English and Vietnamese installation guides synchronized.
+The marketing site lives in `apps/web` and deploys through `web.yml` to the `screensway-site` Worker on Cloudflare (see `docs/releasing.md`). Download links point at the downloads Worker's `/latest/` paths (`VITE_DOWNLOADS_URL`, set in `web.yml`; local builds fall back to `./download/`), because the source repository is private and the installers are too large for Pages (see `releasing.md`). Both platform downloads are active; keep English and Vietnamese installation guides synchronized.
 
 ## Product story
 
@@ -46,7 +46,7 @@ Browser QA should cover English/Vietnamese at 375, 768, 1024 and 1440 px, includ
 - Let the demo complete a loop with sample captions enabled: all six lines must appear. Pause and verify the line stays unchanged, then switch language and hide/show captions.
 - Verify the download filename and install-guide behavior. A mocked download validates interaction only; verify the real hosted DMG separately after deployment.
 
-The redesign passed these browser checks across all 16 layout combinations, plus 33 shared-core tests and the web production build. The private repository's Pages workflow is responsible for publishing the actual latest release asset.
+The redesign passed these browser checks across all 16 layout combinations, plus 33 shared-core tests and the web production build. The site deploy workflow is responsible for publishing the actual latest release asset.
 
 The shared-renderer update additionally passed 720 browser comparisons (five presets × preset default/eight frame overrides × 16 layout combinations): frame canvas pixels match `paintFrameBase`, video placement matches `computeLayout`, and controls fit the viewport. Normal-motion checks also cover all six timed subtitles, pause across style changes and repeated locale switching without losing Studio content.
 
@@ -56,4 +56,4 @@ The macOS and Windows download actions share equal widths, filled backgrounds, s
 
 ## Content-Security-Policy
 
-GitHub Pages cannot send headers, so both pages get a CSP `<meta>` tag at build time from `scripts/vite-csp.mjs` (production builds only; the dev server needs inline styles and the HMR websocket). The plugin hashes the inline `<script>` and `<style>` blocks of the final HTML, so editing them needs no manual hash. The landing page allows only its own files (`data:`/`blob:` images, `data:` fonts that Vite inlines), no workers, objects, forms or `<base>`, `blob:` media for the hero clip, and `connect-src` for the site itself (the clip fetch) and the analytics origin from `VITE_ANALYTICS_URL`. The browser app's policy is in `docs/web-studio.md`. A `<meta>` CSP cannot set `frame-ancestors`.
+The site is static files without a server of its own, so both pages get a CSP `<meta>` tag at build time from `scripts/vite-csp.mjs` (production builds only; the dev server needs inline styles and the HMR websocket). The plugin hashes the inline `<script>` and `<style>` blocks of the final HTML, so editing them needs no manual hash. The landing page allows only its own files (`data:`/`blob:` images, `data:` fonts that Vite inlines), no workers, objects, forms or `<base>`, `blob:` media for the hero clip, and `connect-src` for the site itself (the clip fetch) and the analytics origin from `VITE_ANALYTICS_URL`. The browser app's policy is in `docs/web-studio.md`. A `<meta>` CSP cannot set `frame-ancestors`.

@@ -13,6 +13,7 @@ on:
       - "pnpm-workspace.yaml"
       - "scripts/build-update-manifest.mjs"
       - "scripts/publish-downloads.mjs"
+      - "apps/site/**"
       - ".github/workflows/web.yml"
   # Re-deploy when a release is published so the site serves the new downloads.
   release:
@@ -20,8 +21,8 @@ on:
   workflow_dispatch:
 
 # The build job installs and runs third-party packages, so it can only read the repository.
-# Publishing (the downloads token, Pages and its OIDC token) happens in the deploy job, which
-# runs no project dependencies: its scripts use Node's built-in modules only.
+# Publishing (the downloads and Cloudflare tokens) happens in the deploy job, which runs no
+# project dependencies: its scripts use Node's built-in modules only, plus a pinned wrangler.
 permissions:
   contents: read
 
@@ -70,14 +71,9 @@ jobs:
 
   deploy:
     needs: build
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-      pages: write
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,12 +136,9 @@ jobs:
           curl -fsS -X PUT -H "Authorization: Bearer $DOWNLOADS_UPLOAD_TOKEN" \
             -H "Content-Type: application/json" \
             --data-binary @apps/web/dist/update/latest.json "$DOWNLOADS_URL/admin/update"
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: apps/web/dist
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      # The site is served from Cloudflare (apps/site), not GitHub Pages, whose deploys need
+      # GitHub artifact storage. The version matches apps/downloads' lockfile.
+      - name: Deploy the site to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.149.0 deploy --config apps/site/wrangler.toml

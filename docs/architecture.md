@@ -10,7 +10,7 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
 - `packages/core` holds the portable logic shared by preview and export: pointer/zoom types, zoom segment generation, the spring camera track, the frame model, and the per-frame render plan.
 - `native/macos-capture` is a Swift command-line sidecar: ScreenCaptureKit capture (`ScreenSwayCapture.swift`) and the GPU exporter (`Exporter.swift`).
 - `native/windows-capture` is the Windows sidecar in Rust with the same command line (see "Capture (Windows)").
-- `apps/web` is the independent marketing site (GitHub Pages). It imports `@screensway/core` for its live demo.
+- `apps/web` is the independent marketing site (static assets on Cloudflare, `apps/site`). It imports `@screensway/core` for its live demo.
 - `apps/studio-web` is the browser version (beta), served at `/app/` beside the landing page. It reuses the desktop studio with browser stand-ins for the Tauri commands, records with `getDisplayMedia`, finds the pointer in the video and exports with WebCodecs. See [web-studio.md](web-studio.md).
 
 ## Project bundle
