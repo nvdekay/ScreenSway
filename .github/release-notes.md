@@ -1,4 +1,8 @@
 ## Install
+**What's new in 0.4.2:** if macOS keeps blocking screen recording after an update even though ScreenSway is switched on in System Settings, the app now offers **Reset permission and reopen**: it clears the old permission, reopens ScreenSway and macOS asks again. The install steps on the website are clearer too.
+
+**Tiếng Việt — Có gì mới ở 0.4.2:** nếu sau khi cập nhật macOS vẫn chặn ghi màn hình dù ScreenSway đang được bật trong Cài đặt hệ thống, app giờ có nút **Đặt lại quyền và mở lại**: xoá quyền cũ, mở lại ScreenSway và macOS sẽ hỏi lại. Hướng dẫn cài trên trang web cũng rõ hơn.
+
 **What's new in 0.4.1:** send feedback from inside the app (after an export or from Settings): pick a type, an optional rating, write your message and, if you like, an email for a reply. It is sent only when you press Send, never includes recordings or file names, and technical details (version, system, language) go along only if you leave that box ticked. After an export you may also be asked, at most every two weeks and only if you share usage statistics, which features you would use next. Anonymous statistics now group events by app launch, so we can see where recordings and exports get stuck.
 
 **Tiếng Việt — Có gì mới ở 0.4.1:** gửi góp ý ngay trong app (sau khi xuất video hoặc trong Cài đặt): chọn loại, chấm điểm nếu muốn, viết nội dung và để lại email nếu cần phản hồi. Góp ý chỉ được gửi khi bạn bấm Gửi, không bao giờ kèm bản quay hay tên file, và thông tin kỹ thuật (phiên bản, hệ điều hành, ngôn ngữ) chỉ đi kèm nếu bạn giữ ô đó được chọn. Sau khi xuất video, app có thể hỏi bạn muốn dùng tính năng nào tiếp theo, tối đa hai tuần một lần và chỉ khi bạn bật chia sẻ số liệu. Số liệu ẩn danh giờ được nhóm theo từng lần mở app, để biết bản quay và việc xuất video hay bị vướng ở đâu.
@@ -9,9 +13,9 @@
 
 New permissions are only asked when you use the feature: Camera for the webcam and, on macOS, Input Monitoring for shortcut keys. / Quyền mới chỉ được hỏi khi bạn dùng tính năng: Camera cho webcam và, trên macOS, Giám sát đầu vào cho phím tắt.
 
-After an in-app update on macOS, screen recording, microphone or speech permissions may need to be switched off and on again in **System Settings › Privacy & Security** (ScreenSway is not notarized yet).
+After an in-app update on macOS, screen recording may be blocked although its switch is on: choose **Reset permission and reopen** in ScreenSway. Microphone or speech permissions may need to be switched off and on again in **System Settings › Privacy & Security** (ScreenSway is not notarized yet).
 
-**Tiếng Việt:** Sau khi cập nhật trong app trên macOS, có thể cần tắt rồi bật lại quyền ghi màn hình, micro hoặc nhận dạng giọng nói trong **Cài đặt hệ thống › Quyền riêng tư & Bảo mật** (ScreenSway chưa được Apple công chứng).
+**Tiếng Việt:** Sau khi cập nhật trong app trên macOS, ghi màn hình có thể bị chặn dù công tắc vẫn bật: bấm **Đặt lại quyền và mở lại** trong ScreenSway. Quyền micro hoặc nhận dạng giọng nói có thể cần tắt rồi bật lại trong **Cài đặt hệ thống › Quyền riêng tư & Bảo mật** (ScreenSway chưa được Apple công chứng).
 
 1. Download **ScreenSway-macos-universal.dmg** from https://screensway.site/ (Apple silicon & Intel, macOS 15 or later).
 2. Open it and drag ScreenSway to Applications.
