@@ -2,13 +2,14 @@
 //!
 //! Nothing is sent until the user turns sharing on. An event is a name from a fixed
 //! list plus a few short labels (for example `quality: "4k"`); recordings, audio,
-//! captions, file names and paths never leave the computer. Events are batched on a
-//! background thread and dropped if the network is unavailable.
+//! captions, file names and paths never leave the computer. Each batch carries a
+//! random ID for this launch (`sessionId`) next to the installation's. Events are
+//! batched on a background thread and dropped if the network is unavailable.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// The analytics API (apps/analytics). Empty disables telemetry entirely.
@@ -26,6 +27,9 @@ const EVENTS: &[&str] = &[
     "captions_generated",
     "captions_failed",
     "style_applied",
+    "export_started",
+    "feature_interest",
+    "feedback_submitted",
 ];
 const MAX_PROPS: usize = 12;
 const MAX_BATCH: usize = 20;
@@ -60,13 +64,20 @@ pub struct Telemetry {
     sender: Mutex<Option<mpsc::Sender<Event>>>,
 }
 
-fn endpoint() -> Option<String> {
+pub(crate) fn endpoint() -> Option<String> {
     let value = std::env::var("SCREENSWAY_ANALYTICS_URL")
         .ok()
         .or_else(|| option_env!("SCREENSWAY_ANALYTICS_URL").map(str::to_owned))
         .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned());
     let value = value.trim().trim_end_matches('/').to_owned();
     (!value.is_empty()).then_some(value)
+}
+
+/// A random identifier for this app launch, so the events of one session can be told
+/// apart. A new one is made at every start and it is never saved.
+pub(crate) fn session_id() -> &'static str {
+    static SESSION: OnceLock<String> = OnceLock::new();
+    SESSION.get_or_init(random_install_id)
 }
 
 /// A random identifier for this installation. It is not derived from hardware or
@@ -107,7 +118,7 @@ fn save(path: &Path, stored: &Stored) -> Result<(), String> {
     std::fs::write(path, bytes).map_err(|error| error.to_string())
 }
 
-fn is_label(text: &str) -> bool {
+pub(crate) fn is_label(text: &str) -> bool {
     let count = text.chars().count();
     (1..=40).contains(&count)
         && text.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '_' | '.' | ':' | '+' | '<' | '>' | '×' | '-'))
@@ -137,7 +148,7 @@ fn clean_props(props: Map<String, Value>) -> Map<String, Value> {
         .collect()
 }
 
-fn platform() -> String {
+pub(crate) fn platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
@@ -145,6 +156,7 @@ fn payload(install_id: &str, events: &[Event]) -> Value {
     serde_json::json!({
         "source": "app",
         "installId": install_id,
+        "sessionId": session_id(),
         "version": env!("CARGO_PKG_VERSION"),
         "os": platform(),
         "locale": events.iter().rev().find_map(|event| event.locale.clone()),
@@ -353,7 +365,9 @@ mod tests {
         let body = payload(&"a".repeat(32), &events);
         let mut keys: Vec<_> = body.as_object().unwrap().keys().map(String::as_str).collect();
         keys.sort_unstable();
-        assert_eq!(keys, ["events", "installId", "locale", "os", "source", "version"]);
+        assert_eq!(keys, ["events", "installId", "locale", "os", "sessionId", "source", "version"]);
+        assert_eq!(body["sessionId"], session_id());
+        assert_eq!(session_id().len(), 32);
         assert_eq!(body["events"][0], serde_json::json!({ "name": "export_finished", "props": { "quality": "4k" } }));
     }
 }

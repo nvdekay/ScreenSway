@@ -1,11 +1,13 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { contentSecurityPolicy, originOf } from "../../scripts/vite-csp.mjs";
+import { buildVersion } from "./build-version.mjs";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "VITE_");
   return {
     base: "./",
+    define: { __SCREENSWAY_VERSION__: JSON.stringify(buildVersion()) },
     plugins: [
       react(),
       // Everything is bundled; the only request that leaves the site goes to the analytics API.

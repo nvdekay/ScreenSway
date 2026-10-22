@@ -1,23 +1,33 @@
 /// <reference types="vite/client" />
+import { identityFields, optedOut, visitorOs } from "../../studio-web/src/identity";
 import type { DownloadPlatform } from "./downloads";
 
 /**
  * Anonymous, cookieless counts of visits and downloads, sent to the ScreenSway
- * analytics API (apps/analytics). Nothing is stored in the browser and nothing is
- * sent when the endpoint is not configured or the visitor asks not to be tracked.
+ * analytics API (apps/analytics). Nothing is sent or stored when the endpoint is not
+ * configured or the visitor asks not to be tracked. Otherwise each batch carries this
+ * tab's random journey ID, shared with the browser app at /app/, and the visitor ID
+ * only if the visitor turned recognition on there (see studio-web's identity.ts).
  */
 const ENDPOINT = (import.meta.env.VITE_ANALYTICS_URL as string | undefined)?.replace(/\/$/, "");
 
 type Props = Record<string, string | number | boolean>;
 
-function optedOut(): boolean {
-  const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
-  return nav.doNotTrack === "1" || nav.globalPrivacyControl === true;
+function pageLocale(): string | undefined {
+  const lang = document.documentElement.lang;
+  return lang === "en" || lang === "vi" ? lang : undefined;
 }
 
-export function track(name: "page_view" | "download_click" | "guide_open", props: Props = {}) {
+export function track(name: "page_view" | "download_click" | "guide_open", props: Props = {}, locale = pageLocale()) {
   if (!ENDPOINT || optedOut()) return;
-  const body = JSON.stringify({ source: "web", events: [{ name, props }] });
+  const body = JSON.stringify({
+    source: "web",
+    version: __SCREENSWAY_VERSION__,
+    os: visitorOs(),
+    locale,
+    ...identityFields(),
+    events: [{ name, props }],
+  });
   try {
     // A beacon survives the navigation that a download link starts.
     if (!navigator.sendBeacon?.(`${ENDPOINT}/v1/events`, body)) {
@@ -37,20 +47,13 @@ function referrer(): string {
   }
 }
 
-function visitorOs(): string {
-  const agent = navigator.userAgent;
-  if (/Android|iPhone|iPad|iPod/i.test(agent)) return "mobile";
-  if (/Windows/i.test(agent)) return "windows";
-  if (/Macintosh|Mac OS X/i.test(agent)) return "macos";
-  return "other";
-}
-
 let viewed = false;
 /** Counts the visit once per page load. */
 export function trackPageView(lang: string, theme: string) {
   if (viewed) return;
   viewed = true;
-  track("page_view", { referrer: referrer(), lang, theme, os: visitorOs() });
+  // The page language is passed in: on first render <html lang> may not be updated yet.
+  track("page_view", { referrer: referrer(), lang, theme, os: visitorOs() }, lang);
 }
 
 export function trackDownload(platform: DownloadPlatform, placement: "hero" | "cta" | "guide") {

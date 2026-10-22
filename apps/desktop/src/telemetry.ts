@@ -19,7 +19,10 @@ type TelemetryEvent =
   | "export_cancelled"
   | "captions_generated"
   | "captions_failed"
-  | "style_applied";
+  | "style_applied"
+  | "export_started"
+  | "feature_interest"
+  | "feedback_submitted";
 
 interface TelemetryStatus {
   /** False when this build has no analytics endpoint. */
@@ -45,11 +48,17 @@ export function durationBucket(ms: number): string {
   return ">10m";
 }
 
+/** Whether events are actually sent, so questions whose answers are events can be asked. */
+export function statisticsOn(status: TelemetryStatus): boolean {
+  return status.available && status.enabled === true;
+}
+
 export function useTelemetry() {
   const [status, setStatus] = useState<TelemetryStatus>({ available: false, enabled: null });
 
   useEffect(() => {
-    if (!inShell) return;
+    // The browser version answers with whether its own statistics are on.
+    if (!inShell && !isWeb) return;
     let cancelled = false;
     const refresh = () =>
       void invoke<TelemetryStatus>("telemetry_status")

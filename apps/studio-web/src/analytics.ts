@@ -1,12 +1,14 @@
 /**
  * Anonymous, cookieless usage counts for the browser app, sent to the ScreenSway analytics
- * API (apps/analytics) as source "studio", like the landing page's visit counts: nothing is
- * stored in the browser, and nothing is sent when the endpoint is not configured or the
- * visitor asks not to be tracked. Events carry short labels only (which browser, what kind
- * of surface, export settings, coarse durations), never recording content, titles or files.
+ * API (apps/analytics) as source "studio", like the landing page's visit counts. Nothing is
+ * sent or stored when the endpoint is not configured or the visitor asks not to be tracked;
+ * otherwise a batch carries this tab's random journey ID and, only if the visitor turned it
+ * on, a random visitor ID (identity.ts). Events carry short labels only (which browser, what
+ * kind of surface, export settings, coarse durations), never recording content, titles or files.
  */
 import { version } from "../../desktop/src-tauri/tauri.conf.json";
 import { durationBucket } from "../../desktop/src/telemetry";
+import { browserName, identityFields, optedOut, visitorOs } from "./identity";
 
 const ENDPOINT = (import.meta.env.VITE_ANALYTICS_URL as string | undefined)?.replace(/\/$/, "");
 
@@ -22,32 +24,16 @@ export const STUDIO_EVENTS = [
   "export_cancelled",
   "style_applied",
   "desktop_click",
+  "export_started",
+  "feature_interest",
+  "feedback_submitted",
 ] as const;
 export type StudioEvent = (typeof STUDIO_EVENTS)[number];
 type Props = Record<string, string | number | boolean>;
 
-function optedOut(): boolean {
-  const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
-  return nav.doNotTrack === "1" || nav.globalPrivacyControl === true;
-}
-
-function browserName(): string {
-  const agent = navigator.userAgent;
-  if (/Edg\//.test(agent)) return "edge";
-  if (/OPR\//.test(agent)) return "opera";
-  if (/Firefox\//.test(agent)) return "firefox";
-  if (/Chrome\//.test(agent)) return "chrome";
-  if (/Safari\//.test(agent)) return "safari";
-  return "other";
-}
-
-function visitorOs(): string {
-  const agent = navigator.userAgent;
-  if (/Android|iPhone|iPad|iPod/i.test(agent)) return "mobile";
-  if (/Windows/i.test(agent)) return "windows";
-  if (/Macintosh|Mac OS X/i.test(agent)) return "macos";
-  if (/Linux|CrOS/i.test(agent)) return "linux";
-  return "other";
+/** Whether statistics are sent from this browser. */
+export function analyticsOn(): boolean {
+  return Boolean(ENDPOINT) && !optedOut();
 }
 
 function referrer(): string {
@@ -69,6 +55,7 @@ export function track(name: StudioEvent, props: Props = {}, locale?: string) {
     version,
     os: visitorOs(),
     locale: locale ?? (document.documentElement.lang || undefined),
+    ...identityFields(),
     events: [{ name, props }],
   });
   try {
@@ -94,4 +81,5 @@ export function trackOpen(unsupported: string | null, locale: string) {
   else track("app_open", props, locale);
 }
 
-export { durationBucket };
+export { browserName, durationBucket, version, visitorOs };
+export const ANALYTICS_ENDPOINT = ENDPOINT;
