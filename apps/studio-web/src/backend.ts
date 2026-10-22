@@ -1,8 +1,10 @@
 // The desktop studio talks to the Rust shell through commands; in the browser they are
 // answered here. No recording content leaves this browser: edits and images stay in the tab's memory,
 // recordings and downloaded exports in its private file storage (OPFS). Only anonymous
-// usage counts are sent (analytics.ts).
-import { STUDIO_EVENTS, track, type StudioEvent } from "./analytics";
+// usage counts (analytics.ts) and feedback the user writes and sends are sent.
+import { feedbackProblem, type FeedbackRequest } from "../../desktop/src/feedback";
+import { ANALYTICS_ENDPOINT, analyticsOn, browserName, STUDIO_EVENTS, track, version, visitorOs, type StudioEvent } from "./analytics";
+import { journeyId } from "./identity";
 import { emit } from "./tauri/event";
 import type { ExportJob } from "./exporter";
 
@@ -127,6 +129,40 @@ function recordingOf(id: unknown): WebRecording {
   return recording;
 }
 
+/**
+ * Sends the feedback form (see the desktop shell's feedback.rs for the same contract). Rejects
+ * with a message key the form translates. A 409 means the same text already arrived (a retry
+ * after a lost answer), so it counts as sent.
+ */
+export async function sendFeedback(request: FeedbackRequest, endpoint = ANALYTICS_ENDPOINT): Promise<void> {
+  if (!endpoint) throw "feedback.errorUnavailable";
+  if (feedbackProblem(request)) throw "feedback.errorInvalid";
+  const sessionId = request.includeMetadata ? journeyId() : null;
+  const body = {
+    source: "studio",
+    category: request.category,
+    rating: request.rating,
+    message: request.message.trim(),
+    email: request.email?.trim() || null,
+    includeMetadata: request.includeMetadata,
+    ...(request.includeMetadata
+      ? { metadata: { version, os: visitorOs(), browser: browserName(), ...(request.locale ? { locale: request.locale } : {}), ...(sessionId ? { sessionId } : {}) } }
+      : {}),
+    website: request.website,
+  };
+  let response: Response;
+  try {
+    // A plain-text body keeps this a simple cross-origin request (no preflight); the API reads JSON.
+    response = await fetch(`${endpoint}/v1/feedback`, { method: "POST", body: JSON.stringify(body) });
+  } catch {
+    throw "feedback.errorNetwork";
+  }
+  if (response.ok || response.status === 409) return;
+  if (response.status === 429) throw "feedback.errorRateLimited";
+  if (response.status === 400 || response.status === 413) throw "feedback.errorInvalid";
+  throw "feedback.errorUnavailable";
+}
+
 type Command = (args: Record<string, unknown>) => unknown;
 
 export const commands: Record<string, Command> = {
@@ -138,7 +174,9 @@ export const commands: Record<string, Command> = {
   track_event: ({ name, props }) => {
     if ((STUDIO_EVENTS as readonly string[]).includes(String(name))) track(name as StudioEvent, (props ?? {}) as Record<string, string | number | boolean>);
   },
-  telemetry_status: () => ({ available: false, enabled: false }),
+  // Lets the studio ask questions whose answers are statistics only when they are sent.
+  telemetry_status: () => ({ available: analyticsOn(), enabled: analyticsOn() }),
+  send_feedback: ({ feedback }) => sendFeedback(feedback as FeedbackRequest),
   read_thumbnail: ({ projectPath }) => recordingOf(projectPath).thumbnail,
 
   list_background_images: () => [...images].reverse().map(([path, { thumbnail }]) => ({ path, thumbnail })),

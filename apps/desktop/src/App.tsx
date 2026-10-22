@@ -22,6 +22,7 @@ import {
   Mic,
   MicOff,
   Monitor,
+  MessageSquare,
   MousePointer2,
   Pause,
   Pencil,
@@ -48,6 +49,7 @@ import { LogoMark } from "./LogoMark";
 import { isWindows, supportsAudio } from "./platform";
 import { LIBRARY_CHANGED_EVENT, RecordingStudio } from "./frame/RecordingStudio";
 import { durationBucket, track, useTelemetry } from "./telemetry";
+import { FeedbackDialog } from "./FeedbackDialog";
 import { Onboarding, type ScreenCheck } from "./Onboarding";
 import { type RecordingResult } from "./ZoomPreview";
 import { useUpdater, type UpdaterController } from "./updater";
@@ -243,6 +245,7 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
   const { language, setLanguage, t } = useI18n();
   const telemetry = useTelemetry();
   const [open, setOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -339,8 +342,12 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
           <button className="update-link setup-link" onClick={() => { setOpen(false); onOpenSetup(); }}>
             {t("onboarding.openSetup")}
           </button>
+          <button className="update-link setup-link" onClick={() => { setOpen(false); setFeedbackOpen(true); }}>
+            <MessageSquare size={14} aria-hidden="true" /> {t("feedback.open")}
+          </button>
         </div>
       )}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }

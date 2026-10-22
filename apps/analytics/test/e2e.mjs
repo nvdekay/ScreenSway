@@ -298,7 +298,10 @@ try {
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { ok: true });
   assert.equal((await send({ source: "app", category: "feature", rating: null, message: "Cần export GIF nhanh hơn", includeMetadata: false, metadata: { version: "0.4.0" } })).status, 201);
-  assert.equal((await send({ ...valid, message: "Một ý kiến khác", rating: 5, category: "idea" })).status, 201);
+  // The browser app posts without a Content-Type (text/plain, no preflight) and reads the answer cross-origin.
+  response = await feedback({ ...valid, message: "Một ý kiến khác", rating: 5, category: "idea" }, { "Content-Type": "text/plain", "CF-Connecting-IP": "198.51.100.200" });
+  assert.equal(response.status, 201);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   for (const [label, body, expected] of [
     ["oversized", { ...valid, message: "x".repeat(13_000) }, 413],
     ["unknown category", { ...valid, message: "a", category: "praise" }, 400],

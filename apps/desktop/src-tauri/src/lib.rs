@@ -1,3 +1,4 @@
+mod feedback;
 mod telemetry;
 
 use serde::{Deserialize, Serialize};
@@ -2531,7 +2532,8 @@ pub fn run() {
             delete_background_image,
             telemetry::telemetry_status,
             telemetry::set_telemetry,
-            telemetry::track_event
+            telemetry::track_event,
+            feedback::send_feedback
         ])
         .build(tauri::generate_context!())
         .expect("error while building ScreenSway")

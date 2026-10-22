@@ -23,7 +23,7 @@ import {
   type Redaction,
   sourceToOutputTime,
 } from "@screensway/core";
-import { AlertCircle, Captions, Check, Copy, Download, Film, FolderOpen, Loader2, Play, X } from "lucide-react";
+import { AlertCircle, Captions, Check, Copy, Download, Film, FolderOpen, Loader2, MessageSquare, Play, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMessageKey, useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
@@ -31,7 +31,10 @@ import { FrameEditor, type RecentImage } from "./FrameEditor";
 import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
 import { DEFAULT_CAPTION_STYLE, keystrokeEnd, loadCaptionFont, paintCaption, paintKeystroke, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
-import { durationBucket, track } from "../telemetry";
+import { durationBucket, statisticsOn, track, useTelemetry } from "../telemetry";
+import { FeedbackDialog } from "../FeedbackDialog";
+import { FeatureSurvey } from "../FeatureSurvey";
+import { markSurveyShown, surveyDue, type FeedbackCategory } from "../feedback";
 import { isWeb } from "../platform";
 import { PrivacyPanel } from "./PrivacyPanel";
 import { KeystrokePanel } from "./KeystrokePanel";
@@ -181,6 +184,12 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
   const [gif, setGif] = useState<{ status: "idle" } | { status: "running"; progress: number } | { status: "done"; path: string } | { status: "failed"; message: string }>({ status: "idle" });
   const [copied, setCopied] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ category: FeedbackCategory; message: string } | null>(null);
+  // The feature question after an export, only when its answers can be counted.
+  const [survey, setSurvey] = useState(false);
+  const telemetry = useTelemetry();
+  const canAsk = useRef(false);
+  canAsk.current = statisticsOn(telemetry.status);
   const gifAbort = useRef<AbortController | null>(null);
   const [brand, setBrand] = useState<BrandKit>(loadBrand);
   const [logoData, setLogoData] = useState<string | null>(null);
@@ -524,6 +533,8 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
     if (activeJobs.current.export) return;
     activeJobs.current.export = true;
     setExportState({ status: "running", progress: 0 });
+    setSurvey(false);
+    track("export_started", { quality: effectiveSettings.quality, frame: effectiveSettings.frame, aspect: effectiveSettings.aspect });
     try {
       const source = { width: recording.width, height: recording.height };
       const effective = effectiveSettings;
@@ -620,6 +631,10 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
         trimmed: range.startMs > 0 || range.endMs < recording.durationMs,
         duration: durationBucket(range.endMs - range.startMs),
       });
+      if (canAsk.current && surveyDue()) {
+        markSurveyShown();
+        setSurvey(true);
+      }
     } catch (error) {
       const message = String(error);
       // The browser version's errors are message keys (web.exportTooLarge, …): a safe label.
@@ -834,6 +849,17 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
                   {gif.status === "failed" && <p className="editor-note error-note">{gif.message}</p>}
                 </div>
               )}
+              <div className="export-done-actions">
+                <button className="editor-button" onClick={() => setFeedback({ category: "idea", message: "" })}>
+                  <MessageSquare size={14} aria-hidden="true" /> {t("feedback.open")}
+                </button>
+              </div>
+              {survey && (
+                <FeatureSurvey
+                  onDismiss={() => setSurvey(false)}
+                  onOther={(message) => setFeedback({ category: "feature", message })}
+                />
+              )}
             </div>
           )}
           {exportState.status === "failed" && (
@@ -844,6 +870,7 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
           )}
         </div>
       </aside>
+      {feedback && <FeedbackDialog initialCategory={feedback.category} initialMessage={feedback.message} onClose={() => setFeedback(null)} />}
     </div>
   );
 }

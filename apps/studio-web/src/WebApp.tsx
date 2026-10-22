@@ -1,13 +1,15 @@
 import { generateZoomSegments } from "@screensway/core";
-import { AlertCircle, ArrowRight, Download, Lock, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Download, Lock, MessageSquare, Mic, MicOff, MonitorUp, MousePointer2, Square, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LanguageToggle } from "../../desktop/src/LanguageToggle";
+import { FeedbackDialog } from "../../desktop/src/FeedbackDialog";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { RecordingStudio } from "../../desktop/src/frame/RecordingStudio";
 import { formatDuration } from "../../desktop/src/format";
 import { useI18n } from "../../desktop/src/i18n";
 import type { RecordingResult } from "../../desktop/src/ZoomPreview";
-import { durationBucket, track, trackOpen } from "./analytics";
+import { analyticsOn, durationBucket, track, trackOpen } from "./analytics";
+import { setVisitorConsent, visitorId } from "./identity";
 import { EXPORT_SAVED, removeRecording } from "./backend";
 import { MicrophoneBlockedError, ScreenRecording, ShareCancelledError, StorageFullError, StorageUnavailableError, unsupportedReason } from "./recorder";
 import { ResultPreview } from "./ResultPreview";
@@ -36,6 +38,26 @@ function LanguageSwitch() {
   return <LanguageToggle language={language} onChange={setLanguage} label={t("web.language")} />;
 }
 
+/**
+ * The opt-in to be recognised on return visits: on makes a random visitor ID, off deletes it.
+ * Not offered when nothing is sent (no endpoint, or the browser asks not to be tracked).
+ */
+function VisitorConsent() {
+  const { t } = useI18n();
+  const [on, setOn] = useState(() => visitorId() !== null);
+  if (!analyticsOn()) return null;
+  return (
+    <label className="web-visitor-consent">
+      <span>
+        <strong>{t("web.visitorTitle")}</strong>
+        <small>{t("web.visitorBody")}</small>
+      </span>
+      <input type="checkbox" role="switch" checked={on} onChange={(event) => setOn(setVisitorConsent(event.target.checked))} />
+      <i aria-hidden="true" />
+    </label>
+  );
+}
+
 /** A short label for a failed start, for the anonymous statistics (never the message itself). */
 function startFailure(error: unknown): string {
   if (error instanceof ShareCancelledError) return "share_denied";
@@ -56,6 +78,7 @@ export function WebApp() {
   const [result, setResult] = useState<RecordingResult | null>(null);
   // Whether the open recording has been exported since it was made, so leaving loses nothing.
   const [exported, setExported] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const recordingRef = useRef<ScreenRecording | null>(null);
   const previewRef = useRef<HTMLElement>(null);
   const recording = status === "recording" || status === "finishing";
@@ -152,6 +175,10 @@ export function WebApp() {
         </a>
         <nav aria-label={t("web.headerNav")}>
           <LanguageSwitch />
+          <button className="web-feedback" aria-label={t("feedback.open")} onClick={() => setFeedbackOpen(true)}>
+            <MessageSquare size={15} aria-hidden="true" />
+            <span>{t("feedback.open")}</span>
+          </button>
           <LandingLink label={t("web.desktopApp")} placement="header">
             <Download size={15} aria-hidden="true" />
             <span>{t("web.desktopApp")}</span>
@@ -285,6 +312,11 @@ export function WebApp() {
           )}
         </>
       )}
+
+      <footer className="web-footer">
+        <VisitorConsent />
+      </footer>
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </main>
   );
 }

@@ -8,17 +8,17 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
    lines up with the hero (1560 px). The desktop-app link stays quiet, so the page's only filled
    call to action is "Start recording". */
 .web-header { position: sticky; top: 0; z-index: 30; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 max(32px, calc((100% - 1560px) / 2)); border-bottom: 1px solid #ffffff10; background: #0a0b0ebf; backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); }
-.web-brand, .web-header nav, .web-header nav a { display: flex; align-items: center; }
+.web-brand, .web-header nav, .web-header nav :is(a, .web-feedback) { display: flex; align-items: center; }
 .web-brand { gap: 10px; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: -.01em; text-decoration: none; }
 .web-brand small { margin-left: -4px; color: #8b8e97; font-size: 15px; font-weight: 500; }
 .web-header nav { gap: 12px; }
-.web-header nav a { height: 32px; gap: 7px; padding: 0 12px; border: 1px solid #ffffff24; border-radius: 8px; background: transparent; color: #f2f3f5; font-size: 12px; font-weight: 600; text-decoration: none; transition: background .16s ease, border-color .16s ease; }
-.web-header nav a svg { color: #8b8e97; transition: color .16s ease; }
-.web-header nav a:hover { border-color: #ffffff3d; background: #ffffff0d; }
-.web-header nav a:hover svg { color: #fff; }
+.web-header nav :is(a, .web-feedback) { height: 32px; gap: 7px; padding: 0 12px; border: 1px solid #ffffff24; border-radius: 8px; background: transparent; color: #f2f3f5; font-size: 12px; font-weight: 600; text-decoration: none; transition: background .16s ease, border-color .16s ease; }
+.web-header nav :is(a, .web-feedback) svg { color: #8b8e97; transition: color .16s ease; }
+.web-header nav :is(a, .web-feedback):hover { border-color: #ffffff3d; background: #ffffff0d; }
+.web-header nav :is(a, .web-feedback):hover svg { color: #fff; }
 /* A hairline between the language toggle and the link. */
-.web-header nav > .lang-toggle + a { position: relative; margin-left: 13px; }
-.web-header nav > .lang-toggle + a::before { content: ""; position: absolute; top: 7px; bottom: 7px; left: -13px; width: 1px; background: #ffffff1a; }
+.web-header nav > .lang-toggle + :is(a, .web-feedback) { position: relative; margin-left: 13px; }
+.web-header nav > .lang-toggle + :is(a, .web-feedback)::before { content: ""; position: absolute; top: 7px; bottom: 7px; left: -13px; width: 1px; background: #ffffff1a; }
 .web-hero { width: min(1560px, calc(100% - 64px)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(460px, 1fr); gap: 28px 72px; margin: 0 auto; padding: 48px 0 64px; align-items: center; }
 .web-promise h1 { max-width: 720px; margin: 0 0 18px; font-size: clamp(44px, 6vw, 76px); font-weight: 560; line-height: .99; letter-spacing: -.055em; color: #fff; }
 .web-promise > p { max-width: 610px; margin: 0; color: #a8aab3; font-size: 18px; line-height: 1.65; }
@@ -136,9 +136,9 @@ html.web body { min-width: 0; min-height: 100vh; overflow-x: hidden; background:
 @media (max-width: 620px) {
   .web-header { height: 52px; padding: 0 14px; }
   .web-header nav { gap: 8px; }
-  .web-header nav a { width: 32px; padding: 0; justify-content: center; font-size: 0; }
-  .web-header nav > .lang-toggle + a { margin-left: 9px; }
-  .web-header nav > .lang-toggle + a::before { left: -9px; }
+  .web-header nav :is(a, .web-feedback) { width: 32px; padding: 0; justify-content: center; font-size: 0; }
+  .web-header nav > .lang-toggle + :is(a, .web-feedback) { margin-left: 9px; }
+  .web-header nav > .lang-toggle + :is(a, .web-feedback)::before { left: -9px; }
   .web-hero { width: calc(100% - 28px); gap: 28px; padding: 54px 0; }
   .web-promise h1 { font-size: 43px; }
   .web-promise > p { font-size: 15px; }
@@ -187,3 +187,26 @@ html.web .export-progress span { background: #0a84ff; }
 html.web :is(.icon-button, .player-button, .record-button, .editor-button, .chip, .zoom-toggle, .secondary-button, .style-delete) { border-radius: 8px; }
 html.web :is(.segmented, .editor-tabs) { border-radius: 9px; }
 html.web :is(.segmented button, .editor-tabs button) { border-radius: 6px; }
+
+/* Feedback (header button, the shared form) and the return-visit opt-in in the footer. */
+.web-header nav .web-feedback { font-family: inherit; cursor: pointer; }
+.web-footer { width: min(1560px, calc(100% - 64px)); display: flex; justify-content: flex-end; margin: 0 auto; padding: 8px 0 32px; }
+.web-footer:empty { display: none; }
+.web-visitor-consent { position: relative; max-width: 560px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid #ffffff13; border-radius: 8px; background: #0a0b0ecc; cursor: pointer; }
+.web-visitor-consent span { display: flex; flex-direction: column; gap: 2px; }
+.web-visitor-consent strong { font-size: 12px; font-weight: 650; }
+.web-visitor-consent small { color: #8b8e97; font-size: 12px; line-height: 1.45; }
+.web-visitor-consent input { position: absolute; opacity: 0; }
+.web-visitor-consent > i { position: relative; flex: none; width: 34px; height: 20px; border-radius: 99px; background: #ffffff20; }
+.web-visitor-consent > i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.web-visitor-consent input:checked + i { background: #0a84ff; }
+.web-visitor-consent input:checked + i::after { transform: translateX(14px); }
+.web-visitor-consent input:focus-visible + i { outline: 2px solid #0a84ff; outline-offset: 3px; }
+html.web .feedback-dialog { background: #1a1b20; box-shadow: 0 32px 100px #000c; }
+html.web .feedback-primary { background: #0a84ff; color: #fff; box-shadow: none; }
+html.web .feedback-primary:hover:not(:disabled) { background: #2b95ff; box-shadow: none; transform: none; }
+html.web .feedback-rating label.selected { border-color: #0a84ff80; background: #0a84ff2e; }
+html.web .feedback-rating .update-link { color: #6cb8ff; }
+@media (max-width: 620px) {
+  .web-footer { width: calc(100% - 28px); }
+}

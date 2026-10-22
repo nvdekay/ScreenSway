@@ -4,9 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecordingStudio } from "./RecordingStudio";
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), unlisten: vi.fn() }));
+const telemetry = vi.hoisted(() => ({ track: vi.fn(), status: { available: false, enabled: null as boolean | null } }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: tauri.listen }));
+vi.mock("../telemetry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../telemetry")>()),
+  track: telemetry.track,
+  useTelemetry: () => ({ status: telemetry.status, setEnabled: vi.fn() }),
+}));
 vi.mock("../i18n", () => ({ useI18n: () => ({ t: (key: string) => key, language: "en" }) }));
 vi.mock("../ZoomPreview", () => ({
   ZoomPreview: ({ edits, captions, onEditsChange, onUndo, onRedo, canUndo, canRedo }: any) => (
@@ -116,6 +122,32 @@ describe("RecordingStudio orchestration", () => {
     expect(screen.getByTestId("trim").textContent).toBe("250");
     fireEvent.click(screen.getByText("redo-edits"));
     expect(screen.getByTestId("trim").textContent).toBe("500");
+  });
+
+  it.each([
+    [true, "shows"],
+    [false, "hides"],
+  ])("counts the export's start and, with statistics %s, %s the feature question once", async (enabled) => {
+    telemetry.track.mockReset();
+    telemetry.status = { available: true, enabled };
+    const answer = tauri.invoke.getMockImplementation()!;
+    tauri.invoke.mockImplementation((command: string, args: unknown) => {
+      // Without captions: painting them needs a real canvas.
+      if (command === "load_captions") return Promise.resolve(null);
+      if (command === "export_recording") return Promise.resolve({ outputPath: "/Movies/ScreenSway/Exports/a.mp4", durationMs: 4_250, width: 1920, height: 1080 });
+      return answer(command, args);
+    });
+    render(<RecordingStudio recording={recording} />);
+    await flushEffects();
+
+    fireEvent.click(screen.getByRole("button", { name: "export.start" }));
+    await flushEffects();
+    await flushEffects();
+    expect(telemetry.track.mock.calls.map(([name]) => name)).toEqual(["export_started", "export_finished"]);
+    expect(telemetry.track).toHaveBeenCalledWith("export_started", { quality: expect.any(String), frame: expect.any(String), aspect: expect.any(String) });
+    expect(screen.getByRole("button", { name: /feedback.open/ })).toBeTruthy();
+    expect(screen.queryByText("survey.title") !== null).toBe(enabled);
+    expect(storage.has("screensway.survey.shownAt")).toBe(enabled);
   });
 
   it("turns timed transcription words into editable captions and persists them", async () => {
