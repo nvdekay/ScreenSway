@@ -7,8 +7,9 @@ The repository is private, so GitHub Release assets are not publicly downloadabl
 ```text
 https://download.screensway.site/latest/ScreenSway-macos-universal.dmg
 https://download.screensway.site/latest/ScreenSway-windows-x64-setup.exe
-https://download.screensway.site/v0.3.2/ScreenSway-macos-universal.app.tar.gz   # one release
-https://download.screensway.site/current                                     # {"tag": "v0.3.2"}
+https://download.screensway.site/v0.4.0/ScreenSway-macos-universal.app.tar.gz   # one release
+https://download.screensway.site/current                                     # {"tag": "v0.4.0"}
+https://screensway.site/update/latest.json                                    # updater feed, from R2
 ```
 
 The Worker is a custom domain of the `screensway.site` zone (Cloudflare DNS; the domain is registered at Tenten). Its old address `https://screensway-downloads.visual-lab-dm4.workers.dev` stays enabled, because update feeds published before the move point there.
@@ -31,15 +32,15 @@ Secrets: the Worker's `UPLOAD_TOKEN` (`wrangler secret put UPLOAD_TOKEN` in `app
 
 ## Publish a release
 
-1. Update the version in the root package, desktop package, `tauri.conf.json`, and `Cargo.toml`.
+1. Update the version in the root package, desktop package, `tauri.conf.json`, `apps/desktop/src-tauri/Cargo.toml` and `native/windows-capture/Cargo.toml`.
 2. Commit and push the changes.
-3. Create and push a matching tag, for example `v0.2.0`. The "Release macOS app" workflow refuses a tag that differs from the `tauri.conf.json` version.
-4. The workflow builds the universal DMG and signed updater bundle on a macOS 26 runner, verifies the app, publishes the release with SHA-256 checksums, then dispatches `windows.yml` with `publish=true` on the same tag, so both installers come from the tagged commit. The Windows workflow builds the installer, signs it for the updater in a separate job and uploads it with its checksum and signature, then runs the landing deploy, which copies both downloads to R2 and publishes `update/latest.json`.
+3. Create and push a matching tag, for example `v0.2.0`. The "Release macOS app" workflow refuses a tag that differs from the `tauri.conf.json` version. A tag runs the workflow files of its own commit: if a fix to a workflow is needed before the release exists, move the tag to the fixed commit (`git tag -f vX.Y.Z <commit> && git push -f origin vX.Y.Z`); after the release is published, ship a new version instead.
+4. The workflow builds the universal DMG and signed updater bundle on a macOS 26 runner, verifies the app, publishes the release with SHA-256 checksums, then dispatches `windows.yml` with `publish=true` on the same tag, so both installers come from the tagged commit. The Windows workflow builds the installer, signs it for the updater in a separate job and uploads it with its checksum and signature, then runs the site deploy, which copies both downloads to R2, uploads `update/latest.json` to the downloads Worker and deploys the site to Cloudflare.
 
 Workflow hardening: `web.yml` builds the site in a read-only job and publishes it from a separate `deploy` job that installs no dependencies (its scripts use only Node built-ins), so packages never run with the Cloudflare or downloads credentials. `audit.yml` checks `pnpm-lock.yaml` and both `Cargo.lock` files for published advisories weekly, on lockfile changes and on demand (three `zip` advisories from `tauri-plugin-updater` are ignored with the reason in the workflow). Every action is pinned to a full commit SHA (Dependabot, `.github/dependabot.yml`, proposes updates; keep the version comment next to each SHA). Jobs that install and build dependencies get a read-only `GITHUB_TOKEN`; only the small publish jobs (`publish-macos`, `publish-windows`) may write releases or dispatch workflows. The macOS build still needs the updater key because Tauri signs the `.app.tar.gz` while bundling. The Windows build never sees it: it builds with `src-tauri/tauri.unsigned.conf.json` (no updater artifacts) and `publish-windows` signs the installer with `tauri signer sign`, using the CLI version from the lockfile. Push builds of `windows.yml` therefore produce an installer without a `.sig`.
 5. Download both installers from the landing page and test them before announcing the release, including an in-app update from the previous version on each platform.
 
-Both macOS and Windows x64 are publicly available. Relevant pushes build a Windows test artifact. To replace the Windows release asset, dispatch `windows.yml` with `publish=true`; the app version must have a matching release. The unsigned Windows installer includes the offline speech model (about 494 MiB). Windows 11 has been tested; offline captions require AVX2, FMA, F16C and BMI2.
+Both macOS and Windows x64 are publicly available. Relevant pushes build a Windows test installer, uploaded as an artifact for three days when artifact storage allows (a full quota does not fail the build). To replace the Windows release asset, dispatch `windows.yml` with `publish=true`; the app version must have a matching release. The unsigned Windows installer includes the offline speech model (about 494 MiB). Windows 11 has been tested; offline captions require AVX2, FMA, F16C and BMI2.
 
 Before building Windows, run `pnpm setup:windows-speech` to download and verify the bundled model. See [Windows build and validation](windows-validation.md) for dependencies and checks.
 
@@ -57,7 +58,7 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD='<password from the password manager>'
 pnpm build:macos
 ```
 
-Do not place these values in `.env` files. The public feed is `https://screensway.site/update/latest.json`; the app lists it first and keeps `https://nvdekay.github.io/ScreenSway/update/latest.json` as a fallback (installed 0.3.x builds know only that one, and GitHub redirects it to the custom domain). It always describes the release the Worker currently offers.
+Do not place these values in `.env` files. The public feed is `https://screensway.site/update/latest.json`; the app lists it first and keeps `https://nvdekay.github.io/ScreenSway/update/latest.json` as a fallback (installed 0.3.x builds know only that one, and GitHub Pages redirects it to the custom domain, so keep the Pages custom domain set). The downloads Worker serves it from R2, and it always describes the release the Worker currently offers.
 
 ## Updates and macOS permissions
 

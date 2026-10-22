@@ -42,7 +42,7 @@ Unless noted otherwise, these workflows ship on both macOS and Windows. The floa
 
 Ordered by expected impact on activation, successful exports, sharing and repeat use. Each phase should ship as a small complete workflow before work starts on the next one.
 
-Status (October 2026, not yet released): items 2–15 are implemented on macOS and Windows (see "What ships today"); item 1 is deliberately postponed. Scope notes where the first version is narrower than the item: intro/outro pieces are title cards rather than video clips; user-owned sharing is a chosen export folder (synced or network) without provider links; automation is a URL scheme rather than a CLI; Windows echo removal depends on the device's voice processing. New Windows capture paths (camera, shortcut keys, regions, echo mode) still need the manual pass on a Windows PC described in `windows-release-test-plan.md`.
+Status: items 2–15 shipped in 0.4.0 (2026-10-21) on macOS and Windows (see "What ships today"); item 1 is deliberately postponed. Scope notes where the first version is narrower than the item: intro/outro pieces are title cards rather than video clips; user-owned sharing is a chosen export folder (synced or network) without provider links; automation is a URL scheme rather than a CLI; Windows echo removal depends on the device's voice processing. New Windows capture paths (camera, shortcut keys, regions, echo mode) still need the manual pass on a Windows PC described in `windows-release-test-plan.md`.
 
 ### Now — make the first successful recording effortless
 

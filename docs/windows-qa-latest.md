@@ -1,5 +1,9 @@
 # Kiểm tra Windows — 11/10/2026
 
+> Cập nhật 22/10/2026: bản 0.4.0 đã phát hành; CI Windows đã chạy test, xuất video và build
+> bộ cài, nhưng các tính năng mới (camera, phím tắt, vùng quay, chế độ khử vọng, nhập video)
+> chưa được kiểm tra trên máy Windows thật. Kết quả dưới đây là của bản 0.3.0.
+
 Trạng thái: build NSIS, 10 bước E2E trên app đã cài và kiểm tra uninstall đã PASS.
 Chưa chứng nhận toàn bộ ma trận máy/thiết bị và tình huống lỗi để phát hành rộng rãi.
 
