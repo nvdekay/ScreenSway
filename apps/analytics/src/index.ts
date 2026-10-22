@@ -5,11 +5,18 @@
  *   POST /v1/login    the admin account (Worker secrets) → a signed session cookie
  *   POST /v1/logout   clears that cookie
  *   GET  /v1/stats    session cookie or bearer token; every number the dashboard shows, as one JSON document
+ *   POST /v1/feedback public; a message someone chose to send (see feedback.ts)
+ *   GET  /v1/feedback, PATCH /v1/feedback/:id   admin only: read and triage feedback
+ *   POST /v1/internal/downloads   the downloads Worker only (DOWNLOADS_EVENT_TOKEN): a download started
  *   GET  /v1/health   liveness
  *   GET  /            the dashboard (static asset in ./public)
  *
  * See docs/analytics.md for the event catalogue and the response format.
  */
+import { listFeedback, pruneFeedback, submitFeedback, updateFeedback } from "./feedback";
+import { extras, firstSuccess, funnels, retention } from "./insights";
+import { TIME_ZONE, dayOf as dayAt, normalizeCountry, osFromAgent, randomId, shiftDay, shortText, tzOffsetMinutes } from "./normalize";
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -24,14 +31,26 @@ export interface Env {
   INGEST_LIMITER?: RateLimit;
   /** Sign-in attempts per client address, so the password cannot be guessed quickly. */
   LOGIN_LIMITER?: RateLimit;
+  /** Feedback submissions per client address, apart from event ingestion. */
+  FEEDBACK_LIMITER?: RateLimit;
+  FEEDBACK_RETENTION_DAYS?: string;
+  /** Shared with the downloads Worker, which reports download starts. */
+  DOWNLOADS_EVENT_TOKEN?: string;
 }
 
-/** web = landing page, studio = the browser app at /app/, app = the desktop app. */
-type Source = "web" | "studio" | "app";
+/**
+ * web = landing page, studio = the browser app at /app/, app = the desktop app, downloads =
+ * the downloads Worker (server side, never accepted from the public endpoint).
+ */
+type Source = "web" | "studio" | "app" | "downloads";
+type ClientSource = Exclude<Source, "downloads">;
 
 /** Events the API accepts. Anything else is dropped, so a typo or abuse cannot invent metrics. */
-const EVENTS: Record<Source, readonly string[]> = {
-  web: ["page_view", "download_click", "guide_open"],
+// Pricing and checkout events are accepted for when those pages exist; nothing sends them yet.
+// Purchases, refunds and licences never come from a client: a verified Merchant of Record
+// webhook will write them to commerce_events (docs/analytics.md).
+const EVENTS: Record<ClientSource, readonly string[]> = {
+  web: ["page_view", "download_click", "guide_open", "pricing_viewed", "checkout_started"],
   studio: [
     "app_open",
     "unsupported_shown",
@@ -43,6 +62,11 @@ const EVENTS: Record<Source, readonly string[]> = {
     "export_cancelled",
     "style_applied",
     "desktop_click",
+    "export_started",
+    "feature_interest",
+    "feedback_submitted",
+    "pricing_viewed",
+    "checkout_started",
   ],
   app: [
     "app_open",
@@ -57,6 +81,10 @@ const EVENTS: Record<Source, readonly string[]> = {
     "captions_generated",
     "captions_failed",
     "style_applied",
+    "export_started",
+    "feature_interest",
+    "feedback_submitted",
+    "license_activated",
   ],
 };
 
@@ -110,8 +138,6 @@ const MAX_EVENTS = 50;
 const MAX_PROPS = 12;
 const INSTALL_ID = /^[0-9a-f]{32}$/;
 const PROP_KEY = /^[a-z][a-z0-9_]{0,23}$/;
-// No slashes or backslashes: a value can be a label or a host name, never a path.
-const SHORT_TEXT = /^[\w .:+<>×-]{1,40}$/u;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -126,29 +152,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...CORS },
   });
 
-function dayOf(ts: number, env: Env): string {
-  const offset = Number(env.TZ_OFFSET_MINUTES ?? 0) || 0;
-  return new Date(ts + offset * 60_000).toISOString().slice(0, 10);
-}
-
-function shiftDay(day: string, delta: number): string {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + delta);
-  return date.toISOString().slice(0, 10);
-}
-
-/** The visitor's system from the browser's User-Agent, for events that do not say it themselves. */
-function osFromAgent(agent: string): string {
-  if (/Android|iPhone|iPad|iPod/i.test(agent)) return "mobile";
-  if (/Windows/i.test(agent)) return "windows";
-  if (/Macintosh|Mac OS X/i.test(agent)) return "macos";
-  if (/Linux|CrOS/i.test(agent)) return "linux";
-  return "other";
-}
-
-function shortText(value: unknown): string | null {
-  return typeof value === "string" && SHORT_TEXT.test(value) ? value : null;
-}
+const dayOf = (ts: number, env: Env) => dayAt(ts, tzOffsetMinutes(env.TZ_OFFSET_MINUTES));
 
 /** Keeps only short, flat values so an event can never carry a file path or free text. */
 function cleanProps(input: unknown): string | null {
@@ -209,23 +213,55 @@ async function ingest(request: Request, env: Env): Promise<Response> {
     actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT}`)).slice(0, 32);
   }
 
-  const country = shortText((request as Request<unknown, IncomingRequestCfProperties>).cf?.country);
+  // The country always comes from Cloudflare's edge, never from the request body.
+  const country = normalizeCountry((request as Request<unknown, IncomingRequestCfProperties>).cf?.country);
   const version = shortText(body.version);
-  // The landing page sends its system and language only as page_view properties: fill the
-  // columns from the browser for every web event, so each row says where it came from.
+  // Older landing builds sent the system and language only as page_view properties: fill the
+  // columns from the browser so every row says where it came from.
   const os = shortText(body.os) ?? (source === "app" ? null : osFromAgent(agent));
-  const firstLang = (body.events as { props?: { lang?: unknown } }[])[0]?.props?.lang;
+  const firstLang = (body.events as ({ props?: { lang?: unknown } } | null)[])[0]?.props?.lang;
   const locale = shortText(body.locale) ?? (source === "web" ? shortText(firstLang) : null);
+  const sessionId = randomId(body.sessionId);
+  // A stable browser ID exists only after the visitor opted in; the desktop app's install ID
+  // is already stable (and consented).
+  const visitorId = source === "app" ? null : randomId(body.visitorId);
   const insert = env.DB.prepare(
-    "INSERT INTO events (ts, day, source, name, actor, version, os, country, locale, props) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO events (ts, day, source, name, actor, version, os, country, locale, props, session_id, visitor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const statements = (body.events as unknown[]).slice(0, MAX_EVENTS).flatMap((event) => {
     const name = (event as { name?: unknown } | null)?.name;
     if (typeof name !== "string" || !EVENTS[source].includes(name)) return [];
-    return [insert.bind(now, day, source, name, actor, version, os, country, locale, cleanProps((event as { props?: unknown }).props))];
+    return [insert.bind(now, day, source, name, actor, version, os, country, locale, cleanProps((event as { props?: unknown }).props), sessionId, visitorId)];
   });
   if (statements.length > 0) await env.DB.batch(statements);
   return json({ accepted: statements.length }, 202);
+}
+
+const DOWNLOAD_PLATFORMS = ["macos", "windows", "macos_update"];
+
+/**
+ * A download the downloads Worker saw start (a GET of an installer from its first byte). It
+ * cannot see a download finish, so nothing here claims one did. The visitor is the same
+ * daily hash as the landing page's, from the address and browser the downloads Worker passes.
+ */
+async function ingestDownload(request: Request, env: Env): Promise<Response> {
+  if (!env.DOWNLOADS_EVENT_TOKEN || !sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DOWNLOADS_EVENT_TOKEN}`)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  if (!env.ACTOR_SALT) return json({ error: "ACTOR_SALT is not configured" }, 503);
+  const body = (await request.json().catch(() => null)) as { platform?: unknown; channel?: unknown; tag?: unknown; country?: unknown; address?: unknown; agent?: unknown } | null;
+  if (!body || typeof body.platform !== "string" || !DOWNLOAD_PLATFORMS.includes(body.platform)) return json({ error: "invalid" }, 400);
+  if (body.channel !== "latest" && body.channel !== "versioned") return json({ error: "invalid" }, 400);
+  const now = Date.now();
+  const day = dayOf(now, env);
+  const agent = typeof body.agent === "string" ? body.agent.slice(0, 512) : "";
+  const address = typeof body.address === "string" ? body.address.slice(0, 64) : "";
+  const actor = (await sha256Hex(`${day}|${address}|${agent}|${env.ACTOR_SALT}`)).slice(0, 32);
+  const props = JSON.stringify({ platform: body.platform, channel: body.channel });
+  await env.DB.prepare(
+    "INSERT INTO events (ts, day, source, name, actor, version, os, country, locale, props) VALUES (?, ?, 'downloads', 'download_started', ?, ?, ?, ?, NULL, ?)",
+  ).bind(now, day, actor, shortText(body.tag), osFromAgent(agent), normalizeCountry(body.country), props).run();
+  return json({ accepted: 1 }, 202);
 }
 
 /** A property as text; JSON booleans read as "true"/"false" instead of SQLite's 1/0. */
@@ -297,10 +333,44 @@ async function login(request: Request, env: Env): Promise<Response> {
 
 const logout = () => new Response(null, { status: 204, headers: { "Set-Cookie": sessionCookie("", 0), "Cache-Control": "no-store" } });
 
+/** The bearer token (scripts) or a dashboard session cookie. */
+async function admin(request: Request, env: Env): Promise<"bearer" | "session" | null> {
+  if (!env.DASHBOARD_TOKEN) return null;
+  if (sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`)) return "bearer";
+  return (await hasSession(request, env)) ? "session" : null;
+}
+
+// Admin feedback answers carry no CORS headers: only this dashboard (same origin) or a
+// script with the token reads them.
+const privateJson = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+
+/**
+ * A change made with the session cookie must come from this dashboard: the cookie is
+ * SameSite=Strict already, and the request must also be same-origin JSON with the
+ * dashboard's header, which a cross-site form cannot send.
+ */
+function sameOriginWrite(request: Request): boolean {
+  const origin = request.headers.get("Origin");
+  if (origin && origin !== new URL(request.url).origin) return false;
+  return request.headers.get("X-ScreenSway-Dashboard") === "1" && (request.headers.get("Content-Type") ?? "").startsWith("application/json");
+}
+
+async function feedbackAdmin(request: Request, env: Env, pathname: string): Promise<Response> {
+  const auth = await admin(request, env);
+  if (!auth) return privateJson({ error: "unauthorized" }, 401);
+  if (request.method === "GET" && pathname === "/v1/feedback") return listFeedback(new URL(request.url), env, privateJson);
+  const match = /^\/v1\/feedback\/(\d{1,12})$/.exec(pathname);
+  if (request.method === "PATCH" && match) {
+    if (auth === "session" && !sameOriginWrite(request)) return privateJson({ error: "forbidden" }, 403);
+    return updateFeedback(request, Number(match[1]), env, privateJson);
+  }
+  return privateJson({ error: "not found" }, 404);
+}
+
 async function stats(request: Request, env: Env): Promise<Response> {
   if (!env.DASHBOARD_TOKEN) return json({ error: "DASHBOARD_TOKEN is not configured" }, 503);
-  const bearer = sameSecret(request.headers.get("Authorization") ?? "", `Bearer ${env.DASHBOARD_TOKEN}`);
-  if (!bearer && !(await hasSession(request, env))) return json({ error: "unauthorized" }, 401);
+  if (!(await admin(request, env))) return json({ error: "unauthorized" }, 401);
 
   const url = new URL(request.url);
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));
@@ -362,7 +432,7 @@ async function computeStats(env: Env, days: number): Promise<Response> {
     webProp("lang"),
     webProp("theme"),
     // Older landing rows kept the system only in their properties.
-    db.prepare("SELECT ts, source, name, version, COALESCE(os, json_extract(props, '$.os')) os, country, locale, props FROM events ORDER BY id DESC LIMIT 40"),
+    db.prepare("SELECT ts, source, name, version, COALESCE(os, json_extract(props, '$.os')) os, country, locale, session_id, visitor_id IS NOT NULL consented, props FROM events ORDER BY id DESC LIMIT 40"),
     db.prepare("SELECT MIN(day) first, COUNT(*) events, COUNT(DISTINCT CASE WHEN source = 'app' THEN actor END) installs, SUM(source = 'web' AND name = 'download_click') downloads FROM events"),
   ];
   const breakdownQueries = BREAKDOWNS.map(([, source, name, prop]) =>
@@ -410,10 +480,19 @@ async function computeStats(env: Env, days: number): Promise<Response> {
   });
 
   const studio = await studioStats(db, days, from, today, prevFrom, prevTo);
+  // The range in Unix milliseconds: from the start of `from` to the end of `today`, Vietnam time.
+  const offset = tzOffsetMinutes(env.TZ_OFFSET_MINUTES) * 60_000;
+  const fromTs = Date.parse(`${from}T00:00:00Z`) - offset, toTs = Date.parse(`${shiftDay(today, 1)}T00:00:00Z`) - offset - 1;
+  const [journeys, firsts, cohorts, more] = await Promise.all([
+    funnels(db, fromTs, toTs),
+    firstSuccess(db, fromTs, toTs),
+    retention(db, from, today),
+    extras(db, from, today, days),
+  ]);
   const life = rows(allTime)[0] ?? {};
   return json({
     generatedAt: new Date().toISOString(),
-    range: { days, from, to: today, previousFrom: prevFrom, previousTo: prevTo, tzOffsetMinutes: Number(env.TZ_OFFSET_MINUTES ?? 0) || 0 },
+    range: { days, from, to: today, previousFrom: prevFrom, previousTo: prevTo, timeZone: TIME_ZONE, tzOffsetMinutes: tzOffsetMinutes(env.TZ_OFFSET_MINUTES) },
     totals: summarize(cur, one(visitsCur), one(installsCur), one(newCur)),
     previous: summarize(prev, one(visitsPrev), one(installsPrev), one(newPrev)),
     allTime: { firstDay: life.first ?? null, events: Number(life.events ?? 0), installs: Number(life.installs ?? 0), downloads: Number(life.downloads ?? 0) },
@@ -435,6 +514,13 @@ async function computeStats(env: Env, days: number): Promise<Response> {
     },
     breakdowns: Object.fromEntries(BREAKDOWNS.map(([key], index) => [key, keyCounts(results[fixed.length + index])])),
     studio,
+    funnels: journeys,
+    firstSuccess: firsts,
+    retention: cohorts,
+    featureInterest: more.featureInterest,
+    downloadsStarted: more.downloadsStarted,
+    commerce: more.commerce,
+    feedbackSubmitted: more.feedbackSubmitted,
     recent: rows(recent).map((row) => ({
       ts: Number(row.ts),
       source: row.source,
@@ -443,6 +529,9 @@ async function computeStats(env: Env, days: number): Promise<Response> {
       os: row.os,
       country: row.country,
       locale: row.locale,
+      // Only whether there is a session, not the ID itself.
+      session: row.session_id !== null,
+      consented: Number(row.consented) === 1,
       props: row.props ? (JSON.parse(String(row.props)) as unknown) : null,
     })),
   });
@@ -525,6 +614,9 @@ export default {
       if (pathname === "/v1/stats" && request.method === "GET") return await stats(request, env);
       if (pathname === "/v1/login" && request.method === "POST") return await login(request, env);
       if (pathname === "/v1/logout" && request.method === "POST") return logout();
+      if (pathname === "/v1/feedback" && request.method === "POST") return await submitFeedback(request, env, json);
+      if (pathname === "/v1/feedback" || pathname.startsWith("/v1/feedback/")) return await feedbackAdmin(request, env, pathname);
+      if (pathname === "/v1/internal/downloads" && request.method === "POST") return await ingestDownload(request, env);
       if (pathname === "/v1/health") return json({ ok: true });
     } catch (error) {
       console.error(error);
@@ -532,5 +624,9 @@ export default {
     }
     if (pathname.startsWith("/v1/")) return json({ error: "not found" }, 404);
     return env.ASSETS.fetch(request);
+  },
+  // Daily: delete feedback past its retention period.
+  async scheduled(_controller, env, context) {
+    context.waitUntil(pruneFeedback(env).then((removed) => console.log(`feedback retention: removed ${removed}`)));
   },
 } satisfies ExportedHandler<Env>;

@@ -15,7 +15,7 @@ const base = `http://127.0.0.1:${port}`;
 const wrangler = join(root, "node_modules", ".bin", "wrangler");
 
 execFileSync(wrangler, ["d1", "migrations", "apply", "screensway-analytics", "--local", "--persist-to", state], { cwd: root, stdio: "pipe" });
-const server = spawn(wrangler, ["dev", "--port", String(port), "--persist-to", state, "--var", "DASHBOARD_TOKEN:secret", "--var", "ACTOR_SALT:salt", "--var", "ADMIN_USERNAME:admin", "--var", "ADMIN_PASSWORD:pass word"], { cwd: root, stdio: "pipe" });
+const server = spawn(wrangler, ["dev", "--port", String(port), "--persist-to", state, "--var", "DOWNLOADS_EVENT_TOKEN:dltoken", "--var", "DASHBOARD_TOKEN:secret", "--var", "ACTOR_SALT:salt", "--var", "ADMIN_USERNAME:admin", "--var", "ADMIN_PASSWORD:pass word"], { cwd: root, stdio: "pipe" });
 let log = "";
 server.stdout.on("data", (chunk) => (log += chunk));
 server.stderr.on("data", (chunk) => (log += chunk));
@@ -154,6 +154,168 @@ try {
   await post({ source: "web", events: [{ name: "page_view", props: { referrer: "direct" } }] }, { "User-Agent": "visitor-3" });
   assert.equal((await stats()).body.totals.pageViews, 2, "a report within a minute is reused");
   assert.equal((await stats("secret", "?fresh=1")).body.totals.pageViews, 3, "fresh recomputes");
+
+  // Metadata, journeys and first successes. Each batch carries version, system, language and
+  // its journey; the country comes from Cloudflare, never from the body.
+  const J1 = "1".repeat(32), J2 = "2".repeat(32), J3 = "3".repeat(32), J4 = "4".repeat(32), V1 = "v".repeat(32);
+  const later = () => new Promise((resolve) => setTimeout(resolve, 15));
+  const web = (sessionId, events, extra = {}) => post({ source: "web", version: "0.4.0+abc1234", os: "windows", locale: "vi", sessionId, events, ...extra }, { "User-Agent": "journey-visitor" });
+  const studioBatch = (sessionId, events, extra = {}) => post({ source: "studio", version: "0.4.0", os: "windows", locale: "vi", sessionId, events, ...extra }, { "User-Agent": "journey-visitor" });
+  await web(J1, [{ name: "page_view", props: { referrer: "direct", lang: "vi" } }], { visitorId: V1, country: "US" });
+  await later();
+  await studioBatch(J1, [{ name: "app_open", props: { browser: "edge", referrer: "landing" } }], { visitorId: V1 });
+  await later();
+  await studioBatch(J1, [{ name: "recording_started", props: { source: "monitor" } }], { visitorId: V1 });
+  await later();
+  await studioBatch(J1, [{ name: "recording_finished", props: { duration: "<30s" } }], { visitorId: V1 });
+  await later();
+  await studioBatch(J1, [{ name: "export_started", props: { quality: "1080p" } }, { name: "export_finished", props: { quality: "1080p" } }], { visitorId: V1 });
+  // Opened but never recorded, and a finish from another journey that must not complete it.
+  await studioBatch(J2, [{ name: "app_open", props: { browser: "chrome", referrer: "direct" } }]);
+  await studioBatch(J3, [{ name: "recording_finished", props: { duration: "<30s" } }]);
+  // The same consenting visitor exports again later: still one first export.
+  await later();
+  await studioBatch(J4, [{ name: "app_open", props: { browser: "edge" } }, { name: "export_finished", props: { quality: "4k" } }], { visitorId: V1 });
+  // Enum-only feature interest; the desktop app's visitorId is ignored (its install ID is stable already).
+  await studioBatch(J1, [{ name: "feature_interest", props: { feature: "webcam" } }, { name: "feature_interest", props: { feature: "gif" } }], { visitorId: V1 });
+  await post({ source: "app", installId: installA, version: "0.4.0", os: "macos-aarch64", locale: "vi", sessionId: "a1".repeat(16), visitorId: V1, events: [{ name: "feature_interest", props: { feature: "webcam" } }] });
+
+  // Download starts are reported by the downloads Worker only, with its token.
+  const reportDownload = (token, body) => fetch(`${base}/v1/internal/downloads`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: JSON.stringify(body) });
+  assert.equal((await reportDownload("", { platform: "macos", channel: "latest" })).status, 401);
+  assert.equal((await reportDownload("wrong", { platform: "macos", channel: "latest" })).status, 401);
+  assert.equal((await reportDownload("dltoken", { platform: "linux", channel: "latest" })).status, 400);
+  assert.equal((await reportDownload("dltoken", { platform: "macos", channel: "latest", tag: "v0.4.0", country: "vn", address: "203.0.113.9", agent: "Mozilla/5.0 (Macintosh)" })).status, 202);
+  assert.equal((await reportDownload("dltoken", { platform: "macos_update", channel: "versioned", tag: "v0.4.0" })).status, 202);
+
+  const journeys = (await stats("secret", "?fresh=1")).body;
+  assert.equal(journeys.range.timeZone, "Asia/Ho_Chi_Minh");
+  assert.equal(journeys.range.tzOffsetMinutes, 420);
+  assert.deepEqual(journeys.funnels.web.steps, { opened: 3, started: 1, recorded: 1, exportStarted: 1, exported: 1 }, "an export without a recording in its journey is not a funnel export");
+  assert.deepEqual(journeys.funnels.web.landing, { visited: 1, openedStudio: 1 });
+  assert.deepEqual(journeys.funnels.web.by.browser.find((row) => row.key === "edge"), { key: "edge", opened: 2, recorded: 1, exported: 1 });
+  const firsts = journeys.firstSuccess.studio;
+  // Subjects: the consenting visitor (two journeys, one subject) plus journeys J2 and J3.
+  assert.equal(firsts.subjects, 3);
+  assert.equal(firsts.firstRecordings, 2);
+  assert.equal(firsts.firstExports, 1, "a second export is not a second first export");
+  assert.equal(firsts.averageTriesBeforeFirstExport, 1);
+  assert.equal(firsts.timeToFirstExportMs.samples, 1);
+  assert.ok(firsts.timeToFirstExportMs.median > 0 && firsts.timeToFirstExportMs.median < 10_000);
+  assert.ok(firsts.timeToFirstRecordingMs.median <= firsts.timeToFirstExportMs.median);
+  // Retention uses consented stable IDs only, and today's cohort is too young for day 1.
+  const webCohort = journeys.retention.web.cohorts.at(-1);
+  assert.deepEqual(webCohort, { day: journeys.range.to, size: 1, d1: null, d7: null, d30: null });
+  assert.deepEqual(journeys.retention.web.overall.d1, { rate: null, cohortSize: 0 });
+  assert.equal(journeys.retention.app.cohorts.at(-1).size, 2);
+  assert.deepEqual(journeys.featureInterest.find((item) => item.key === "webcam"), { key: "webcam", people: 2, choices: 2 });
+  assert.equal(journeys.downloadsStarted.total, 1, "only /latest downloads count as site downloads");
+  assert.deepEqual(journeys.downloadsStarted.byPlatform.map((row) => `${row.platform}:${row.channel}:${row.count}`).sort(), ["macos:latest:1", "macos_update:versioned:1"]);
+  assert.deepEqual(journeys.commerce, { funnel: { pricing_viewed: 0, checkout_started: 0 }, revenue: [] });
+  // Every new row shows where it came from.
+  const pageView = journeys.recent.find((event) => event.source === "web" && event.name === "page_view" && event.session);
+  assert.deepEqual([pageView.version, pageView.os, pageView.locale, pageView.consented], ["0.4.0+abc1234", "windows", "vi", true]);
+  assert.ok(pageView.country === null || /^([A-Z]{2}|T1)$/.test(pageView.country), "the country is Cloudflare's code");
+  const appInterest = journeys.recent.find((event) => event.source === "app" && event.name === "feature_interest");
+  assert.deepEqual([appInterest.version, appInterest.os, appInterest.consented], ["0.4.0", "macos-aarch64", false]);
+  assert.ok(!JSON.stringify(journeys.recent).includes(J1), "session IDs are not returned");
+
+  // Feedback: its own table, its own rate limit, never in events or reports.
+  const feedback = (body, headers = {}) =>
+    fetch(`${base}/v1/feedback`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body) });
+  let address = 0;
+  // Each request from its own address, so the 5-a-minute limit is tested on its own below.
+  const send = (body) => feedback(body, { "CF-Connecting-IP": `198.51.100.${++address}` });
+  const message = "<script>alert('xss')</script>\nDòng thứ hai & <b>đậm</b>";
+  const valid = { source: "studio", category: "bug", rating: 4, message, email: "nguoi.dung@example.com", includeMetadata: true, metadata: { version: "0.4.0", os: "windows", browser: "edge", locale: "vi", sessionId: J1 }, website: "" };
+  response = await send(valid);
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal((await send({ source: "app", category: "feature", rating: null, message: "Cần export GIF nhanh hơn", includeMetadata: false, metadata: { version: "0.4.0" } })).status, 201);
+  assert.equal((await send({ ...valid, message: "Một ý kiến khác", rating: 5, category: "idea" })).status, 201);
+  for (const [label, body, expected] of [
+    ["oversized", { ...valid, message: "x".repeat(13_000) }, 413],
+    ["unknown category", { ...valid, message: "a", category: "praise" }, 400],
+    ["rating 6", { ...valid, message: "b", rating: 6 }, 400],
+    ["rating 0", { ...valid, message: "c", rating: 0 }, 400],
+    ["fractional rating", { ...valid, message: "d", rating: 2.5 }, 400],
+    ["honeypot", { ...valid, message: "e", website: "http://spam.example" }, 400],
+    ["empty message", { ...valid, message: "   " }, 400],
+    ["too long", { ...valid, message: "ữ".repeat(4001) }, 400],
+    ["link spam", { ...valid, message: Array.from({ length: 6 }, (_, i) => `https://spam${i}.example`).join(" ") }, 400],
+    ["bad email", { ...valid, message: "f", email: "not an email" }, 400],
+    ["long email", { ...valid, message: "g", email: `${"a".repeat(250)}@example.com` }, 400],
+    ["unknown source", { ...valid, message: "h", source: "web" }, 400],
+    ["not JSON", "{", 400],
+    ["invalid UTF-8", new Uint8Array([0x7b, 0x22, 0xff, 0xfe, 0x22, 0x7d]), 400],
+  ]) {
+    assert.equal((await send(body)).status, expected, label);
+  }
+  // A resend of the same text from the same address within a day is refused.
+  assert.equal((await feedback({ ...valid, message: "Gửi hai lần" }, { "CF-Connecting-IP": "192.0.2.50" })).status, 201);
+  assert.equal((await feedback({ ...valid, message: "Gửi hai lần" }, { "CF-Connecting-IP": "192.0.2.50" })).status, 409);
+
+  // Only the admin reads or changes feedback.
+  const admin = (path, init = {}) => fetch(`${base}${path}`, { ...init, headers: { Authorization: "Bearer secret", ...(init.headers ?? {}) } });
+  assert.equal((await fetch(`${base}/v1/feedback`)).status, 401);
+  assert.equal((await fetch(`${base}/v1/feedback`, { headers: { Authorization: "Bearer wrong" } })).status, 401);
+  assert.equal((await fetch(`${base}/v1/feedback/1`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "read" }) })).status, 401);
+  let list = await (await admin("/v1/feedback")).json();
+  assert.equal(list.items.length, 4);
+  assert.equal(list.summary.total, 4);
+  assert.equal(list.summary.unread, 4);
+  assert.deepEqual(list.summary.categories.find((row) => row.key === "bug"), { key: "bug", count: 2 });
+  const stored = list.items.find((item) => item.message === message);
+  assert.ok(stored, "the message is stored exactly as typed, line break included");
+  assert.deepEqual([stored.email, stored.version, stored.os, stored.browser, stored.locale, stored.status], ["nguoi.dung@example.com", "0.4.0", "windows", "edge", "vi", "new"]);
+  assert.ok(stored.country === null || /^([A-Z]{2}|T1)$/.test(stored.country));
+  const plain = list.items.find((item) => item.source === "app");
+  assert.deepEqual([plain.version, plain.os, plain.country, plain.rating], [null, null, null, null], "no metadata without consent");
+  assert.equal((await admin("/v1/feedback")).headers.get("Access-Control-Allow-Origin"), null, "admin answers are not shared cross-origin");
+  // Filters, search and pages.
+  assert.equal((await (await admin("/v1/feedback?category=idea")).json()).items.length, 1);
+  assert.equal((await (await admin("/v1/feedback?rating=5")).json()).items.length, 1);
+  assert.equal((await (await admin("/v1/feedback?source=app")).json()).items.length, 1);
+  assert.equal((await (await admin(`/v1/feedback?q=${encodeURIComponent("GIF nhanh")}`)).json()).items.length, 1);
+  assert.equal((await (await admin(`/v1/feedback?q=${encodeURIComponent("100%")}`)).json()).items.length, 0, "LIKE wildcards are escaped");
+  assert.equal((await (await admin(`/v1/feedback?from=${journeys.range.to}&to=${journeys.range.to}`)).json()).items.length, 4);
+  const first = await (await admin("/v1/feedback?limit=3")).json();
+  assert.equal(first.items.length, 3);
+  assert.ok(first.nextCursor);
+  const second = await (await admin(`/v1/feedback?limit=3&cursor=${first.nextCursor}`)).json();
+  assert.equal(second.items.length, 1);
+  assert.equal(second.nextCursor, null);
+  assert.ok(!first.items.some((item) => second.items.some((other) => other.id === item.id)));
+
+  // Status changes: the token, or the dashboard's session with its same-origin header.
+  const patch = (id, body, headers) => fetch(`${base}/v1/feedback/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  assert.equal((await patch(stored.id, { status: "in_progress", adminNote: "Đã tái hiện" }, { Authorization: "Bearer secret" })).status, 200);
+  assert.equal((await patch(stored.id, { status: "done" }, { Authorization: "Bearer secret" })).status, 400);
+  assert.equal((await patch(999999, { status: "read" }, { Authorization: "Bearer secret" })).status, 404);
+  const adminSession = (await login({ username: "admin", password: "pass word" })).headers.get("Set-Cookie").split(";")[0];
+  assert.equal((await patch(stored.id, { status: "resolved" }, { Cookie: adminSession })).status, 403, "a cookie alone cannot change feedback");
+  assert.equal((await patch(stored.id, { status: "resolved" }, { Cookie: adminSession, "X-ScreenSway-Dashboard": "1", Origin: "https://evil.example" })).status, 403);
+  assert.equal((await patch(stored.id, { status: "resolved" }, { Cookie: adminSession, "X-ScreenSway-Dashboard": "1" })).status, 200);
+  assert.equal((await fetch(`${base}/v1/feedback?status=resolved`, { headers: { Cookie: adminSession } })).status, 200);
+  list = await (await admin("/v1/feedback?status=resolved")).json();
+  assert.deepEqual([list.items.length, list.items[0].adminNote, list.summary.unread], [1, "Đã tái hiện", 0]);
+
+  // Feedback text and email never reach events or reports.
+  const report = JSON.stringify((await stats("secret", "?fresh=1")).body);
+  assert.ok(!report.includes("nguoi.dung@example.com"), "no email in reports");
+  assert.ok(!report.includes("Dòng thứ hai") && !report.includes("xss"), "no feedback text in reports");
+  // Free text in an event property is dropped like any long label.
+  await studioBatch(J1, [{ name: "feedback_submitted", props: { category: "bug", message: "Một câu góp ý dài có dấu cách và chữ có dấu" } }]);
+  const submitted = (await stats("secret", "?fresh=1")).body;
+  assert.deepEqual(submitted.feedbackSubmitted, [{ key: "bug", count: 1 }]);
+  assert.ok(!JSON.stringify(submitted.recent).includes("Một câu góp ý"), "free text never lands in props");
+
+  // Feedback has its own rate limit per address.
+  let feedbackLimited = false;
+  for (let attempt = 0; attempt < 12 && !feedbackLimited; attempt++) {
+    feedbackLimited = (await feedback({ ...valid, message: `spam ${attempt}` }, { "CF-Connecting-IP": "192.0.2.99" })).status === 429;
+  }
+  assert.ok(feedbackLimited, "feedback was not rate limited");
 
   // The dashboard itself is served as a static page.
   const page = await fetch(base);

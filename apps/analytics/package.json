@@ -7,11 +7,13 @@
     "dev": "wrangler d1 migrations apply screensway-analytics --local && wrangler dev",
     "deploy": "wrangler d1 migrations apply screensway-analytics --remote && wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "test:e2e": "node test/e2e.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250124.0",
     "typescript": "^5.9.2",
+    "vitest": "catalog:",
     "wrangler": "^4.0.0"
   }
 }

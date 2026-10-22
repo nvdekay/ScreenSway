@@ -34,12 +34,26 @@ name = "LOGIN_LIMITER"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
 
+# POST /v1/feedback per client address, apart from events: a person never sends five
+# messages a minute; a spam script gets 429.
+[[ratelimits]]
+name = "FEEDBACK_LIMITER"
+namespace_id = "1003"
+simple = { limit = 5, period = 60 }
+
+# Daily at 03:17 UTC: delete feedback older than FEEDBACK_RETENTION_DAYS.
+[triggers]
+crons = ["17 3 * * *"]
+
 [vars]
 # Days in the dashboard follow this offset from UTC (420 = Asia/Ho_Chi_Minh).
 TZ_OFFSET_MINUTES = "420"
+# Feedback is kept 24 months, then deleted by the cron above.
+FEEDBACK_RETENTION_DAYS = "730"
 
 # Secrets (set with `wrangler secret put`, or in .dev.vars for local runs):
 #   DASHBOARD_TOKEN  bearer token for GET /v1/stats, and the key that signs dashboard sessions
 #   ADMIN_USERNAME   the dashboard account
 #   ADMIN_PASSWORD
-#   ACTOR_SALT       salt for the daily-rotating visitor hash
+#   ACTOR_SALT       salt for the daily-rotating visitor hash and the feedback duplicate check
+#   DOWNLOADS_EVENT_TOKEN  shared with the downloads Worker, which reports download starts
