@@ -9,6 +9,7 @@ import { StudioShowcase } from "./StudioShowcase";
 import { Faq } from "./Faq";
 import { WebBrowserSection } from "./WebBrowserSection";
 import { InstallGuide, openInstallGuide } from "./InstallGuide";
+import { FeedbackButton, FeedbackDialog } from "./Feedback";
 import { LanguageToggle } from "../../desktop/src/LanguageToggle";
 import { LogoMark } from "../../desktop/src/LogoMark";
 import { HeroBackdrop } from "./HeroBackdrop";
@@ -170,7 +171,7 @@ function SiteHeader() {
     <header className="site-header" data-scrolled={scrolled}>
       <div className="navrow" data-open={open}>
         <Logo />
-        <div className="links" id="site-nav" ref={panelRef} onClick={(event) => { if ((event.target as Element).closest("a, .header-download")) setOpen(false); }}>
+        <div className="links" id="site-nav" ref={panelRef} onClick={(event) => { if ((event.target as Element).closest("a, .header-download, .header-feedback")) setOpen(false); }}>
           <nav aria-label="Main">
             {NAV_SECTIONS.map((id) => (
               <SectionLink key={id} to={id} aria-current={current === id ? "location" : undefined}>{t(`nav.${id}`)}</SectionLink>
@@ -178,6 +179,7 @@ function SiteHeader() {
           </nav>
           <div className="header-actions">
             <LanguageSwitch />
+            <FeedbackButton />
           </div>
           {/* The browser version is part of this site, at ./app/. */}
           <a className="header-web" href="./app/"><span className="header-web-dot" aria-hidden="true" />{t("nav.web")}</a>
@@ -303,6 +305,7 @@ export default function App() {
       </main>
 
       <InstallGuide />
+      <FeedbackDialog />
 
       <footer className="site-footer">
         <Logo />

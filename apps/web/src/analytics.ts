@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { identityFields, optedOut, visitorOs } from "../../studio-web/src/identity";
+import { browserName, identityFields, journeyId, optedOut, visitorOs } from "../../studio-web/src/identity";
+import { feedbackProblem, type FeedbackRequest } from "../../desktop/src/feedback";
 import type { DownloadPlatform } from "./downloads";
 
 /**
@@ -58,4 +59,39 @@ export function trackPageView(lang: string, theme: string) {
 
 export function trackDownload(platform: DownloadPlatform, placement: "hero" | "cta" | "guide") {
   track("download_click", { platform, placement });
+}
+
+/**
+ * Sends the feedback form to the same endpoint as the browser app and the desktop app, as
+ * source "web". Rejects with a message key the form translates; a 409 means the same text
+ * already arrived (a retry after a lost answer), so it counts as sent. Free text never goes
+ * into the usage events above.
+ */
+export async function sendFeedback(request: FeedbackRequest): Promise<void> {
+  if (!ENDPOINT) throw "feedback.errorUnavailable";
+  if (feedbackProblem(request)) throw "feedback.errorInvalid";
+  const sessionId = request.includeMetadata ? journeyId() : null;
+  const body = {
+    source: "web",
+    category: request.category,
+    rating: request.rating,
+    message: request.message.trim(),
+    email: request.email?.trim() || null,
+    includeMetadata: request.includeMetadata,
+    ...(request.includeMetadata
+      ? { metadata: { version: __SCREENSWAY_VERSION__, os: visitorOs(), browser: browserName(), ...(request.locale ? { locale: request.locale } : {}), ...(sessionId ? { sessionId } : {}) } }
+      : {}),
+    website: request.website,
+  };
+  let response: Response;
+  try {
+    // A plain-text body keeps this a simple cross-origin request (no preflight); the API reads JSON.
+    response = await fetch(`${ENDPOINT}/v1/feedback`, { method: "POST", body: JSON.stringify(body) });
+  } catch {
+    throw "feedback.errorNetwork";
+  }
+  if (response.ok || response.status === 409) return;
+  if (response.status === 429) throw "feedback.errorRateLimited";
+  if (response.status === 400 || response.status === 413) throw "feedback.errorInvalid";
+  throw "feedback.errorUnavailable";
 }
