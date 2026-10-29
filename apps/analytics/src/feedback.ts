@@ -1,5 +1,5 @@
 /**
- * Feedback people write and send on purpose, from the browser app and the desktop app.
+ * Feedback people write and send on purpose, from the browser app, the desktop app and the landing page.
  *
  *   POST  /v1/feedback       public, rate limited; stores one message
  *   GET   /v1/feedback       admin; filtered, searchable, paginated list plus a summary
@@ -18,7 +18,7 @@ export interface FeedbackEnv {
   ACTOR_SALT?: string;
 }
 
-export const FEEDBACK_SOURCES = ["studio", "app"] as const;
+export const FEEDBACK_SOURCES = ["studio", "app", "web"] as const;
 export const FEEDBACK_CATEGORIES = ["idea", "bug", "feature", "experience", "other"] as const;
 export const FEEDBACK_STATUSES = ["new", "read", "in_progress", "resolved", "archived"] as const;
 
@@ -97,7 +97,7 @@ export async function submitFeedback(request: Request, env: FeedbackEnv, reply: 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
   ).bind(
     now, now, dayOf(now, tzOffsetMinutes(env.TZ_OFFSET_MINUTES)), body.source, body.category, rating, message, email,
-    shortText(metadata.version), shortText(metadata.os), body.source === "studio" ? shortText(metadata.browser) : null,
+    shortText(metadata.version), shortText(metadata.os), body.source === "studio" || body.source === "web" ? shortText(metadata.browser) : null,
     shortText(metadata.locale), country, randomId(metadata.sessionId), hash,
   ).run();
   return reply({ ok: true }, 201);

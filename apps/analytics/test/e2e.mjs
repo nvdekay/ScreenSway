@@ -298,8 +298,8 @@ try {
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { ok: true });
   assert.equal((await send({ source: "app", category: "feature", rating: null, message: "Cần export GIF nhanh hơn", includeMetadata: false, metadata: { version: "0.4.0" } })).status, 201);
-  // The browser app posts without a Content-Type (text/plain, no preflight) and reads the answer cross-origin.
-  response = await feedback({ ...valid, message: "Một ý kiến khác", rating: 5, category: "idea" }, { "Content-Type": "text/plain", "CF-Connecting-IP": "198.51.100.200" });
+  // The landing page (like the browser app) posts without a Content-Type (text/plain, no preflight) and reads the answer cross-origin.
+  response = await feedback({ ...valid, source: "web", message: "Một ý kiến khác", rating: 5, category: "idea", metadata: { ...valid.metadata, version: "landing", browser: "chrome" } }, { "Content-Type": "text/plain", "CF-Connecting-IP": "198.51.100.200" });
   assert.equal(response.status, 201);
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   for (const [label, body, expected] of [
@@ -314,7 +314,7 @@ try {
     ["link spam", { ...valid, message: Array.from({ length: 6 }, (_, i) => `https://spam${i}.example`).join(" ") }, 400],
     ["bad email", { ...valid, message: "f", email: "not an email" }, 400],
     ["long email", { ...valid, message: "g", email: `${"a".repeat(250)}@example.com` }, 400],
-    ["unknown source", { ...valid, message: "h", source: "web" }, 400],
+    ["unknown source", { ...valid, message: "h", source: "landing" }, 400],
     ["not JSON", "{", 400],
     ["invalid UTF-8", new Uint8Array([0x7b, 0x22, 0xff, 0xfe, 0x22, 0x7d]), 400],
   ]) {
@@ -345,6 +345,8 @@ try {
   assert.equal((await (await admin("/v1/feedback?category=idea")).json()).items.length, 1);
   assert.equal((await (await admin("/v1/feedback?rating=5")).json()).items.length, 1);
   assert.equal((await (await admin("/v1/feedback?source=app")).json()).items.length, 1);
+  const landing = (await (await admin("/v1/feedback?source=web")).json()).items;
+  assert.deepEqual(landing.map((item) => [item.message, item.browser]), [["Một ý kiến khác", "chrome"]], "landing feedback keeps its browser");
   assert.equal((await (await admin(`/v1/feedback?q=${encodeURIComponent("GIF nhanh")}`)).json()).items.length, 1);
   assert.equal((await (await admin(`/v1/feedback?q=${encodeURIComponent("100%")}`)).json()).items.length, 0, "LIKE wildcards are escaped");
   assert.equal((await (await admin(`/v1/feedback?from=${journeys.range.to}&to=${journeys.range.to}`)).json()).items.length, 4);

@@ -6,7 +6,7 @@ ScreenSway measures downloads, landing-page visits, browser-app usage and deskto
 landing page (apps/web)        ──┐
 browser app (apps/studio-web)  ──┼─ POST /v1/events ───┐
 desktop app (opt-in)           ──┘                     ├─► Worker + D1 (apps/analytics) ─► GET /v1/stats, /v1/feedback ─► dashboard (/)
-browser app, desktop app ──────── POST /v1/feedback ──┤
+landing, browser app, desktop app ─ POST /v1/feedback ┤
 downloads Worker ───── service binding: download starts ┘
 ```
 
@@ -99,7 +99,7 @@ ScreenSway sells nothing yet, so no purchase data exists and the dashboard says 
 
 ## Feedback
 
-People open the form (`apps/desktop/src/FeedbackDialog.tsx`, shared by both apps) after an export, from desktop Settings, and from the web app's header. The desktop app posts from Rust (`src-tauri/src/feedback.rs`), the web app from `apps/studio-web/src/backend.ts` without a `Content-Type` (a `text/plain` request, so no CORS preflight). Both treat `409` as received. After a successful export, a feature card (`FeatureSurvey.tsx`) appears at most every 14 days (`localStorage` key `screensway.survey.shownAt`, a UI convenience) and only when statistics are on; it sends `feature_interest` events, and text under "Other" opens the feedback form.
+People open the form (`apps/desktop/src/FeedbackDialog.tsx`, shared by both apps) after an export, from desktop Settings, from the web app's header and from the landing page's header (`apps/web/src/Feedback.tsx`, the same fields and checks in the landing's own dialog, source `web`). The desktop app posts from Rust (`src-tauri/src/feedback.rs`), the web app from `apps/studio-web/src/backend.ts` and the landing page from `apps/web/src/analytics.ts`, both without a `Content-Type` (a `text/plain` request, so no CORS preflight). Both treat `409` as received. After a successful export, a feature card (`FeatureSurvey.tsx`) appears at most every 14 days (`localStorage` key `screensway.survey.shownAt`, a UI convenience) and only when statistics are on; it sends `feature_interest` events, and text under "Other" opens the feedback form.
 
 `POST /v1/feedback` (public, its own `FEEDBACK_LIMITER`: 5 a minute per address):
 
@@ -109,7 +109,7 @@ People open the form (`apps/desktop/src/FeedbackDialog.tsx`, shared by both apps
   "website": "" }
 ```
 
-- `source`: `studio` or `app`. `category`: `idea`, `bug`, `feature`, `experience`, `other`. `rating`: integer 1–5 or `null`. `message`: 1–4,000 characters after trimming (control characters other than line breaks and tabs are removed; more than 5 links is refused). `email`: optional, at most 254 characters, roughly an address. `website` is a honeypot that must stay empty.
+- `source`: `studio` (browser app), `app` (desktop) or `web` (landing page; the dashboard calls it "Landing"). `browser` is kept for `studio` and `web`. `category`: `idea`, `bug`, `feature`, `experience`, `other`. `rating`: integer 1–5 or `null`. `message`: 1–4,000 characters after trimming (control characters other than line breaks and tabs are removed; more than 5 links is refused). `email`: optional, at most 254 characters, roughly an address. `website` is a honeypot that must stay empty.
 - The body is at most 12 KiB of valid UTF-8. Metadata is kept only when `includeMetadata` is true, then filtered to short labels; the country is added from Cloudflare. The same text from the same address within a day gets `409` (a salted hash, not the address, is stored).
 - Answers: `201 {ok:true}`, `400 {error:"invalid"}` without details, `409`, `413`, `429`.
 
