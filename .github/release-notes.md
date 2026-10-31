@@ -1,4 +1,8 @@
 ## Install
+**What's new in 0.4.3:** set how deep every zoom goes with one slider; play parts of a recording faster or slower (0.5× to 8×, their sound is silenced); add background music from your computer with its own volume, looping and fade-out; record an area with a fixed shape (16:9, 9:16, 1:1, 4:3) and see it outlined on screen. On Windows, saving a recording no longer waits forever when something goes wrong, and exports of odd-sized recordings are no longer striped. ScreenSway now keeps a small log on your computer, and the bug report form opens its folder if you want to send it to us.
+
+**Tiếng Việt — Có gì mới ở 0.4.3:** chỉnh độ sâu của mọi đoạn zoom bằng một thanh trượt; cho từng đoạn chạy nhanh hoặc chậm (0.5× đến 8×, đoạn đó tắt tiếng); thêm nhạc nền từ máy với âm lượng, lặp lại và nhỏ dần ở cuối; quay một vùng theo tỷ lệ cố định (16:9, 9:16, 1:1, 4:3) với khung hiện trên màn hình. Trên Windows, lưu bản quay không còn treo mãi khi gặp lỗi, và video xuất từ bản quay có kích thước lẻ không còn bị sọc. ScreenSway giờ ghi một file log nhỏ trên máy, và form báo lỗi có nút mở thư mục chứa nó nếu bạn muốn gửi cho chúng tôi.
+
 **What's new in 0.4.2:** if macOS keeps blocking screen recording after an update even though ScreenSway is switched on in System Settings, the app now offers **Reset permission and reopen**: it clears the old permission, reopens ScreenSway and macOS asks again. The install steps on the website are clearer too.
 
 **Tiếng Việt — Có gì mới ở 0.4.2:** nếu sau khi cập nhật macOS vẫn chặn ghi màn hình dù ScreenSway đang được bật trong Cài đặt hệ thống, app giờ có nút **Đặt lại quyền và mở lại**: xoá quyền cũ, mở lại ScreenSway và macOS sẽ hỏi lại. Hướng dẫn cài trên trang web cũng rõ hơn.
