@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyZoomStrength,
+  normalizeSpeeds,
   buildSourceTimes,
   buildCameraTrack,
   clampCamera,
@@ -165,6 +166,51 @@ describe("applyZoomStrength", () => {
     expect(applyZoomStrength([zoomAt(3)], 9)[0].scale).toBe(MAX_ZOOM_SCALE);
     expect(applyZoomStrength([zoomAt(1.8)], 0)[0].scale).toBeCloseTo(1.2);
     expect(applyZoomStrength([zoomAt(1.8)], Number.NaN)[0].scale).toBe(1.8);
+  });
+});
+
+describe("speed changes", () => {
+  const edits = { ...NO_EDITS, trimStartMs: 1_000, trimEndMs: 9_000, cuts: [{ id: "c", startMs: 4_000, endMs: 5_000 }], speeds: [
+    { id: "fast", startMs: 2_000, endMs: 6_000, rate: 4 },
+  ] };
+
+  it("splits the kept parts where the speed changes, around cuts", () => {
+    expect(keptRanges(edits, 10_000)).toEqual([
+      { startMs: 1_000, endMs: 2_000 },
+      { startMs: 2_000, endMs: 4_000, rate: 4 },
+      { startMs: 5_000, endMs: 6_000, rate: 4 },
+      { startMs: 6_000, endMs: 9_000 },
+    ]);
+  });
+
+  it("maps time both ways through faster parts", () => {
+    const ranges = keptRanges(edits, 10_000);
+    // 1 s + 2 s and 1 s at 4× + 3 s
+    expect(keptDuration(ranges)).toBe(1_000 + 500 + 250 + 3_000);
+    expect(sourceToOutputTime(ranges, 3_000)).toBe(1_000 + 250);
+    expect(outputToSourceTime(ranges, 1_250)).toBe(3_000);
+    expect(outputToSourceTime(ranges, 1_500)).toBe(5_000);
+    expect(outputToSourceTime(ranges, 1_750)).toBe(6_000);
+    expect(sourceToOutputTime(ranges, 7_000)).toBe(2_750);
+    const times = buildSourceTimes(ranges, 60);
+    expect(times.length).toBe(Math.ceil(4.75 * 60));
+    // Inside the 4× part each frame moves four frames' worth of recording.
+    const fast = times.findIndex((time) => time >= 2_000);
+    expect(times[fast + 1] - times[fast]).toBeCloseTo(4_000 / 60);
+  });
+
+  it("drops speeds that change nothing and keeps the rest in range", () => {
+    const range = { startMs: 0, endMs: 10_000 };
+    expect(normalizeSpeeds([
+      { id: "same", startMs: 0, endMs: 1_000, rate: 1 },
+      { id: "tiny", startMs: 2_000, endMs: 2_050, rate: 2 },
+      { id: "wild", startMs: 3_000, endMs: 4_000, rate: 100 },
+      { id: "overlap", startMs: 3_500, endMs: 12_000, rate: 0.5 },
+      { id: "broken", startMs: 5_000, endMs: 6_000, rate: Number.NaN },
+    ], range)).toEqual([
+      { id: "wild", startMs: 3_000, endMs: 4_000, rate: 16 },
+      { id: "overlap", startMs: 4_000, endMs: 10_000, rate: 0.5 },
+    ]);
   });
 });
 

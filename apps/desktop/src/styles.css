@@ -370,6 +370,11 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .timeline-playhead { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: #fff; box-shadow: 0 0 6px #000a; pointer-events: none; }
 .zoom-inspector { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
 .framing-lane { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; pointer-events: none; }
+.speed-lane { position: absolute; left: 0; right: 0; bottom: 0; height: 13px; pointer-events: none; }
+.speed-lane ~ .framing-lane { bottom: 14px; }
+.speed-block { position: absolute; top: 0; bottom: 0; z-index: 4; min-width: 3px; overflow: hidden; padding: 0 3px; border: 0; border-radius: 2px; background: #f59e0bb3; color: #1c1300; font-size: 9px; font-weight: 700; line-height: 13px; text-align: left; white-space: nowrap; pointer-events: auto; }
+.speed-block.selected { background: #fbbf24; box-shadow: 0 0 0 2px #fbbf2466; }
+.speed-inspector { display: flex; flex-direction: column; gap: 10px; }
 .framing-block { position: absolute; top: 0; bottom: 0; z-index: 3; min-width: 3px; padding: 0; border: 0; border-radius: 2px; background: #34d399a6; pointer-events: auto; }
 .framing-block.selected { background: #34d399; box-shadow: 0 0 0 2px #34d39966; }
 .framing-position { grid-column: 1 / -1; }

@@ -26,6 +26,21 @@ export interface CutSegment {
   endMs: number;
 }
 
+/** A part of the recording played faster or slower; its sound is left out of the export. */
+export interface SpeedSegment {
+  id: string;
+  startMs: number;
+  endMs: number;
+  /** 2 plays twice as fast; below 1 is slow motion. */
+  rate: number;
+}
+
+/** The speeds the timeline offers. */
+export const SPEED_RATES = [0.5, 1.5, 2, 4, 8] as const;
+export const DEFAULT_SPEED_RATE = 2;
+const MIN_SPEED_RATE = 0.25;
+const MAX_SPEED_RATE = 16;
+
 export interface Redaction {
   id: string;
   /** Normalized coordinates in the source recording. */
@@ -125,6 +140,8 @@ export interface RecordingEdits {
   chapters?: { startMs: number; title: string }[];
   /** Scales how deep every zoom goes (see `applyZoomStrength`); missing means 1. */
   zoomStrength?: number;
+  /** Parts played faster or slower, in recording time. */
+  speeds?: SpeedSegment[];
 }
 
 export interface FramingSegment {
@@ -138,7 +155,25 @@ export interface FramingSegment {
 export const DEFAULT_KEYSTROKE_OVERLAY: KeystrokeOverlay = { enabled: true, position: "bottom", size: "medium", theme: "dark" };
 export const NO_EDITS: RecordingEdits = { trimStartMs: 0, trimEndMs: null, zooms: null, cuts: [], redactions: [], keystrokeOverlay: DEFAULT_KEYSTROKE_OVERLAY };
 
-export interface SourceRange { startMs: number; endMs: number }
+/** A kept part of the recording; `rate` above 1 plays it faster (missing means 1). */
+export interface SourceRange { startMs: number; endMs: number; rate?: number }
+
+const rateOf = (range: SourceRange) => range.rate ?? 1;
+/** How long a kept part lasts in the finished video. */
+const outputLength = (range: SourceRange) => (range.endMs - range.startMs) / rateOf(range);
+
+/** Sorted, non-overlapping speed changes inside the trimmed recording, with a usable rate. */
+export function normalizeSpeeds(speeds: SpeedSegment[], range: SourceRange): SpeedSegment[] {
+  const result: SpeedSegment[] = [];
+  for (const speed of [...speeds].sort((a, b) => a.startMs - b.startMs)) {
+    if (!Number.isFinite(speed.rate) || speed.rate === 1) continue;
+    const startMs = Math.max(range.startMs, result.at(-1)?.endMs ?? range.startMs, Math.round(speed.startMs));
+    const endMs = Math.min(range.endMs, Math.round(speed.endMs));
+    if (endMs - startMs < 100) continue;
+    result.push({ ...speed, startMs, endMs, rate: Math.min(MAX_SPEED_RATE, Math.max(MIN_SPEED_RATE, speed.rate)) });
+  }
+  return result;
+}
 
 /** Sorted, non-overlapping cuts inside the trimmed recording. */
 export function normalizeCuts(cuts: CutSegment[], range: SourceRange): CutSegment[] {
@@ -165,19 +200,34 @@ export function keptRanges(edits: RecordingEdits, durationMs: number): SourceRan
     cursor = cut.endMs;
   }
   if (cursor < range.endMs) kept.push({ startMs: cursor, endMs: range.endMs });
-  return kept;
+  const speeds = normalizeSpeeds(edits.speeds ?? [], range);
+  if (speeds.length === 0) return kept;
+  // Each kept part is split where its speed changes.
+  return kept.flatMap((part) => {
+    const pieces: SourceRange[] = [];
+    let start = part.startMs;
+    for (const speed of speeds) {
+      if (speed.endMs <= start || speed.startMs >= part.endMs) continue;
+      if (speed.startMs > start) pieces.push({ startMs: start, endMs: speed.startMs });
+      const end = Math.min(part.endMs, speed.endMs);
+      pieces.push({ startMs: Math.max(start, speed.startMs), endMs: end, rate: speed.rate });
+      start = end;
+    }
+    if (start < part.endMs) pieces.push({ startMs: start, endMs: part.endMs });
+    return pieces;
+  });
 }
 
 export function keptDuration(ranges: SourceRange[]): number {
-  return ranges.reduce((sum, range) => sum + range.endMs - range.startMs, 0);
+  return ranges.reduce((sum, range) => sum + outputLength(range), 0);
 }
 
 export function sourceToOutputTime(ranges: SourceRange[], sourceMs: number): number {
   let output = 0;
   for (const range of ranges) {
     if (sourceMs < range.startMs) return output;
-    if (sourceMs <= range.endMs) return output + sourceMs - range.startMs;
-    output += range.endMs - range.startMs;
+    if (sourceMs <= range.endMs) return output + (sourceMs - range.startMs) / rateOf(range);
+    output += outputLength(range);
   }
   return output;
 }
@@ -185,8 +235,8 @@ export function sourceToOutputTime(ranges: SourceRange[], sourceMs: number): num
 export function outputToSourceTime(ranges: SourceRange[], outputMs: number): number {
   let remaining = Math.max(0, outputMs);
   for (const range of ranges) {
-    const length = range.endMs - range.startMs;
-    if (remaining < length) return range.startMs + remaining;
+    const length = outputLength(range);
+    if (remaining < length) return range.startMs + remaining * rateOf(range);
     remaining -= length;
   }
   return ranges.at(-1)?.endMs ?? 0;

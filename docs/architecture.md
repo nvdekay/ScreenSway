@@ -26,7 +26,8 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
     metadata/keystrokes.json      shortcut chords ({timeMs, keys}) when shortcut capture was on, otherwise []
     edits.json                    studio edits (absent until something is edited): trim, zooms, middle cuts,
                                   redactions, shortcut overlay, camera placement, held framing, chapters,
-                                  zoom strength (how deep every zoom plays; applied when the view is planned)
+                                  zoom strength (how deep every zoom plays; applied when the view is planned),
+                                  speed changes (parts played at 0.5–8×; split into kept ranges with a `rate`)
     transcript.json               timed words from speech recognition
     captions.json                 caption lines as edited in the studio, their language and whether they are shown
   Exports/                        (or the folder chosen in Settings, remembered in the app's config folder)

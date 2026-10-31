@@ -131,17 +131,18 @@ export function trimCaptions(lines: CaptionLine[], startMs: number, endMs: numbe
 }
 
 /** Clips source-timed captions to kept ranges and retimes them onto the edited output. */
-export function retimeCaptions(lines: CaptionLine[], ranges: { startMs: number; endMs: number }[]): CaptionLine[] {
+export function retimeCaptions(lines: CaptionLine[], ranges: { startMs: number; endMs: number; rate?: number }[]): CaptionLine[] {
   const result: CaptionLine[] = [];
   let offset = 0;
   for (const range of ranges) {
+    const rate = range.rate ?? 1;
     for (const line of lines) {
       const start = Math.max(line.startMs, range.startMs);
       const end = Math.min(line.endMs, range.endMs);
       if (!line.text.trim() || end <= start) continue;
-      result.push({ ...line, id: `${line.id}-${result.length}`, startMs: offset + start - range.startMs, endMs: offset + end - range.startMs });
+      result.push({ ...line, id: `${line.id}-${result.length}`, startMs: offset + (start - range.startMs) / rate, endMs: offset + (end - range.startMs) / rate });
     }
-    offset += range.endMs - range.startMs;
+    offset += (range.endMs - range.startMs) / rate;
   }
   return result;
 }

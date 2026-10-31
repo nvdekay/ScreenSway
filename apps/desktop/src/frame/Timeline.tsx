@@ -10,15 +10,19 @@ import {
   MIN_ZOOM_SCALE,
   normalizeZooms,
   normalizeCuts,
+  normalizeSpeeds,
+  DEFAULT_SPEED_RATE,
+  SPEED_RATES,
   samplePointer,
   type Canvas,
   type PointerEvent,
   type RecordingEdits,
   type CutSegment,
+  type SpeedSegment,
   type FramingSegment,
   type ZoomSegment,
 } from "@screensway/core";
-import { Crosshair, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2, Wand2 } from "lucide-react";
+import { Crosshair, Gauge, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2, Wand2 } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { formatPrecise } from "../format";
 import { useI18n } from "../i18n";
@@ -72,6 +76,9 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
   const selected = zooms.find((zoom) => zoom.id === selectedId) ?? null;
   const cuts = normalizeCuts(edits.cuts ?? [], range);
   const selectedCut = cuts.find((cut) => cut.id === selectedCutId) ?? null;
+  const [selectedSpeedId, setSelectedSpeedId] = useState<string | null>(null);
+  const speeds = normalizeSpeeds(edits.speeds ?? [], range);
+  const selectedSpeed = speeds.find((speed) => speed.id === selectedSpeedId) ?? null;
   const [selectedFramingId, setSelectedFramingId] = useState<string | null>(null);
   const framing = framingEnabled ? edits.framing ?? [] : [];
   const selectedFraming = framing.find((item) => item.id === selectedFramingId) ?? null;
@@ -184,13 +191,33 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
     const next = normalizeCuts([...cuts, cut], range);
     if (!next.some((candidate) => candidate.id === cut.id)) return;
     setCuts(next);
-    setSelectedCutId(cut.id);
+    setSelectedCutId(cut.id); setSelectedSpeedId(null);
     setSelectedId(null);
   };
   const updateCut = (id: string, patch: Partial<CutSegment>) => setCuts(cuts.map((cut) => cut.id === id ? { ...cut, ...patch } : cut));
   const removeCut = (id: string) => {
     setCuts(cuts.filter((cut) => cut.id !== id));
+    setSelectedCutId(null); setSelectedSpeedId(null);
+  };
+
+  const setSpeeds = (next: SpeedSegment[]) => onChange((current) => ({ ...current, speeds: normalizeSpeeds(next, range) }));
+  const addSpeed = () => {
+    const now = Math.min(range.endMs - 100, Math.max(range.startMs, currentTimeMs()));
+    const speed = { id: `speed-${Date.now().toString(36)}`, startMs: Math.round(now), endMs: Math.round(Math.min(range.endMs, now + 3_000)), rate: DEFAULT_SPEED_RATE };
+    // A new speed replaces the part of others it overlaps.
+    const others = speeds.filter((item) => item.endMs <= speed.startMs || item.startMs >= speed.endMs);
+    const next = normalizeSpeeds([...others, speed], range);
+    if (!next.some((candidate) => candidate.id === speed.id)) return;
+    setSpeeds(next);
+    setSelectedSpeedId(speed.id);
     setSelectedCutId(null);
+    setSelectedFramingId(null);
+    setSelectedId(null);
+  };
+  const updateSpeed = (id: string, patch: Partial<SpeedSegment>) => setSpeeds(speeds.map((speed) => (speed.id === id ? { ...speed, ...patch } : speed)));
+  const removeSpeed = (id: string) => {
+    setSpeeds(speeds.filter((speed) => speed.id !== id));
+    setSelectedSpeedId(null);
   };
 
   const setFraming = (next: FramingSegment[]) => onChange((current) => ({ ...current, framing: [...next].sort((a, b) => a.startMs - b.startMs) }));
@@ -207,7 +234,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
     const others = framing.filter((item) => item.endMs <= segment.startMs || item.startMs >= segment.endMs);
     setFraming([...others, segment]);
     setSelectedFramingId(segment.id);
-    setSelectedCutId(null);
+    setSelectedCutId(null); setSelectedSpeedId(null);
     setSelectedId(null);
   };
   const updateFraming = (id: string, patch: Partial<FramingSegment>) => setFraming(framing.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -259,6 +286,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
             <Plus size={13} aria-hidden="true" /> {t("timeline.addZoom")}
           </button>
           <button className="editor-button compact" onClick={addCut}><Scissors size={13} aria-hidden="true" /> {t("timeline.addCut")}</button>
+          <button className="editor-button compact" onClick={addSpeed} title={t("timeline.addSpeedHint")}><Gauge size={13} aria-hidden="true" /> {t("timeline.addSpeed")}</button>
           {framingEnabled && (
             <button className="editor-button compact" onClick={addFraming}><Crosshair size={13} aria-hidden="true" /> {t("timeline.holdFraming")}</button>
           )}
@@ -309,10 +337,26 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
               style={{ left: percent(cut.startMs), width: percent(cut.endMs - cut.startMs) }}
               aria-label={t("timeline.cutLabel", { start: formatPrecise(cut.startMs), end: formatPrecise(cut.endMs) })}
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => { setSelectedCutId(cut.id); setSelectedId(null); onSeek(cut.startMs); }}
+              onClick={() => { setSelectedCutId(cut.id); setSelectedSpeedId(null); setSelectedId(null); onSeek(cut.startMs); }}
             />
           ))}
         </div>
+        {speeds.length > 0 && (
+          <div className="speed-lane" aria-label={t("timeline.speeds")}>
+            {speeds.map((speed) => (
+              <button
+                key={speed.id}
+                className={`speed-block${speed.id === selectedSpeedId ? " selected" : ""}`}
+                style={{ left: percent(speed.startMs), width: percent(speed.endMs - speed.startMs) }}
+                aria-label={t("timeline.speedLabel", { rate: speed.rate, start: formatPrecise(speed.startMs), end: formatPrecise(speed.endMs) })}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => { setSelectedSpeedId(speed.id); setSelectedCutId(null); setSelectedFramingId(null); setSelectedId(null); onSeek(speed.startMs); }}
+              >
+                {speed.rate}×
+              </button>
+            ))}
+          </div>
+        )}
         {framing.length > 0 && (
           <div className="framing-lane" aria-label={t("timeline.framing")}>
             {framing.map((item) => (
@@ -322,7 +366,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
                 style={{ left: percent(item.startMs), width: percent(item.endMs - item.startMs) }}
                 aria-label={t("timeline.framingLabel", { start: formatPrecise(item.startMs), end: formatPrecise(item.endMs) })}
                 onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => { setSelectedFramingId(item.id); setSelectedCutId(null); setSelectedId(null); onSeek(item.startMs); }}
+                onClick={() => { setSelectedFramingId(item.id); setSelectedCutId(null); setSelectedSpeedId(null); setSelectedId(null); onSeek(item.startMs); }}
               />
             ))}
           </div>
@@ -374,6 +418,30 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
           <button className="editor-button compact" onClick={() => removeZoom(selected.id)}>
             <Trash2 size={13} aria-hidden="true" /> {t("timeline.removeZoom")}
           </button>
+        </div>
+      )}
+      {selectedSpeed && (
+        <div className="speed-inspector">
+          <div className="chip-row" role="radiogroup" aria-label={t("timeline.speed")}>
+            {SPEED_RATES.map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                role="radio"
+                aria-checked={selectedSpeed.rate === rate}
+                className={`chip${selectedSpeed.rate === rate ? " selected" : ""}`}
+                onClick={() => updateSpeed(selectedSpeed.id, { rate })}
+              >
+                {rate}×
+              </button>
+            ))}
+          </div>
+          <div className="cut-inspector">
+            <label><span>{t("timeline.cutStart")}</span><input type="number" min={range.startMs / 1_000} max={(selectedSpeed.endMs - 100) / 1_000} step={0.1} value={(selectedSpeed.startMs / 1_000).toFixed(1)} onChange={(event) => updateSpeed(selectedSpeed.id, { startMs: Math.min(selectedSpeed.endMs - 100, Number(event.target.value) * 1_000) })} /></label>
+            <label><span>{t("timeline.cutEnd")}</span><input type="number" min={(selectedSpeed.startMs + 100) / 1_000} max={range.endMs / 1_000} step={0.1} value={(selectedSpeed.endMs / 1_000).toFixed(1)} onChange={(event) => updateSpeed(selectedSpeed.id, { endMs: Math.max(selectedSpeed.startMs + 100, Number(event.target.value) * 1_000) })} /></label>
+            <button className="editor-button compact" onClick={() => removeSpeed(selectedSpeed.id)}><Trash2 size={13} /> {t("timeline.removeSpeed")}</button>
+          </div>
+          <p className="editor-note">{t("timeline.speedNote")}</p>
         </div>
       )}
       {selectedCut && (

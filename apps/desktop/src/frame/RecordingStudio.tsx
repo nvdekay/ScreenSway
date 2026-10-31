@@ -150,7 +150,10 @@ function parseEdits(value: unknown): RecordingEdits {
     ? edits.framing.filter((item) => item && typeof item.id === "string" && [item.startMs, item.endMs, item.x].every((field) => number(field) !== null))
     : [];
   const zoomStrength = number(edits.zoomStrength) ?? undefined;
-  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters, zoomStrength };
+  const speeds = Array.isArray(edits.speeds)
+    ? edits.speeds.filter((item) => item && typeof item.id === "string" && [item.startMs, item.endMs, item.rate].every((field) => number(field) !== null))
+    : [];
+  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters, zoomStrength, speeds };
 }
 
 

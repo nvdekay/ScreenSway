@@ -26,8 +26,8 @@ export interface ExportJob {
   startMs: number;
   /** The recording's time for every frame, which skips parts cut from the middle. */
   sourceTimesMs?: number[];
-  /** The parts of the recording that are kept, in order. */
-  sourceRanges?: { startMs: number; endMs: number }[];
+  /** The parts of the recording that are kept, in order; a part with a `rate` other than 1 plays faster or slower and is silent. */
+  sourceRanges?: { startMs: number; endMs: number; rate?: number }[];
   /** Silence before the recording's sound, under an intro card. */
   leadInMs?: number;
   frames: RenderFrame[];
@@ -132,13 +132,20 @@ export async function renderExport(
     if (audioTrack && audioSource) {
       const length = frames.length / fps;
       const ranges = job.sourceRanges?.length
-        ? job.sourceRanges.map((range) => ({ start: range.startMs / 1_000, end: range.endMs / 1_000 }))
-        : [{ start: startMs / 1_000, end: startMs / 1_000 + length }];
+        ? job.sourceRanges.map((range) => ({ start: range.startMs / 1_000, end: range.endMs / 1_000, rate: range.rate ?? 1 }))
+        : [{ start: startMs / 1_000, end: startMs / 1_000 + length, rate: 1 }];
       const leadIn = (job.leadInMs ?? 0) / 1_000;
       if (leadIn > 0.01) await audioSource.add(silence(leadIn, audioTrack.sampleRate, audioTrack.numberOfChannels));
       // Sound is laid end to end, so gaps in the recording are filled with silence to stay in sync.
       let total = leadIn;
       for (const range of ranges) {
+        if (range.rate !== 1) {
+          // A faster or slower part keeps its place in time but not its sound.
+          const duration = Math.min((range.end - range.start) / range.rate, length - total);
+          if (duration > 0.001) await audioSource.add(silence(duration, audioTrack.sampleRate, audioTrack.numberOfChannels));
+          total += duration;
+          continue;
+        }
         const end = Math.min(range.end, range.start + length - total);
         let written = range.start;
         for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack).buffers(range.start, end)) {

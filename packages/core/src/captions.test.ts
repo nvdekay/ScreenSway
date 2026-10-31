@@ -96,6 +96,14 @@ describe("captions on the timeline", () => {
       { id: "two-1", startMs: 1_200, endMs: 2_000, text: "Again" },
     ]);
   });
+
+  it("shortens captions in a faster part", () => {
+    const source = [{ id: "one", startMs: 1_000, endMs: 3_000, text: "Quick" }, { id: "two", startMs: 4_000, endMs: 5_000, text: "Normal" }];
+    expect(retimeCaptions(source, [{ startMs: 0, endMs: 4_000, rate: 2 }, { startMs: 4_000, endMs: 6_000 }])).toEqual([
+      { id: "one-0", startMs: 500, endMs: 1_500, text: "Quick" },
+      { id: "two-1", startMs: 2_000, endMs: 3_000, text: "Normal" },
+    ]);
+  });
 });
 
 describe("titles and chapters", () => {

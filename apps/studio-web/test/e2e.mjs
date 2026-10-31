@@ -457,6 +457,37 @@ try {
     console.log("middle cut leaves out picture and sound: ok");
   }
 
+  // 7c. A part played faster is shorter in the picture, and silent but in step in the sound.
+  {
+    const page = await openApp();
+    await record(page, 4_000);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    await page.evaluate(() => {
+      const video = document.querySelector(".player-content video");
+      video.pause();
+      video.currentTime = 0.5;
+    });
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Change speed" }).click();
+    await page.getByRole("radio", { name: "4×" }).click();
+    assert.equal(await page.locator(".speed-block").textContent(), "4×", "the timeline shows the speed");
+    const [speedStart, speedEnd] = await page.locator(".speed-inspector input").evaluateAll((inputs) => inputs.map((input) => Number(input.value)));
+    assert.ok(speedEnd - speedStart > 1, `a part plays faster (${speedStart}–${speedEnd} s)`);
+    const handle = async (name) => Number(await page.getByRole("slider", { name }).or(page.getByLabel(name)).first().getAttribute("aria-valuenow"));
+    const recorded = ((await handle("End of the video")) - (await handle("Start of the video"))) / 1_000;
+    const expected = recorded - (speedEnd - speedStart) * (1 - 1 / 4);
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, "speed.png") });
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.locator(".export-done").waitFor({ timeout: 60_000 });
+    const exported = await readExport(page);
+    assert.ok(Math.abs(exported.videoDuration - expected) < 0.1, `the faster part is a quarter as long (${exported.videoDuration.toFixed(3)} of ${expected.toFixed(3)} s)`);
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, `sound stays in step (${exported.audioDuration.toFixed(3)} / ${exported.videoDuration.toFixed(3)} s)`);
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("faster part shortens the picture and keeps the sound in step: ok");
+  }
+
   // 8. In Vietnamese, a file that refuses to open is explained in Vietnamese, not in the
   //    browser's technical English, and the chosen file is untouched.
   {

@@ -80,6 +80,13 @@ struct ExportJob: Decodable {
     struct SourceRange: Decodable {
         let startMs: Double
         let endMs: Double
+        /// Above 1 the part plays faster, below 1 slower; its sound is left out (silence).
+        let rate: Double?
+        var changesSpeed: Bool { (rate ?? 1) != 1 }
+        /// How long the part lasts in the finished video.
+        var outputDuration: CMTime {
+            CMTime(value: CMTimeValue(((endMs - startMs) / (rate ?? 1)).rounded()), timescale: 1_000)
+        }
         var timeRange: CMTimeRange {
             CMTimeRange(
                 start: CMTime(value: CMTimeValue(startMs.rounded()), timescale: 1_000),
@@ -354,8 +361,10 @@ enum Exporter {
         }
         let duration = try await rendered.load(.duration)
         let sourceAudioEnd = try await audioTrack.load(.timeRange).end
-        let audioRanges = ranges?.map(\.timeRange) ?? [CMTimeRange(start: start, duration: duration)]
-        guard audioRanges.contains(where: { $0.start < sourceAudioEnd && $0.duration > .zero }) else {
+        // Faster or slower parts keep their place in time as silence.
+        let audioRanges: [(range: CMTimeRange, silence: CMTime?)] = ranges?.map { ($0.timeRange, $0.changesSpeed ? $0.outputDuration : nil) }
+            ?? [(CMTimeRange(start: start, duration: duration), nil)]
+        guard audioRanges.contains(where: { $0.silence == nil && $0.range.start < sourceAudioEnd && $0.range.duration > .zero }) else {
             try FileManager.default.moveItem(at: videoURL, to: outputURL)
             return
         }
@@ -367,7 +376,22 @@ enum Exporter {
         }
         try compositionVideo.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: videoTrack, at: .zero)
         var destination = CMTime.zero
-        for range in audioRanges {
+        var laidOut = false
+        let speedAudioURL = videoURL.deletingPathExtension().appendingPathExtension("speed.m4a")
+        defer { try? FileManager.default.removeItem(at: speedAudioURL) }
+        if let ranges, ranges.contains(where: \.changesSpeed) {
+            // Real silence where a part plays faster or slower: an empty stretch of a composition
+            // track is only an edit-list gap, which many players skip, pulling later sound early.
+            try await writeSpeedAudio(from: source, track: audioTrack, ranges: ranges, to: speedAudioURL)
+            let speedAudio = AVURLAsset(url: speedAudioURL)
+            if let track = try await speedAudio.loadTracks(withMediaType: .audio).first {
+                let length = try await speedAudio.load(.duration)
+                try compositionAudio.insertTimeRange(CMTimeRange(start: .zero, duration: length), of: track, at: .zero)
+                destination = length
+            }
+            laidOut = true
+        }
+        for (range, _) in audioRanges where !laidOut {
             let available = CMTimeMaximum(.zero, sourceAudioEnd - range.start)
             let clipped = CMTimeRange(start: range.start, duration: CMTimeMinimum(range.duration, available))
             if clipped.duration > .zero {
@@ -384,6 +408,91 @@ enum Exporter {
         }
         try await exporter.export(to: outputURL, as: .mp4)
         try? FileManager.default.removeItem(at: videoURL)
+    }
+
+    /// The kept sound laid end to end as AAC, with silence as long as each faster or slower
+    /// part lasts in the video, and padded so it never ends before that part's place.
+    private static func writeSpeedAudio(from source: AVURLAsset, track: AVAssetTrack, ranges: [ExportJob.SourceRange], to url: URL) async throws {
+        try? FileManager.default.removeItem(at: url)
+        let sampleRate = 48_000.0
+        let bytesPerFrame = 4
+        var description = AudioStreamBasicDescription(
+            mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
+            mBytesPerPacket: UInt32(bytesPerFrame), mFramesPerPacket: 1, mBytesPerFrame: UInt32(bytesPerFrame),
+            mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0
+        )
+        var format: CMAudioFormatDescription?
+        guard CMAudioFormatDescriptionCreate(allocator: nil, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format) == noErr, let format else {
+            throw CaptureError.exportFailed("Could not describe the export's sound.")
+        }
+        let pcm: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
+        ]
+        let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
+        ])
+        input.expectsMediaDataInRealTime = false
+        writer.add(input)
+        guard writer.startWriting() else { throw CaptureError.exportFailed("Could not write the export's sound: \(writer.error?.localizedDescription ?? "unknown error")") }
+        writer.startSession(atSourceTime: .zero)
+
+        var written: Int64 = 0
+        func append(_ data: Data) async throws {
+            let frames = data.count / bytesPerFrame
+            guard frames > 0 else { return }
+            var block: CMBlockBuffer?
+            guard CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: data.count, blockAllocator: nil, customBlockSource: nil, offsetToData: 0, dataLength: data.count, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block) == noErr, let block else {
+                throw CaptureError.exportFailed("Could not allocate the export's sound.")
+            }
+            _ = data.withUnsafeBytes { CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: data.count) }
+            var buffer: CMSampleBuffer?
+            guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: frames, presentationTimeStamp: CMTime(value: written, timescale: CMTimeScale(sampleRate)), packetDescriptions: nil, sampleBufferOut: &buffer) == noErr, let buffer else {
+                throw CaptureError.exportFailed("Could not prepare the export's sound.")
+            }
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 2_000_000) }
+            guard input.append(buffer) else { throw CaptureError.exportFailed("Could not write the export's sound: \(writer.error?.localizedDescription ?? "unknown error")") }
+            written += Int64(frames)
+        }
+        func silence(_ frames: Int64) async throws {
+            var remaining = frames
+            while remaining > 0 {
+                let chunk = min(remaining, 4_800)
+                try await append(Data(count: Int(chunk) * bytesPerFrame))
+                remaining -= chunk
+            }
+        }
+
+        for range in ranges {
+            let wanted = Int64((range.outputDuration.seconds * sampleRate).rounded())
+            if range.changesSpeed {
+                try await silence(wanted)
+                continue
+            }
+            let reader = try AVAssetReader(asset: source)
+            reader.timeRange = range.timeRange
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: pcm)
+            reader.add(output)
+            guard reader.startReading() else { throw CaptureError.exportFailed("Could not read the recording's sound.") }
+            var got: Int64 = 0
+            while got < wanted, let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
+                let frames = min(Int64(CMSampleBufferGetNumSamples(buffer)), wanted - got)
+                var data = Data(count: Int(frames) * bytesPerFrame)
+                _ = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!) }
+                try await append(data)
+                got += frames
+            }
+            reader.cancelReading()
+            // Sound that ends before the picture is padded, so later parts stay in step.
+            try await silence(wanted - got)
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        guard writer.status == .completed else {
+            throw CaptureError.exportFailed("Could not write the export's sound: \(writer.error?.localizedDescription ?? "unknown error")")
+        }
     }
 
     // MARK: Images

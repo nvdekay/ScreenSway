@@ -278,8 +278,14 @@ export function ZoomPreview({
         video.currentTime = startMs / 1_000;
       }
       const timeMs = Math.min(endMs, Math.max(startMs, video.currentTime * 1_000));
+      // A faster or slower part plays at its speed, without its sound, as in the export.
+      const rate = activeRange?.rate ?? 1;
+      if (video.playbackRate !== rate) video.playbackRate = rate;
+      const volume = rate === 1 ? 1 : 0;
+      if (video.volume !== volume) video.volume = volume;
       // The camera file follows the screen; it only needs a nudge when it drifts.
       const webcam = cameraRef.current;
+      if (webcam && webcam.playbackRate !== rate) webcam.playbackRate = rate;
       if (webcam && webcam.readyState > 0) {
         const target = Math.max(0, video.currentTime - (recording.cameraOffsetMs ?? 0) / 1_000);
         if (!webcam.seeking && Math.abs(webcam.currentTime - target) > (video.paused ? 0.03 : 0.15)) webcam.currentTime = target;

@@ -62,6 +62,9 @@ pub struct CameraJob {
 pub struct SourceRange {
     pub start_ms: f64,
     pub end_ms: f64,
+    /// Above 1 the part plays faster, below 1 slower; its sound is left out (silence).
+    #[serde(default)]
+    pub rate: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -144,7 +147,8 @@ impl ExportJob {
                 && (self.source_times_ms.len() != self.frames.len()
                     || self.source_times_ms.iter().copied().any(|time| !finite(time) || time < 0.0)
                     || self.source_times_ms.windows(2).any(|pair| pair[1] < pair[0])))
-            || self.source_ranges.iter().any(|range| !finite(range.start_ms) || !finite(range.end_ms) || range.start_ms < 0.0 || range.end_ms <= range.start_ms)
+            || self.source_ranges.iter().any(|range| !finite(range.start_ms) || !finite(range.end_ms) || range.start_ms < 0.0 || range.end_ms <= range.start_ms
+                || range.rate.is_some_and(|rate| !finite(rate) || rate <= 0.0))
             || self.redactions.iter().any(|r| ![r.x, r.y, r.width, r.height].into_iter().all(finite) || r.width <= 0.0 || r.height <= 0.0 || (r.mode != "blur" && r.mode != "solid"))
             || self.captions.iter().any(|c| {
                 ![c.start_ms, c.end_ms, c.x, c.y].into_iter().all(finite) || c.end_ms <= c.start_ms

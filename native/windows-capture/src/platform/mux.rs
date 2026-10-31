@@ -52,11 +52,29 @@ pub fn sample(data: &[u8], time: i64, duration: i64) -> Result<IMFSample, String
     }
 }
 
+/// A kept part of the recording's sound, in 100 ns ticks. A part played faster or slower
+/// (`rate` other than 1) becomes silence as long as it lasts in the finished video.
+pub struct AudioRange {
+    pub start: i64,
+    pub end: i64,
+    pub rate: f64,
+}
+
+impl AudioRange {
+    fn silent(&self) -> bool {
+        self.rate != 1.0
+    }
+
+    fn output_length(&self) -> i64 {
+        ((self.end - self.start) as f64 / self.rate).round() as i64
+    }
+}
+
 pub fn with_source_audio(
     video: &Path,
     source: &Path,
     output: &Path,
-    ranges: &[(i64, i64)],
+    ranges: &[AudioRange],
     lead_in: i64,
     progress: &mut dyn FnMut(),
 ) -> Result<(), String> {
@@ -120,7 +138,8 @@ pub fn with_source_audio(
         let mut range_index = 0usize;
         let mut range_started = false;
         let mut audio_offset = lead_in;
-        let mut ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset)?;
+        let mut silence_written = 0i64;
+        let mut ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset, &mut silence_written)?;
         while vp.is_some() || ap.is_some() {
             progress();
             if vp
@@ -133,7 +152,7 @@ pub fn with_source_audio(
             } else {
                 let (s, _) = ap.take().unwrap();
                 writer.WriteSample(aus, &s).step("Writing exported audio")?;
-                ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset)?;
+                ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset, &mut silence_written)?;
             }
         }
         writer.Finalize().step("Finalizing MP4 with audio")?;
@@ -143,13 +162,30 @@ pub fn with_source_audio(
 
 fn next_audio_ranges(
     reader: &IMFSourceReader,
-    ranges: &[(i64, i64)],
+    ranges: &[AudioRange],
     index: &mut usize,
     started: &mut bool,
     output_offset: &mut i64,
+    silence_written: &mut i64,
 ) -> Result<Option<(IMFSample, i64)>, String> {
     loop {
-        let Some(&(start, end)) = ranges.get(*index) else { return Ok(None) };
+        let Some(range) = ranges.get(*index) else { return Ok(None) };
+        let (start, end) = (range.start, range.end);
+        if range.silent() {
+            // Silence in chunks of at most 0.1 s, so the muxer interleaves it with the video.
+            let length = (range.output_length() - *silence_written).min(1_000_000);
+            let frames = (length as i128 * 48_000 / 10_000_000) as usize;
+            if frames > 0 {
+                let time = *output_offset + *silence_written;
+                let duration = frames as i64 * 10_000_000 / 48_000;
+                *silence_written += duration;
+                return Ok(Some((sample(&vec![0u8; frames * 4], time, duration)?, time)));
+            }
+            *output_offset += range.output_length();
+            *silence_written = 0;
+            *index += 1;
+            continue;
+        }
         if !*started {
             reader::seek(reader, start)?;
             *started = true;

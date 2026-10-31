@@ -319,7 +319,7 @@ impl Session {
         }
         let temp = video.with_extension("audio.mp4");
         let mut reported = std::time::Instant::now();
-        super::mux::with_source_audio(video, &self.path, &temp, &[(0, duration)], 0, &mut || {
+        super::mux::with_source_audio(video, &self.path, &temp, &[super::mux::AudioRange { start: 0, end: duration, rate: 1.0 }], 0, &mut || {
             if reported.elapsed() >= Duration::from_secs(1) {
                 reported = std::time::Instant::now();
                 super::saving("audio");
