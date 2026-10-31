@@ -574,6 +574,8 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .feedback-check small { color: var(--text-subtle); font-size: 12px; line-height: 1.45; }
 .feedback-privacy { display: flex; gap: 7px; margin: 0; color: var(--text-subtle); font-size: 12px; line-height: 1.5; }
 .feedback-privacy svg { flex: none; margin-top: 3px; }
+.feedback-log { display: flex; gap: 7px; margin: 0; color: var(--text-subtle); font-size: 12px; line-height: 1.5; }
+.feedback-log svg { flex: none; margin-top: 3px; }
 .feedback-dialog .capture-message { margin-top: 0; }
 .feedback-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .feedback-primary { flex: none; min-height: 40px; padding: 0 20px; font-size: 13px; }

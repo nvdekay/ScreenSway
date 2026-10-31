@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AlertCircle, Check, Loader2, Lock, X } from "lucide-react";
+import { AlertCircle, Check, FileText, Loader2, Lock, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FEEDBACK_CATEGORIES, feedbackError, feedbackProblem, MAX_FEEDBACK_EMAIL, MAX_FEEDBACK_MESSAGE, type FeedbackCategory, type FeedbackRequest } from "./feedback";
 import { useI18n, type MessageKey } from "./i18n";
+import { isWeb } from "./platform";
 import { track } from "./telemetry";
 
 type SendState = { status: "idle" } | { status: "sending" } | { status: "sent" } | { status: "failed"; error: MessageKey };
@@ -149,6 +150,17 @@ export function FeedbackDialog({ initialCategory = "idea", initialMessage = "", 
             </label>
 
             <p className="feedback-privacy"><Lock size={13} aria-hidden="true" />{t("feedback.privacy")}</p>
+
+            {/* The app's local log of how recordings and exports ended; never sent with the form. */}
+            {!isWeb && category === "bug" && (
+              <p className="feedback-log">
+                <FileText size={13} aria-hidden="true" />
+                <span>
+                  {t("feedback.logHint")}{" "}
+                  <button type="button" className="update-link" onClick={() => void invoke("open_log_folder").catch(() => undefined)}>{t("feedback.openLog")}</button>
+                </span>
+              </p>
+            )}
 
             {(problem || state.status === "failed") && (
               <div className="capture-message error" role="alert">

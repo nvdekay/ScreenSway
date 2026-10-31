@@ -1,3 +1,4 @@
+mod diagnostics;
 mod feedback;
 mod telemetry;
 
@@ -733,10 +734,14 @@ fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String
     publish_state(app, RecordingState { status: "idle", ..Default::default() });
     match result {
         Ok(summary) => {
+            // The encoder and slow-frame counts, for reports about slow or broken recordings.
+            let stats = std::fs::read_to_string(std::path::Path::new(&summary.project_path).join("metadata/capture-stats.json"));
+            diagnostics::log(app, "recording saved", stats.as_deref().unwrap_or(""));
             let _ = std::fs::remove_file(std::path::Path::new(&summary.project_path).join(CAPTURE_MARKER));
             let _ = app.emit(RECORDING_FINISHED_EVENT, summary.clone());
         }
         Err(message) => {
+            diagnostics::log(app, "recording failed", message);
             let _ = app.emit(RECORDING_FAILED_EVENT, message.clone());
         }
     }
@@ -1953,11 +1958,25 @@ async fn export_recording(
     if captions.len() > MAX_EXPORT_CAPTIONS || subtitles.as_ref().is_some_and(|text| text.len() > MAX_SUBTITLES_CHARS) {
         return Err("The export has too many captions.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || {
+    let log_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         export_recording_blocking(&app, &project_path, &file_name, job, &base_layer, &cursor, &captions, subtitles.as_deref())
     })
     .await
-    .map_err(|error| format!("Export task failed: {error}"))?
+    .map_err(|error| format!("Export task failed: {error}"))?;
+    if let Err(message) = &result {
+        diagnostics::log(&log_app, "export failed", message);
+    }
+    result
+}
+
+/// Opens the folder with the app's log, for the user to attach to a problem report.
+#[tauri::command]
+fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let directory = diagnostics::log_dir(&app)?;
+    std::fs::create_dir_all(&directory).map_err(|error| format!("Could not create the log folder: {error}"))?;
+    let file = directory.join(diagnostics::LOG_FILE);
+    reveal_in_file_manager(if file.is_file() { &file } else { &directory }).map_err(|error| format!("Could not open the log folder: {error}"))
 }
 
 fn export_recording_blocking(
@@ -2580,6 +2599,7 @@ pub fn run() {
             show_main_window,
             get_storage_status,
             list_interrupted_recordings,
+            open_log_folder,
             recover_recording,
             list_recordings,
             load_recording,
