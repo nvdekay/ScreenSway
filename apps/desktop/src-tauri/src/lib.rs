@@ -72,7 +72,7 @@ struct Camera {
     is_default: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CaptureRegion {
     x: f64,
@@ -208,6 +208,9 @@ const RECORDING_FINISHED_EVENT: &str = "recording-finished";
 const RECORDING_FAILED_EVENT: &str = "recording-failed";
 #[cfg(capture)]
 const HUD_LABEL: &str = "hud";
+/// A click-through outline of the recorded area over the screen (index.html#guide).
+const GUIDE_LABEL: &str = "guide";
+const GUIDE_EVENT: &str = "capture-guide";
 #[cfg(capture)]
 const TRAY_ID: &str = "recording";
 #[cfg(capture)]
@@ -877,6 +880,74 @@ fn liquid_glass(radius: f64) -> tauri::utils::config::WindowEffectsConfig {
 /// from a destroyed webview raises an exception inside WebKit that aborts the app.
 /// The hidden HUD is reused by the next recording.
 #[cfg(capture)]
+/// The area the guide outlines, kept for a guide window that is still loading.
+#[derive(Default)]
+struct CaptureGuide {
+    region: Mutex<Option<CaptureRegion>>,
+}
+
+/// Shows the area that will be recorded as an outline on the display it is on, so content
+/// can be placed inside it. The window ignores the pointer and is kept out of recordings
+/// (and the outline sits just outside the area, so a region recording never shows it).
+/// `display_width` × `display_height` is the selected display's size, to find its monitor.
+#[tauri::command]
+fn show_capture_guide(app: tauri::AppHandle, guide: tauri::State<'_, CaptureGuide>, region: CaptureRegion, display_width: f64, display_height: f64) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize, WebviewUrl, WebviewWindowBuilder};
+    region.validate()?;
+    *guide.region.lock().map_err(|_| "The guide is unavailable.")? = Some(region.clone());
+    let window = match app.get_webview_window(GUIDE_LABEL) {
+        Some(window) => window,
+        None => WebviewWindowBuilder::new(&app, GUIDE_LABEL, WebviewUrl::App("index.html#guide".into()))
+            .title("ScreenSway Area")
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .resizable(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .content_protected(true)
+            .visible(false)
+            .build()
+            .map_err(|error| format!("Could not show the recording area: {error}"))?,
+    };
+    let _ = window.set_ignore_cursor_events(true);
+    // The display whose size matches, else the one ScreenSway is on.
+    let monitors = window.available_monitors().unwrap_or_default();
+    // Helpers report displays in points (macOS) or pixels (Windows); either size identifies it.
+    let matching = monitors.into_iter().find(|monitor| {
+        let logical = monitor.size().to_logical::<f64>(monitor.scale_factor());
+        let physical = monitor.size();
+        let near = |width: f64, height: f64| (width - display_width).abs() < 2.0 && (height - display_height).abs() < 2.0;
+        near(logical.width, logical.height) || near(f64::from(physical.width), f64::from(physical.height))
+    });
+    let monitor = matching
+        .or_else(|| app.get_webview_window("main").and_then(|main| main.current_monitor().ok().flatten()))
+        .or_else(|| window.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let scale = monitor.scale_factor();
+        let origin = monitor.position().to_logical::<f64>(scale);
+        let size = monitor.size().to_logical::<f64>(scale);
+        let _ = window.set_position(LogicalPosition::new(origin.x, origin.y));
+        let _ = window.set_size(LogicalSize::new(size.width, size.height));
+    }
+    let _ = window.emit(GUIDE_EVENT, region);
+    window.show().map_err(|error| format!("Could not show the recording area: {error}"))
+}
+
+#[tauri::command]
+fn capture_guide_region(guide: tauri::State<'_, CaptureGuide>) -> Option<CaptureRegion> {
+    guide.region.lock().ok().and_then(|region| region.clone())
+}
+
+#[tauri::command]
+fn hide_capture_guide(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(GUIDE_LABEL) {
+        let _ = window.hide();
+    }
+}
+
 fn hide_hud(app: &tauri::AppHandle) {
     if let Some(hud) = app.get_webview_window(HUD_LABEL) {
         let _ = hud.hide();
@@ -2589,6 +2660,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
         .manage(ExportManager::default())
+        .manage(CaptureGuide::default())
         .manage(TranscriptionManager::default())
         .manage(telemetry::Telemetry::default())
         .manage(CaptureManager {
@@ -2647,6 +2719,7 @@ pub fn run() {
                     // A reused hidden HUD otherwise keeps Windows running forever
                     // after the last visible window has been closed.
                     if let Some(hud) = app.get_webview_window(HUD_LABEL) { let _ = hud.close(); }
+                    if let Some(guide) = app.get_webview_window(GUIDE_LABEL) { let _ = guide.close(); }
                     app.exit(0);
                 }
             }
@@ -2667,6 +2740,9 @@ pub fn run() {
             get_storage_status,
             list_interrupted_recordings,
             open_log_folder,
+            show_capture_guide,
+            hide_capture_guide,
+            capture_guide_region,
             import_music,
             recover_recording,
             list_recordings,

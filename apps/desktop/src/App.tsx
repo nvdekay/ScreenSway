@@ -42,6 +42,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { centredArea, changeArea } from "./captureArea";
 import { formatDuration } from "./format";
 import { LANGUAGES, useI18n, type Language, type MessageKey } from "./i18n";
 import { useRecordingState } from "./recordingState";
@@ -577,6 +578,9 @@ export default function App() {
   const [sources, setSources] = useState<CaptureSource[]>([]);
   const [sourceKind, setSourceKind] = useState<CaptureMode>("display");
   const [captureRegion, setCaptureRegion] = useState({ x: 10, y: 10, width: 80, height: 80 });
+  /** A fixed shape for the area (width ÷ height), or null to set it freely. */
+  const [regionRatio, setRegionRatio] = useState<number | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
   const [selectedSourceKey, setSelectedSourceKey] = useState("");
   const [loadingSources, setLoadingSources] = useState(true);
   const [result, setResult] = useState<RecordingResult | null>(null);
@@ -984,16 +988,22 @@ export default function App() {
     source.kind === "display"
       ? t("source.display", { n: displayIds.indexOf(source.id) + 1 })
       : source.name;
-  const updateRegion = (key: "x" | "y" | "width" | "height", value: number) => {
-    setCaptureRegion((current) => {
-      const next = { ...current, [key]: Math.round(value) };
-      next.width = Math.max(5, Math.min(next.width, 100 - next.x));
-      next.height = Math.max(5, Math.min(next.height, 100 - next.y));
-      next.x = Math.max(0, Math.min(next.x, 100 - next.width));
-      next.y = Math.max(0, Math.min(next.y, 100 - next.height));
-      return next;
-    });
+  const displayAspect = selectedSource ? selectedSource.width / Math.max(1, selectedSource.height) : 16 / 9;
+  const chooseRatio = (ratio: number | null) => {
+    setRegionRatio(ratio);
+    if (ratio !== null) setCaptureRegion(centredArea(ratio, displayAspect));
   };
+  useEffect(() => {
+    if (sourceKind === "region" && selectedSource && showGuide) {
+      const region = { x: captureRegion.x / 100, y: captureRegion.y / 100, width: captureRegion.width / 100, height: captureRegion.height / 100 };
+      void invoke("show_capture_guide", { region, displayWidth: selectedSource.width, displayHeight: selectedSource.height }).catch(() => {});
+    } else {
+      void invoke("hide_capture_guide").catch(() => {});
+    }
+  }, [captureRegion, selectedSource, showGuide, sourceKind]);
+
+  const updateRegion = (key: "x" | "y" | "width" | "height", value: number) =>
+    setCaptureRegion((current) => changeArea(current, key, value, regionRatio, displayAspect));
 
   return (
     <main className={`app-shell${quickMode ? " quick-mode" : ""}`}>
@@ -1063,9 +1073,15 @@ export default function App() {
               </div>
               <div className="region-fields">
                 {(["x", "y", "width", "height"] as const).map((key) => (
-                  <label key={key}><span>{t(`source.region.${key}` as MessageKey)}</span><input type="number" min={key === "width" || key === "height" ? 5 : 0} max={100} value={captureRegion[key]} onChange={(event) => updateRegion(key, Number(event.target.value))} /><small>%</small></label>
+                  <label key={key}><span>{t(`source.region.${key}` as MessageKey)}</span><input type="number" min={key === "width" || key === "height" ? 5 : 0} max={100} value={Math.round(captureRegion[key])} onChange={(event) => updateRegion(key, Number(event.target.value))} /><small>%</small></label>
                 ))}
               </div>
+              <div className="chip-row region-ratios" role="radiogroup" aria-label={t("source.regionShape")}>
+                {([[null, t("source.regionFree")], [16 / 9, "16:9"], [9 / 16, "9:16"], [1, "1:1"], [4 / 3, "4:3"]] as const).map(([ratio, label]) => (
+                  <button key={label} type="button" role="radio" aria-checked={regionRatio === ratio} className={`chip${regionRatio === ratio ? " selected" : ""}`} onClick={() => chooseRatio(ratio)}>{label}</button>
+                ))}
+              </div>
+              <label className="audio-toggle compact"><span>{t("source.regionGuide")}</span><input type="checkbox" role="switch" checked={showGuide} onChange={(event) => setShowGuide(event.target.checked)} /><span className="switch" /></label>
               <small>{t("source.regionHint")}</small>
             </div>
           )}

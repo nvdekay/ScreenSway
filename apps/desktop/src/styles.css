@@ -183,6 +183,7 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .region-fields input { width: 100%; height: 30px; padding: 0 18px 0 7px; border: 1px solid var(--hairline); border-radius: 7px; background: #ffffff08; color: var(--text); font: inherit; font-size: 11px; }
 .region-fields small { position: absolute; right: 6px; bottom: 8px; color: var(--text-subtle); font-size: 9px; }
 .region-editor > small { color: var(--text-subtle); font-size: 11px; line-height: 1.4; }
+.region-ratios .chip { min-height: 26px; padding: 0 10px; font-size: 11px; }
 
 /* System audio switch */
 .audio-toggle { min-height: 56px; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 10px; padding: 8px 12px 8px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: #ffffff06; cursor: pointer; transition: background var(--dur-fast) ease; }
@@ -623,6 +624,10 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 }
 
 /* Floating recording controls (separate transparent window). */
+html.guide, html.guide body, html.guide #root { min-width: 0; min-height: 0; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
+/* The ring and the dimming are both outside the area, so a region recording never shows them. */
+.capture-guide { position: fixed; inset: 0; }
+.capture-guide span { position: absolute; border-radius: 1px; box-shadow: 0 0 0 3px #0a84ff, 0 0 0 4px #0008, 0 0 0 9999px #0000004d; }
 html.hud, html.hud body, html.hud #root { min-width: 0; min-height: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
 /* The window behind is native Liquid Glass; only the controls are drawn here. */
 .hud-bar { height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 20px; border-radius: 30px; cursor: grab; }

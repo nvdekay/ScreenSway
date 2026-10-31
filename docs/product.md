@@ -17,7 +17,7 @@ Beautiful screen recordings that guide the viewer automatically, without waterma
 Unless noted otherwise, these workflows ship on both macOS and Windows. The floating controls use Liquid Glass and the timer also appears in the menu bar on macOS; Windows uses native dark controls and a standard title bar.
 
 - First-run permission preflight, a ten-second test recording, and a setup flow that can be reopened from Settings.
-- Record a display, an application window or a cropped display region, with optional system audio and microphone (pick the device; the voice is leveled and background noise is lowered between phrases). Pause and resume without keeping the paused interval.
+- Record a display, an application window or a cropped display region (free or a fixed 16:9, 9:16, 1:1 or 4:3 shape, optionally outlined on the screen while setting up and recording), with optional system audio and microphone (pick the device; the voice is leveled and background noise is lowered between phrases). Pause and resume without keeping the paused interval.
 - Start quickly from a configurable global shortcut or the persistent menu bar/tray entry, using a compact source picker that remembers the last choices.
 - Low-disk preflight and interrupted-project recovery after an app or helper crash.
 - 3-second countdown and floating controls that stay out of the video; macOS also provides a menu bar timer.

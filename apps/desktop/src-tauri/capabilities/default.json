@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for the ScreenSway desktop windows",
-  "windows": ["main", "hud"],
+  "windows": ["main", "hud", "guide"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
