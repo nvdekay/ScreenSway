@@ -86,7 +86,7 @@ jobs:
           path: apps/web/dist
           key: site-${{ github.run_id }}
           fail-on-cache-miss: true
-      # The repository is private, so release assets are not publicly downloadable.
+      # Installers are served from R2, not GitHub: no egress fees, range requests, stable URLs.
       # Copy the latest complete release to the downloads Worker. While a new release
       # is still waiting for its Windows installer, keep offering the current one.
       - name: Publish the latest desktop downloads

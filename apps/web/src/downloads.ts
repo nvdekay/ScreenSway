@@ -1,6 +1,6 @@
 export type DownloadPlatform = "macos" | "windows";
 
-// Public copies of the private release assets, served by the downloads Worker
+// Copies of the release assets, served by the downloads Worker
 // (apps/downloads). Local builds without the variable link to ./download/.
 const BASE = (import.meta.env.VITE_DOWNLOADS_URL as string | undefined)?.replace(/\/$/, "");
 const LATEST = BASE ? `${BASE}/latest` : "./download";

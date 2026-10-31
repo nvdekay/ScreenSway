@@ -2,7 +2,7 @@
 
 ## Download URL
 
-The repository is private, so GitHub Release assets are not publicly downloadable. A Cloudflare Worker (`apps/downloads`, bucket `screensway-downloads` in R2) serves both desktop builds:
+The repository was private until 2026-10-31, so GitHub Release assets were not publicly downloadable, and the downloads stay on R2 now that it is public. A Cloudflare Worker (`apps/downloads`, bucket `screensway-downloads` in R2) serves both desktop builds:
 
 ```text
 https://download.screensway.site/latest/ScreenSway-macos-universal.dmg
