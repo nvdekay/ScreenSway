@@ -9,6 +9,7 @@ import {
   Check,
   Captions,
   CheckCircle2,
+  ChevronRight,
   Crop,
   Download,
   FilePlus2,
@@ -17,7 +18,6 @@ import {
   Info,
   Keyboard,
   Loader2,
-  Languages,
   Link2,
   Lock,
   Mic,
@@ -293,73 +293,77 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
       </button>
       {open && (
         <div className="settings-popover" role="dialog" aria-label={t("settings.title")}>
-          <span className="settings-label"><Languages size={14} aria-hidden="true" /> {t("settings.language")}</span>
-          <div className="language-options" role="radiogroup" aria-label={t("settings.language")}>
-            {LANGUAGES.map((option) => (
-              <button
-                key={option.code}
-                role="radio"
-                aria-checked={language === option.code}
-                className={`language-option${language === option.code ? " selected" : ""}`}
-                onClick={() => setLanguage(option.code)}
-              >
-                <span>{option.label}</span>
-                {language === option.code && <Check size={16} aria-hidden="true" />}
-              </button>
-            ))}
+          <div className="settings-group">
+            <div className="settings-row">
+              <span className="settings-row-label">{t("settings.language")}</span>
+              <div className="settings-segmented" role="radiogroup" aria-label={t("settings.language")}>
+                {LANGUAGES.map((option) => (
+                  <button
+                    key={option.code}
+                    role="radio"
+                    aria-checked={language === option.code}
+                    className={language === option.code ? "selected" : undefined}
+                    onClick={() => setLanguage(option.code)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="settings-row">
+              <span className="settings-row-label">{t("quick.shortcut")}</span>
+              <select className="settings-select" value={quickShortcut} aria-label={t("quick.shortcut")} onChange={(event) => onQuickShortcutChange(event.target.value)}>
+                {QUICK_RECORD_SHORTCUTS.map((shortcut) => <option key={shortcut} value={shortcut}>{shortcut.replace("CommandOrControl", isWindows ? "Ctrl" : "⌘")}</option>)}
+              </select>
+            </div>
+            {shortcutError && <p className="settings-note error">{t("quick.shortcutUnavailable")}</p>}
+            <ExportFolderSetting />
           </div>
+
           {telemetry.status.available && (
-            <label className="settings-toggle">
-              <span>
-                <strong>{t("telemetry.setting")}</strong>
-                <small>{t("telemetry.settingHint")}</small>
-              </span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={telemetry.status.enabled === true}
-                onChange={(event) => void telemetry.setEnabled(event.target.checked)}
-              />
-              <span className="switch" aria-hidden="true" />
-            </label>
+            <div className="settings-group">
+              <label className="settings-row settings-toggle">
+                <span className="settings-row-label">
+                  {t("telemetry.setting")}
+                  <small>{t("telemetry.settingHint")}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={telemetry.status.enabled === true}
+                  onChange={(event) => void telemetry.setEnabled(event.target.checked)}
+                />
+                <span className="switch" aria-hidden="true" />
+              </label>
+            </div>
           )}
-          <div className="update-settings">
-            <span className="settings-label"><RotateCw size={14} aria-hidden="true" /> {t("update.title")}</span>
-            {version && <span className="update-version">{t("update.version", { version })}</span>}
-            {updater.state.status === "available" ? (
-              <>
-                <strong>{t("update.available", { version: updater.state.version })}</strong>
-                <button className="update-button" onClick={() => void updater.install()}><Download size={14} /> {t("update.install")}</button>
-              </>
-            ) : updater.state.status === "waiting" ? (
-              <>
-                <span className="update-status">{t("update.waiting", { version: updater.state.version })}</span>
-                <button className="update-button" onClick={() => void updater.install()}><RotateCw size={14} /> {t("update.restartNow")}</button>
-              </>
-            ) : updater.state.status === "downloading" ? (
-              <span className="update-status">{t("update.downloading", { percent: updater.state.progress ?? "…" })}</span>
-            ) : updater.state.status === "restarting" ? (
-              <span className="update-status">{t("update.restarting")}</span>
-            ) : updater.state.status === "checking" ? (
-              <span className="update-status">{t("update.checking")}</span>
-            ) : updater.state.status === "upToDate" ? (
-              <><span className="update-status success"><CheckCircle2 size={14} /> {t("update.current")}</span><button className="update-link" onClick={() => void updater.checkNow()}>{t("update.checkAgain")}</button></>
-            ) : updater.state.status === "error" ? (
-              <><span className="update-error">{t("update.failed")}</span><button className="update-link" onClick={() => void updater.checkNow()}>{t("update.retry")}</button></>
-            ) : (
-              <button className="update-link" onClick={() => void updater.checkNow()}>{t("update.check")}</button>
+
+          <div className="settings-group">
+            <div className="settings-row">
+              <span className="settings-row-label">
+                {version ? t("update.version", { version }) : t("update.title")}
+                <UpdateStatus updater={updater} />
+              </span>
+              {updater.state.status === "upToDate" ? (
+                <button className="settings-action" onClick={() => void updater.checkNow()}>{t("update.checkAgain")}</button>
+              ) : updater.state.status === "error" ? (
+                <button className="settings-action" onClick={() => void updater.checkNow()}>{t("update.retry")}</button>
+              ) : updater.state.status === "idle" ? (
+                <button className="settings-action" onClick={() => void updater.checkNow()}>{t("update.check")}</button>
+              ) : null}
+            </div>
+            {(updater.state.status === "available" || updater.state.status === "waiting") && (
+              <div className="settings-row">
+                <button className="update-button" onClick={() => void updater.install()}>
+                  {updater.state.status === "available" ? <><Download size={14} /> {t("update.install")}</> : <><RotateCw size={14} /> {t("update.restartNow")}</>}
+                </button>
+              </div>
             )}
           </div>
-          <div className="shortcut-settings">
-            <span className="settings-label">{t("quick.shortcut")}</span>
-            <select value={quickShortcut} onChange={(event) => onQuickShortcutChange(event.target.value)}>
-              {QUICK_RECORD_SHORTCUTS.map((shortcut) => <option key={shortcut} value={shortcut}>{shortcut.replace("CommandOrControl", isWindows ? "Ctrl" : "⌘")}</option>)}
-            </select>
-            {shortcutError && <small>{t("quick.shortcutUnavailable")}</small>}
-          </div>
-          <ExportFolderSetting />
-          <button className="update-link setup-link" onClick={() => { setOpen(false); onOpenSetup(); }}>
+
+          <button className="settings-footer-link" onClick={() => { setOpen(false); onOpenSetup(); }}>
             {t("onboarding.openSetup")}
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -391,17 +395,38 @@ function ExportFolderSetting() {
     void invoke<ExportFolder>(command).then(setFolder).catch(() => setError(true));
   };
   if (!folder) return null;
+  const name = folder.custom ? folder.path.split(/[\\/]/).filter(Boolean).pop() ?? folder.path : t("exportFolder.default");
   return (
-    <div className="shortcut-settings export-folder-settings">
-      <span className="settings-label">{t("exportFolder.label")}</span>
-      <span className="export-folder-path" title={folder.path}>{folder.custom ? folder.path : t("exportFolder.default")}</span>
-      <div className="export-folder-actions">
-        <button className="update-link" onClick={() => change("choose_export_folder")}>{t("exportFolder.choose")}</button>
-        {folder.custom && <button className="update-link" onClick={() => change("reset_export_folder")}>{t("exportFolder.reset")}</button>}
+    <>
+      <div className="settings-row">
+        <span className="settings-row-label">{t("exportFolder.label")}</span>
+        <button className="settings-value" onClick={() => change("choose_export_folder")} title={`${folder.path}\n\n${t("exportFolder.hint")}`}>
+          <span>{name}</span>
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
       </div>
-      <small className={error ? "error" : undefined}>{error ? t("exportFolder.failed") : t("exportFolder.hint")}</small>
-    </div>
+      {folder.custom && (
+        <p className="settings-note"><button className="settings-action" onClick={() => change("reset_export_folder")}>{t("exportFolder.reset")}</button></p>
+      )}
+      {error && <p className="settings-note error">{t("exportFolder.failed")}</p>}
+    </>
   );
+}
+
+/** One short line under the version: what the last update check found. */
+function UpdateStatus({ updater }: { updater: UpdaterController }) {
+  const { t } = useI18n();
+  const { state } = updater;
+  switch (state.status) {
+    case "checking": return <small>{t("update.checking")}</small>;
+    case "upToDate": return <small className="success"><CheckCircle2 size={12} aria-hidden="true" /> {t("update.current")}</small>;
+    case "error": return <small className="error">{t("update.failed")}</small>;
+    case "available": return <small className="accent">{t("update.available", { version: state.version })}</small>;
+    case "waiting": return <small>{t("update.waiting", { version: state.version })}</small>;
+    case "downloading": return <small>{t("update.downloading", { percent: state.progress ?? "…" })}</small>;
+    case "restarting": return <small>{t("update.restarting")}</small>;
+    default: return null;
+  }
 }
 
 export function HeaderUpdateButton({ updater }: { updater: UpdaterController }) {
