@@ -126,6 +126,21 @@ pub fn encoded_size(width: u32, height: u32) -> (u32, u32, f64) {
     (even(width), even(height), scale)
 }
 
+/// The row pitch of a decoded RGB32 frame read as one block, for a buffer that cannot
+/// report it: the media type's stride when it states one, otherwise the buffer spread
+/// evenly over the decoded rows (decoders pad rows, so `width * 4` can be wrong), otherwise
+/// tightly packed rows. Negative for a bottom-up image.
+pub fn row_pitch(length: usize, stride: Option<i32>, width: u32, coded_height: u32) -> i64 {
+    if let Some(stride) = stride.filter(|stride| *stride != 0) {
+        return i64::from(stride);
+    }
+    let packed = width as usize * 4;
+    if coded_height > 0 && length % coded_height as usize == 0 && length / coded_height as usize >= packed {
+        return (length / coded_height as usize) as i64;
+    }
+    packed as i64
+}
+
 /// About 0.15 bits per pixel per frame at 60 fps, the same budget as the macOS recorder:
 /// ~18 Mbps for 1080p, ~75 Mbps for 4K.
 pub fn video_bitrate(width: u32, height: u32) -> u32 {
@@ -156,6 +171,16 @@ pub fn iso8601(unix_seconds: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn row_pitch_trusts_the_stated_stride_then_the_padded_rows() {
+        // A 1366-pixel-wide frame decoded into 1376-pixel rows.
+        assert_eq!(super::row_pitch(1376 * 4 * 768, None, 1366, 768), 1376 * 4);
+        assert_eq!(super::row_pitch(1376 * 4 * 768, Some(-1376 * 4), 1366, 768), -1376 * 4);
+        // A buffer that does not split evenly into rows is read tightly packed.
+        assert_eq!(super::row_pitch(1366 * 4 * 768 + 7, None, 1366, 768), 1366 * 4);
+        assert_eq!(super::row_pitch(10, None, 1366, 768), 1366 * 4);
+    }
+
     use super::*;
 
     #[test]

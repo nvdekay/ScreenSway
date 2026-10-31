@@ -100,4 +100,18 @@ for (const [width, height] of [[1920,1080], [2560,1440], [3840,2160]]) {
   const encoded = probe(high.output).streams.find(s => s.codec_type === "video");
   assert.equal(encoded.width, width); assert.equal(encoded.height, height); assert.equal(encoded.r_frame_rate, "60/1");
 }
+// A laptop-sized recording: H.264 pads 1366 × 766 to 1376 × 768, and reading the decoded rows
+// with the wrong pitch shears the picture into diagonal stripes.
+const odd = path.join(work, "odd.mp4");
+run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=red:s=1366x766:r=60:d=1,drawbox=x=683:y=0:w=683:h=766:color=blue:t=fill", "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", odd]);
+const oddBackground = path.join(work, "base-odd.png"); png(oddBackground, 1366, 766, [20,40,80,255]);
+const oddJob = { ...job, width: 1366, height: 766, source: odd, baseLayer: oddBackground, output: path.join(work, "odd-export.mp4"), startMs: 0,
+  sourceWidth: 0, sourceHeight: 0, video: { x: 0, y: 0, width: 1366, height: 766 }, radius: 0, captions: [], frames: Array.from({ length: 6 }, () => [0,0,1366,766,-100,-100,0,0,0,0,0]) };
+writeFileSync(jobPath, JSON.stringify(oddJob)); run(helper, ["--export", jobPath]);
+const oddFrame = execFileSync("ffmpeg", ["-v", "error", "-i", oddJob.output, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 4_000_000, windowsHide: true });
+const oddPixel = (x, y) => [...oddFrame.subarray((y * 1366 + x) * 3, (y * 1366 + x) * 3 + 3)];
+for (const y of [20, 383, 745]) {
+  near(oddPixel(600, y), [255, 0, 0], `Odd-sized source keeps its left half at row ${y}`);
+  near(oddPixel(766, y), [0, 0, 255], `Odd-sized source keeps its right half at row ${y}`);
+}
 console.log(`Windows native export checks passed. Artifacts: ${work}`);

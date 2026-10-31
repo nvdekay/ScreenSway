@@ -106,6 +106,12 @@ also covers canonical Windows paths (`\\?\`), Unicode and UNC shares; the
 native export test uses canonical source and destination paths, matching the
 actual shell's recording paths.
 
+Export decodes the recording to RGB32 through Media Foundation and reads each frame with
+the buffer's own row pitch (`IMF2DBuffer::Lock2D`), cropped to the display aperture. H.264
+pads sizes such as 1366 × 766 to 1376 × 768; reading those rows as tightly packed sheared
+the picture into diagonal stripes in 0.4.1–0.4.2. `test:export:windows` exports a
+1366 × 766 source and checks both halves of the picture at the top, middle and bottom.
+
 GitHub's hosted Windows runner exposes D3D11 but returned `E_NOINTERFACE`
 (`0x80004002`) for `ID3D11VideoDevice`. CI explicitly permits skipping native
 export checks for this exact capability failure. Every other export failure
