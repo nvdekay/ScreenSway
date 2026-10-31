@@ -259,7 +259,6 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
   const { language, setLanguage, t } = useI18n();
   const telemetry = useTelemetry();
   const [open, setOpen] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -362,12 +361,8 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
           <button className="update-link setup-link" onClick={() => { setOpen(false); onOpenSetup(); }}>
             {t("onboarding.openSetup")}
           </button>
-          <button className="update-link setup-link" onClick={() => { setOpen(false); setFeedbackOpen(true); }}>
-            <MessageSquare size={14} aria-hidden="true" /> {t("feedback.open")}
-          </button>
         </div>
       )}
-      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }
@@ -576,6 +571,7 @@ export default function App() {
   const { language, t } = useI18n();
   const recorder = useRecordingState();
   const updater = useUpdater();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(onboardingWasCompleted);
   const [onboardingOpen, setOnboardingOpen] = useState(() => !onboardingWasCompleted());
   const [screenCheck, setScreenCheck] = useState<ScreenCheck>("idle");
@@ -1021,6 +1017,10 @@ export default function App() {
         </a>
         <div className="titlebar-actions">
           <HeaderUpdateButton updater={updater} />
+          <button className="header-feedback-button" onClick={() => setFeedbackOpen(true)} aria-label={t("feedback.open")} title={t("feedback.open")}>
+            <MessageSquare size={15} aria-hidden="true" />
+            <span>{t("feedback.open")}</span>
+          </button>
           <SettingsMenu
             updater={updater}
             onOpenSetup={() => setOnboardingOpen(true)}
@@ -1031,6 +1031,7 @@ export default function App() {
         </div>
       </header>
       <TelemetryPrompt />
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
 
       <section className="studio">
         <div className="studio-intro reveal">
