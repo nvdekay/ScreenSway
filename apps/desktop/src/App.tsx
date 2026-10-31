@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { generateZoomSegments } from "@screensway/core";
@@ -259,7 +260,12 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
   const telemetry = useTelemetry();
   const [open, setOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void getVersion().then(setVersion).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -320,6 +326,7 @@ function SettingsMenu({ updater, onOpenSetup, quickShortcut, onQuickShortcutChan
           )}
           <div className="update-settings">
             <span className="settings-label"><RotateCw size={14} aria-hidden="true" /> {t("update.title")}</span>
+            {version && <span className="update-version">{t("update.version", { version })}</span>}
             {updater.state.status === "available" ? (
               <>
                 <strong>{t("update.available", { version: updater.state.version })}</strong>

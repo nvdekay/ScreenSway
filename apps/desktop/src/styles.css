@@ -122,6 +122,7 @@ html.glass .titlebar { -webkit-backdrop-filter: blur(20px) saturate(150%); backd
 .update-button { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid #818cf866; border-radius: 9px; background: var(--primary-soft); color: #d9dbff; font-size: 12px; font-weight: 650; }
 .update-link { padding: 0; border: 0; background: transparent; color: #aeb4ff; font-size: 12px; font-weight: 600; }
 .update-link:hover { color: #fff; }
+.update-version { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .update-status { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .update-status.success { color: var(--success); }
 .update-error { color: var(--danger); font-size: 12px; }
