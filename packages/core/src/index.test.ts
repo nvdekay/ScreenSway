@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyZoomStrength,
   buildSourceTimes,
   buildCameraTrack,
   clampCamera,
@@ -147,6 +148,23 @@ describe("edits", () => {
     expect(normalized.find((z) => z.id === "overlap")!.startMs).toBe(3_000);
     // A zoom with no room left after its neighbor is dropped instead of overlapping.
     expect(normalizeZooms([zoom("a", 0, 9_800), zoom("b", 9_700, 10_000)], 10_000).map((z) => z.id)).toEqual(["a"]);
+  });
+});
+
+describe("applyZoomStrength", () => {
+  const zoomAt = (scale: number) => ({ id: "z", startMs: 0, endMs: 1_000, centerX: 0, centerY: 0, scale });
+
+  it("scales how far each zoom goes in, keeping its own depth relative to the others", () => {
+    const zooms = [zoomAt(1.8), zoomAt(2.6)];
+    expect(applyZoomStrength(zooms, 0.5).map((z) => z.scale)).toEqual([1.4, 1.8]);
+    expect(applyZoomStrength(zooms, 1)).toBe(zooms);
+    expect(applyZoomStrength(zooms)).toBe(zooms);
+  });
+
+  it("keeps the strength and the result in range", () => {
+    expect(applyZoomStrength([zoomAt(3)], 9)[0].scale).toBe(MAX_ZOOM_SCALE);
+    expect(applyZoomStrength([zoomAt(1.8)], 0)[0].scale).toBeCloseTo(1.2);
+    expect(applyZoomStrength([zoomAt(1.8)], Number.NaN)[0].scale).toBe(1.8);
   });
 });
 

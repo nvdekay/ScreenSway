@@ -1,6 +1,10 @@
 import {
+  applyZoomStrength,
   DEFAULT_ZOOM_SCALE,
+  DEFAULT_ZOOM_STRENGTH,
   MAX_ZOOM_SCALE,
+  MAX_ZOOM_STRENGTH,
+  MIN_ZOOM_STRENGTH,
   MIN_TRIM_MS,
   MIN_ZOOM_MS,
   MIN_ZOOM_SCALE,
@@ -39,6 +43,9 @@ interface TimelineProps {
   /** The zooms in effect (edited or automatic). */
   zooms: ZoomSegment[];
   zoomEnabled: boolean;
+  /** How deep every zoom plays, 1 = each zoom's own depth; changed for the whole video. */
+  zoomStrength?: number;
+  onZoomStrengthChange?: (strength: number) => void;
   /** Receives an update of the latest edits, so quick successive changes never undo each other. */
   onChange: (update: (edits: RecordingEdits) => RecordingEdits) => void;
   onSeek: (timeMs: number) => void;
@@ -54,8 +61,10 @@ interface TimelineProps {
 }
 
 /** Trim handles and an editable lane of zooms under the preview. */
-export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoomEnabled, onChange, onSeek, currentTimeMs, playheadRef, canUndo, canRedo, onUndo, onRedo, framingEnabled }: TimelineProps) {
+export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoomEnabled, zoomStrength = DEFAULT_ZOOM_STRENGTH, onZoomStrengthChange, onChange, onSeek, currentTimeMs, playheadRef, canUndo, canRedo, onUndo, onRedo, framingEnabled }: TimelineProps) {
   const { t } = useI18n();
+  /** How deep a zoom plays with the strength for all zooms applied. */
+  const played = (scale: number) => applyZoomStrength([{ id: "", startMs: 0, endMs: 0, centerX: 0, centerY: 0, scale }], zoomStrength)[0].scale;
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -231,6 +240,21 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
               <Wand2 size={13} aria-hidden="true" /> {t("timeline.autoZooms")}
             </button>
           )}
+          {zoomEnabled && onZoomStrengthChange && (
+            <label className="zoom-strength" title={t("timeline.zoomStrengthHint")}>
+              <span>{t("timeline.zoomStrength")}</span>
+              <input
+                type="range"
+                min={MIN_ZOOM_STRENGTH}
+                max={MAX_ZOOM_STRENGTH}
+                step={0.05}
+                value={zoomStrength}
+                aria-valuetext={`${Math.round(zoomStrength * 100)}%`}
+                onChange={(event) => onZoomStrengthChange(Number(event.target.value))}
+              />
+              <output>{Math.round(zoomStrength * 100)}%</output>
+            </label>
+          )}
           <button className="editor-button compact accent" onClick={addZoom} disabled={!zoomEnabled}>
             <Plus size={13} aria-hidden="true" /> {t("timeline.addZoom")}
           </button>
@@ -262,7 +286,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
               style={{ left: percent(zoom.startMs), width: percent(zoom.endMs - zoom.startMs) }}
               role="button"
               tabIndex={0}
-              aria-label={t("timeline.zoomLabel", { index: index + 1, scale: zoom.scale.toFixed(1) })}
+              aria-label={t("timeline.zoomLabel", { index: index + 1, scale: played(zoom.scale).toFixed(1) })}
               onPointerDown={(event) => {
                 beginDrag({ kind: "zoom-move", id: zoom.id, grabOffsetMs: timeAt(event.clientX) - zoom.startMs })(event);
               }}
@@ -272,7 +296,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
               }}
             >
               <span className="zoom-edge start" onPointerDown={beginDrag({ kind: "zoom-start", id: zoom.id })} />
-              <span className="zoom-text">{zoom.scale.toFixed(1)}×</span>
+              <span className="zoom-text">{played(zoom.scale).toFixed(1)}×</span>
               <span className="zoom-edge end" onPointerDown={beginDrag({ kind: "zoom-end", id: zoom.id })} />
             </div>
           ))}
@@ -337,7 +361,7 @@ export function Timeline({ durationMs, canvas, events, edits, range, zooms, zoom
       {selected && zoomEnabled && (
         <div className="zoom-inspector">
           <label className="editor-slider">
-            <span><span>{t("timeline.depth")}</span><output>{selected.scale.toFixed(1)}×</output></span>
+            <span><span>{t("timeline.depth")}</span><output>{selected.scale.toFixed(1)}×{zoomStrength !== DEFAULT_ZOOM_STRENGTH && ` → ${played(selected.scale).toFixed(1)}×`}</output></span>
             <input
               type="range"
               min={MIN_ZOOM_SCALE}

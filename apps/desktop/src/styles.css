@@ -337,6 +337,9 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .timeline-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .timeline-title { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .timeline-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.zoom-strength { display: inline-flex; align-items: center; gap: 7px; padding: 0 4px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.zoom-strength input { width: 96px; accent-color: var(--primary-strong); }
+.zoom-strength output { min-width: 34px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
 .editor-button.compact { min-height: 30px; padding: 0 10px; font-size: 12px; }
 .editor-button.icon-only { width: 30px; padding: 0; }
 .timeline-track { position: relative; height: 64px; border-radius: 10px; background: var(--surface-sunken); cursor: pointer; touch-action: none; }

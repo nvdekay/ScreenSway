@@ -96,6 +96,10 @@ export interface CameraTrack {
 export const DEFAULT_ZOOM_SCALE = 1.8;
 export const MIN_ZOOM_SCALE = 1.2;
 export const MAX_ZOOM_SCALE = 3;
+/** How deep every zoom goes, relative to its own depth: 0.5 halves how far each one zooms in. */
+export const DEFAULT_ZOOM_STRENGTH = 1;
+export const MIN_ZOOM_STRENGTH = 0.25;
+export const MAX_ZOOM_STRENGTH = 1.5;
 /** Shortest zoom the timeline allows, so a segment can always be grabbed and seen. */
 export const MIN_ZOOM_MS = 400;
 /** Shortest part of a recording that can be kept. */
@@ -119,6 +123,8 @@ export interface RecordingEdits {
   framing?: FramingSegment[];
   /** Chapters in recording time; the first one starts the video. */
   chapters?: { startMs: number; title: string }[];
+  /** Scales how deep every zoom goes (see `applyZoomStrength`); missing means 1. */
+  zoomStrength?: number;
 }
 
 export interface FramingSegment {
@@ -202,6 +208,17 @@ export function trimRange(edits: RecordingEdits, durationMs: number): { startMs:
 /** The zooms in effect: edited ones if any, otherwise the ones generated from clicks. */
 export function resolveZooms(edits: RecordingEdits, events: PointerEvent[], durationMs: number): ZoomSegment[] {
   return normalizeZooms(edits.zooms ?? generateZoomSegments(events), durationMs);
+}
+
+/**
+ * The zooms as the camera plays them: each one goes `strength` times as far in as its own
+ * depth (1.8× at 0.5 becomes 1.4×), so a whole video can be made calmer or punchier without
+ * editing every zoom. Applied when the view is planned, never stored in the zooms.
+ */
+export function applyZoomStrength(zooms: ZoomSegment[], strength = DEFAULT_ZOOM_STRENGTH): ZoomSegment[] {
+  const factor = Number.isFinite(strength) ? Math.min(MAX_ZOOM_STRENGTH, Math.max(MIN_ZOOM_STRENGTH, strength)) : DEFAULT_ZOOM_STRENGTH;
+  if (factor === 1) return zooms;
+  return zooms.map((zoom) => ({ ...zoom, scale: Math.min(MAX_ZOOM_SCALE, 1 + (zoom.scale - 1) * factor) }));
 }
 
 /**

@@ -1,6 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
+  applyZoomStrength,
   buildViewPlan,
+  DEFAULT_ZOOM_STRENGTH,
   cameraRect,
   captionAt,
   computeLayout,
@@ -65,6 +67,9 @@ interface ZoomPreviewProps {
   onEditsChange: (update: (edits: RecordingEdits) => RecordingEdits) => void;
   /** The zooms in effect and the kept range, resolved from the edits by the studio. */
   zooms: ZoomSegment[];
+  /** How deep every zoom plays (`applyZoomStrength`), and where the timeline changes it. */
+  zoomStrength?: number;
+  onZoomStrengthChange?: (strength: number) => void;
   range: { startMs: number; endMs: number };
   /** Captions to show, or null when they are off. */
   captions: { lines: CaptionLine[]; style: CaptionStyle } | null;
@@ -94,6 +99,8 @@ export function ZoomPreview({
   edits,
   onEditsChange,
   zooms,
+  zoomStrength = DEFAULT_ZOOM_STRENGTH,
+  onZoomStrengthChange,
   range,
   captions,
   seekRef,
@@ -145,8 +152,8 @@ export function ZoomPreview({
   const layout = useMemo(() => computeLayout(settings, { width, height }), [settings, width, height]);
   // The export's own view plan, so zooms and the follow of a filled frame match it exactly.
   const plan = useMemo(
-    () => buildViewPlan(events, zooms, { width, height }, layout, durationMs + 1_000, edits.framing),
-    [events, zooms, width, height, layout, durationMs, edits.framing],
+    () => buildViewPlan(events, applyZoomStrength(zooms, zoomStrength), { width, height }, layout, durationMs + 1_000, edits.framing),
+    [events, zooms, zoomStrength, width, height, layout, durationMs, edits.framing],
   );
 
   useEffect(() => {
@@ -570,6 +577,8 @@ export function ZoomPreview({
         range={range}
         zooms={zooms}
         zoomEnabled={autoZoom}
+        zoomStrength={zoomStrength}
+        onZoomStrengthChange={onZoomStrengthChange}
         onChange={onEditsChange}
         onSeek={(timeMs) => seek(String(timeMs))}
         currentTimeMs={() => (videoRef.current?.currentTime ?? 0) * 1_000}

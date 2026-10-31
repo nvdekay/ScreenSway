@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  applyZoomStrength,
   buildCaptionLines,
   buildRenderFrames,
   buildSourceTimes,
@@ -9,6 +10,9 @@ import {
   DEFAULT_CAMERA_OVERLAY,
   DEFAULT_FRAME_SETTINGS,
   DEFAULT_KEYSTROKE_OVERLAY,
+  DEFAULT_ZOOM_STRENGTH,
+  MAX_ZOOM_STRENGTH,
+  MIN_ZOOM_STRENGTH,
   NO_EDITS,
   keptRanges,
   retimeCaptions,
@@ -59,6 +63,18 @@ interface ExportResult {
   subtitlesPath?: string | null;
   /** Frame rate of the file; the desktop helper always writes EXPORT_FPS. */
   fps?: number;
+}
+
+/** The last zoom strength chosen, used by recordings that have none of their own yet. */
+const ZOOM_STRENGTH_KEY = "screensway.zoomStrength";
+
+function loadZoomStrength(): number {
+  try {
+    const stored = Number(localStorage.getItem(ZOOM_STRENGTH_KEY));
+    return stored >= MIN_ZOOM_STRENGTH && stored <= MAX_ZOOM_STRENGTH ? stored : DEFAULT_ZOOM_STRENGTH;
+  } catch {
+    return DEFAULT_ZOOM_STRENGTH;
+  }
 }
 
 function loadCaptionStyle(): CaptionStyle {
@@ -133,7 +149,8 @@ function parseEdits(value: unknown): RecordingEdits {
   const framing = Array.isArray(edits.framing)
     ? edits.framing.filter((item) => item && typeof item.id === "string" && [item.startMs, item.endMs, item.x].every((field) => number(field) !== null))
     : [];
-  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters };
+  const zoomStrength = number(edits.zoomStrength) ?? undefined;
+  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters, zoomStrength };
 }
 
 
@@ -238,6 +255,8 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
     () => resolveZooms(edits, recording.pointerEvents, recording.durationMs),
     [edits, recording.durationMs, recording.pointerEvents],
   );
+  const [preferredZoomStrength, setPreferredZoomStrength] = useState(loadZoomStrength);
+  const zoomStrength = edits.zoomStrength ?? preferredZoomStrength;
   const sourceRanges = useMemo(() => keptRanges(edits, recording.durationMs), [edits, recording.durationMs]);
   const cameraOverlay = edits.camera ?? DEFAULT_CAMERA_OVERLAY;
 
@@ -372,6 +391,16 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
     setHistoryState({ canUndo: true, canRedo: false });
     saveEdits(next);
   }, [saveEdits]);
+
+  const changeZoomStrength = useCallback((strength: number) => {
+    updateEdits((current) => ({ ...current, zoomStrength: strength }));
+    setPreferredZoomStrength(strength);
+    try {
+      localStorage.setItem(ZOOM_STRENGTH_KEY, String(strength));
+    } catch {
+      // The recording keeps its own strength in edits.json either way.
+    }
+  }, [updateEdits]);
 
   const moveHistory = useCallback((direction: "undo" | "redo") => {
     const from = direction === "undo" ? history.current.past : history.current.future;
@@ -568,7 +597,7 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
       const outroMs = withCards && brand.outro.enabled && brand.outro.title.trim() ? CARD_MS : 0;
       const sourceTimes = buildSourceTimes(sourceRanges, EXPORT_FPS);
       const recordingFrames = buildRenderFrames(recording.pointerEvents, source, layout, recording.durationMs, EXPORT_FPS, autoZoom, {
-        zooms,
+        zooms: applyZoomStrength(zooms, zoomStrength),
         startMs: range.startMs,
         endMs: range.endMs,
         sourceTimesMs: sourceTimes,
@@ -705,6 +734,8 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
         edits={edits}
         onEditsChange={updateEdits}
         zooms={zooms}
+        zoomStrength={zoomStrength}
+        onZoomStrengthChange={changeZoomStrength}
         range={range}
         captions={captions?.enabled ? { lines: captions.lines, style: captionStyle } : null}
         seekRef={seekRef}

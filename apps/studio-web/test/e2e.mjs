@@ -411,6 +411,24 @@ try {
     console.log("short recording trimmed at both ends: ok");
   }
 
+  // 7a. One control sets how deep every zoom goes, remembered for the next recording.
+  {
+    const page = await openApp();
+    await record(page, 1_500);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    const strength = page.locator(".zoom-strength");
+    assert.equal(await strength.locator("output").textContent(), "100%", "zooms play at their own depth by default");
+    await strength.locator("input").fill("0.5");
+    assert.equal(await strength.locator("output").textContent(), "50%", "the strength follows the slider");
+    assert.equal(await page.locator(".zoom-text").first().textContent(), "1.4×", "a 1.8× zoom now plays at 1.4×");
+    // Each test page is a fresh browser profile, so the remembered choice is read directly.
+    assert.equal(await page.evaluate(() => localStorage.getItem("screensway.zoomStrength")), "0.5", "the choice is remembered for new recordings");
+    if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, "zoom-strength.png") });
+    await page.close({ runBeforeUnload: false });
+    console.log("zoom strength for the whole video: ok");
+  }
+
   // 7b. A part cut from the middle is left out of the picture and the sound.
   {
     const page = await openApp();
