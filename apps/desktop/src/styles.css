@@ -81,7 +81,7 @@ html:not(.glass) .app-shell { background-color: var(--bg); }
 html.windows .titlebar { padding-left: 18px; }
 html.glass .titlebar { -webkit-backdrop-filter: blur(20px) saturate(150%); backdrop-filter: blur(20px) saturate(150%); }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--font-heading); font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
-.brand svg { flex: none; border-radius: 9px; box-shadow: 0 8px 20px #4338ca55; }
+.brand svg { flex: none; border-radius: 9px; box-shadow: 0 8px 20px #0071e355; }
 
 .titlebar-actions { display: flex; align-items: center; gap: 10px; }
 .header-update-button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 1px solid #818cf880; border-radius: 999px; background: linear-gradient(180deg, #818cf84a, #6366f12e); color: #eef0ff; box-shadow: inset 0 1px 0 #ffffff24, 0 8px 24px #4338ca25; font-size: 12px; font-weight: 700; white-space: nowrap; transition: background var(--dur-fast) ease, transform var(--dur-fast) ease; }

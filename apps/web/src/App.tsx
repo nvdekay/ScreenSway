@@ -73,7 +73,7 @@ function Logo() {
   const { t } = useI18n();
   return (
     <SectionLink to="top" className="logo" aria-label={t("nav.home")}>
-      <LogoMark size={28} tone="flat" />
+      <LogoMark size={28} />
       <span className="wordmark">ScreenSway</span>
     </SectionLink>
   );

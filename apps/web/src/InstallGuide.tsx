@@ -75,7 +75,7 @@ export function InstallGuide() {
                     <div className="mock-windows-window">
                       <span className="mock-windows-title"><Download size={14} /> {t("guide.winDownloads")}</span>
                       <div className="mock-windows-file">
-                        <LogoMark size={32} tone="flat" />
+                        <LogoMark size={32} />
                         <span>ScreenSway-windows-<wbr />x64-setup.exe<small>{t("guide.winInstaller")}</small></span>
                       </div>
                       <span className="mock-windows-action">{t("guide.winOpen")} <ArrowRight size={13} /></span>
@@ -97,7 +97,7 @@ export function InstallGuide() {
                         <span>{t("guide.winDesktopAccess")}</span>
                         <span className="mock-windows-toggle"><span /> <small>{t("guide.winOn")}</small></span>
                       </div>
-                      <div className="mock-windows-launch"><LogoMark size={26} tone="flat" /><strong>ScreenSway</strong><Check size={16} /></div>
+                      <div className="mock-windows-launch"><LogoMark size={26} /><strong>ScreenSway</strong><Check size={16} /></div>
                     </div>
                   )}
                 </div>
@@ -113,7 +113,7 @@ export function InstallGuide() {
               <div><h3>{t("guide.step1Title")}</h3><p>{t("guide.step1")}</p></div>
             </div>
             <div className="guide-visual drag" aria-hidden="true">
-              <span className="drag-item"><LogoMark size={44} tone="flat" /><small>ScreenSway</small></span>
+              <span className="drag-item"><LogoMark size={44} /><small>ScreenSway</small></span>
               <ArrowRight size={22} className="drag-arrow" />
               <span className="drag-item"><span className="folder"><Folder size={30} /></span><small>{t("guide.applications")}</small></span>
             </div>
