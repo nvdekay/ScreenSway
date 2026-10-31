@@ -318,7 +318,13 @@ impl Session {
             worker.join().map_err(|_| "Audio capture thread failed")??;
         }
         let temp = video.with_extension("audio.mp4");
-        super::mux::with_source_audio(video, &self.path, &temp, &[(0, duration)], 0)?;
+        let mut reported = std::time::Instant::now();
+        super::mux::with_source_audio(video, &self.path, &temp, &[(0, duration)], 0, &mut || {
+            if reported.elapsed() >= Duration::from_secs(1) {
+                reported = std::time::Instant::now();
+                super::saving("audio");
+            }
+        })?;
         std::fs::rename(&temp, video).map_err(|e| e.to_string())?;
         std::fs::remove_file(&self.path).map_err(|e| e.to_string())?;
         Ok(())

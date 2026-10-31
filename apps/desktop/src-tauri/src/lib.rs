@@ -133,12 +133,46 @@ struct RecordingState {
 struct ActiveRecording {
     child: std::process::Child,
     stdout_reader: std::thread::JoinHandle<Vec<u8>>,
-    stderr_log: Arc<Mutex<String>>,
+    stderr_log: Arc<HelperLog>,
     control_path: std::path::PathBuf,
     project_path: std::path::PathBuf,
     started_at: Instant,
     paused_total: Duration,
     paused_at: Option<Instant>,
+}
+
+/// What the capture helper writes to stderr: its messages, and the saving step it last
+/// reported (only the Windows helper reports them, see `SAVING_LINE_PREFIX`).
+#[cfg(capture)]
+#[derive(Default)]
+struct HelperLog {
+    text: Mutex<String>,
+    saving: Mutex<Option<(Instant, String)>>,
+}
+
+#[cfg(capture)]
+impl HelperLog {
+    fn record(&self, line: &str) {
+        if let Some(step) = line.trim().strip_prefix(SAVING_LINE_PREFIX) {
+            if let Ok(mut saving) = self.saving.lock() {
+                *saving = Some((Instant::now(), step.trim().to_string()));
+            }
+        } else if let Ok(mut text) = self.text.lock() {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+
+    fn text(&self) -> String {
+        self.text.lock().map(|text| text.clone()).unwrap_or_default()
+    }
+
+    /// The step that has not moved for `timeout`, if the helper reports its steps at all.
+    fn stalled_step(&self, timeout: Duration) -> Option<String> {
+        let saving = self.saving.lock().ok()?;
+        let (reported, step) = saving.as_ref()?;
+        (reported.elapsed() >= timeout).then(|| step.clone())
+    }
 }
 
 #[cfg(capture)]
@@ -179,6 +213,12 @@ const TRAY_ID: &str = "recording";
 const COUNTDOWN_SECONDS: u8 = 3;
 #[cfg(capture)]
 const HELPER_READY_LINE: &str = "SCREENSWAY_READY";
+/// "SCREENSWAY_SAVING <step>": the Windows helper names each step of saving a recording and
+/// repeats it at least every few seconds while a long step is still moving.
+const SAVING_LINE_PREFIX: &str = "SCREENSWAY_SAVING ";
+/// A save step that sends nothing for this long is stuck: the helper is stopped so the app
+/// does not wait on "Saving…" forever and can record again.
+const SAVING_STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn publish_state(app: &tauri::AppHandle, state: RecordingState) {
     if let Ok(mut current) = app.state::<CaptureManager>().state.lock() {
@@ -549,7 +589,7 @@ fn start_recording_blocking(
 
     // Wait until ScreenCaptureKit is actually delivering frames before the timer starts.
     let stderr = child.stderr.take().ok_or("Could not read the capture helper output.")?;
-    let stderr_log = Arc::new(Mutex::new(String::new()));
+    let stderr_log = Arc::new(HelperLog::default());
     let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
     {
         let stderr_log = stderr_log.clone();
@@ -557,9 +597,8 @@ fn start_recording_blocking(
             for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
                 if line.trim() == HELPER_READY_LINE {
                     let _ = ready_sender.send(());
-                } else if let Ok(mut log) = stderr_log.lock() {
-                    log.push_str(&line);
-                    log.push('\n');
+                } else {
+                    stderr_log.record(&line);
                 }
             }
         });
@@ -707,20 +746,48 @@ fn finish_session(app: &tauri::AppHandle, result: &Result<CaptureSummary, String
 #[cfg(capture)]
 fn finish_helper(
     mut child: std::process::Child,
-    stderr_log: &Arc<Mutex<String>>,
+    stderr_log: &Arc<HelperLog>,
     stdout_reader: std::thread::JoinHandle<Vec<u8>>,
 ) -> Result<CaptureSummary, String> {
+    // stdout is drained by its own thread, so waiting here cannot block the helper.
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => return Err(format!("Could not finalize the recording: {error}")),
+        }
+        if let Some(step) = stderr_log.stalled_step(SAVING_STALL_TIMEOUT) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            return Err(format!(
+                "Saving the recording stopped responding ({}) and was stopped after {} seconds.",
+                saving_step_label(&step),
+                SAVING_STALL_TIMEOUT.as_secs()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
     let stdout = stdout_reader.join().unwrap_or_default();
-    let status = child
-        .wait()
-        .map_err(|error| format!("Could not finalize the recording: {error}"))?;
     // Give the stderr reader a moment to collect the helper's final message.
     std::thread::sleep(Duration::from_millis(50));
-    let stderr = stderr_log.lock().map(|log| log.clone()).unwrap_or_default();
+    let stderr = stderr_log.text();
     parse_helper_output(
         std::process::Output { status, stdout, stderr: stderr.into_bytes() },
         "Screen recording",
     )
+}
+
+#[cfg(capture)]
+fn saving_step_label(step: &str) -> &str {
+    match step {
+        "capture" => "stopping the capture",
+        "video" => "finishing the video file",
+        "audio" => "adding the audio",
+        "camera" => "finishing the camera video",
+        "details" => "writing the recording details",
+        _ => "saving",
+    }
 }
 
 #[cfg(capture)]
@@ -2571,6 +2638,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(capture)]
+    #[test]
+    fn a_save_is_stalled_only_when_the_helper_reports_steps_and_one_stops_moving() {
+        let log = HelperLog::default();
+        log.record("Capture stopped by Windows: the recorded window or display went away.");
+        // The macOS helper never reports steps: it is never stopped for being slow.
+        assert_eq!(log.stalled_step(Duration::ZERO), None);
+        log.record("SCREENSWAY_SAVING audio");
+        assert_eq!(log.stalled_step(Duration::ZERO).as_deref(), Some("audio"));
+        assert_eq!(log.stalled_step(Duration::from_secs(60)), None);
+        assert_eq!(log.text(), "Capture stopped by Windows: the recorded window or display went away.\n");
+        assert_eq!(saving_step_label("audio"), "adding the audio");
+    }
 
     #[test]
     fn capture_regions_must_stay_inside_the_display() {

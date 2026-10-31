@@ -12,7 +12,7 @@ use crate::model::{
 use crate::timeline::{PointerLog, VideoTimeline, TICKS_PER_SECOND};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use windows::core::{Interface, Ref};
 use windows::Foundation::TypedEventHandler;
@@ -61,7 +61,9 @@ struct Frames {
     latest: Option<(ID3D11Texture2D, (u32, u32))>,
     thumbnail: Option<(ID3D11Texture2D, (u32, u32))>,
     pool_size: SizeInt32,
-    failure: Option<String>,
+    /// The first error, outside the lock: a frame stuck in the encoder holds the lock, and
+    /// the main loop must still see the stop command.
+    failure: Arc<OnceLock<String>>,
     stats: CaptureStats,
     frame_time_total_ms: f64,
     source_rect: RECT,
@@ -153,7 +155,7 @@ impl Frames {
             });
         if let Err(message) = result {
             // For example a full disk; the main loop stops the recording.
-            self.failure.get_or_insert(message);
+            let _ = self.failure.set(message);
             return;
         }
         self.stats.frames_written += 1;
@@ -277,6 +279,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     )?;
     let encoder = Encoder::new(&video_path, &gpu, width, height)?;
     let encoder_name = encoder.name.clone();
+    let frame_failure = Arc::new(OnceLock::new());
     let frames = Arc::new(Mutex::new(Frames {
         gpu: gpu.clone(),
         timeline: VideoTimeline::default(),
@@ -285,7 +288,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         latest: None,
         thumbnail: None,
         pool_size: item_size,
-        failure: None,
+        failure: frame_failure.clone(),
         stats: CaptureStats {
             encoder: encoder_name,
             source_width: cropped_size.0,
@@ -331,7 +334,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
                     error.message(),
                     error.code().0 as u32
                 );
-                frames.failure.get_or_insert(message);
+                let _ = frames.failure.set(message);
             }
             Ok(())
         })
@@ -417,7 +420,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
             eprintln!("Capture stopped by Windows: the recorded window or display went away.");
             break;
         }
-        if let Some(message) = frames.lock().ok().and_then(|frames| frames.failure.clone()) {
+        if let Some(message) = frame_failure.get().cloned() {
             failure = Some(message);
             break;
         }
@@ -449,6 +452,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
     }
 
     let recording_end = now();
+    super::saving("capture");
     if let Some(audio) = &audio {
         audio.stop(recording_end);
     }
@@ -482,6 +486,7 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         )
     };
     if let Some((encoder, end)) = encoder {
+        super::saving("video");
         encoder.finish(end).step("Finishing the video file")?;
     }
     if let Some(message) = failure {
@@ -491,10 +496,12 @@ pub fn run(arguments: &[String]) -> Result<CaptureSummary, Error> {
         return Err("Screen recording finished without creating a video file.".into());
     }
     if let Some(audio) = audio {
+        super::saving("audio");
         audio.finish(recording_end, &video_path, video_end)?;
     }
-    if let Some(camera) = camera.take() { camera.finish().map_err(|message| format!("Finishing the camera failed: {message}"))?; }
+    if let Some(camera) = camera.take() { super::saving("camera"); camera.finish().map_err(|message| format!("Finishing the camera failed: {message}"))?; }
     // The library shows this instead of decoding the full video for every card.
+    super::saving("details");
     if let Some((texture, content)) = thumbnail {
         let _ = thumbnail::write(&gpu, &texture, content, &media.join("thumbnail.jpg"));
     }

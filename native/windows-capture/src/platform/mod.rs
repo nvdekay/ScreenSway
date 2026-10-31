@@ -67,6 +67,12 @@ use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 
+/// Tells the desktop shell which step of saving a recording is running, and that it is
+/// still moving: a long save sends these regularly, a stuck one stops sending them.
+pub fn saving(step: &str) {
+    eprintln!("SCREENSWAY_SAVING {step}");
+}
+
 /// Names the step that failed, so an error from the field says where it happened, for
 /// example "Creating the video processor failed: No such interface supported (0x80004002)".
 pub trait Step<T> {

@@ -103,7 +103,7 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
     } else {
         job.source_ranges.iter().map(|range| ((range.start_ms * 10_000.0).round() as i64, (range.end_ms * 10_000.0).round() as i64)).collect()
     };
-    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, &audio_ranges, (job.lead_in_ms * 10_000.0).round() as i64)?;
+    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, &audio_ranges, (job.lead_in_ms * 10_000.0).round() as i64, &mut || {})?;
     std::fs::remove_file(&temporary).map_err(|e| e.to_string())?;
     eprintln!("SCREENSWAY_PROGRESS 100");
     Ok(ExportResult {

@@ -58,6 +58,7 @@ pub fn with_source_audio(
     output: &Path,
     ranges: &[(i64, i64)],
     lead_in: i64,
+    progress: &mut dyn FnMut(),
 ) -> Result<(), String> {
     let audio = reader::open(source, false)?;
     // A recording made with both audio switches off is a normal silent export.
@@ -121,6 +122,7 @@ pub fn with_source_audio(
         let mut audio_offset = lead_in;
         let mut ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset)?;
         while vp.is_some() || ap.is_some() {
+            progress();
             if vp
                 .as_ref()
                 .is_some_and(|(_, t)| ap.as_ref().is_none_or(|(_, at)| t <= at))
