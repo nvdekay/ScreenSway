@@ -12,3 +12,8 @@ onlyBuiltDependencies:
 allowBuilds:
   esbuild: true
   workerd: true
+
+# Patched undici for the dev tools (jsdom, wrangler's miniflare); see audit.yml.
+overrides:
+  undici@7: ^7.30.1
+  undici@8: ^8.12.2
