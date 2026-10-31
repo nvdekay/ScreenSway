@@ -114,4 +114,17 @@ for (const y of [20, 383, 745]) {
   near(oddPixel(600, y), [255, 0, 0], `Odd-sized source keeps its left half at row ${y}`);
   near(oddPixel(766, y), [0, 0, 255], `Odd-sized source keeps its right half at row ${y}`);
 }
+// A part played four times as fast: the picture is shorter and its sound is silence, so the
+// sound after it stays in step and both tracks end together.
+const speedTimes = Array.from({ length: 90 }, (_, i) => { const t = i * 1000 / 60; return t < 1000 ? t : 1000 + (t - 1000) * 4; });
+const speedJob = { ...job, source, output: path.join(work, "speed.mp4"), startMs: 0, captions: [], sourceTimesMs: speedTimes,
+  frames: speedTimes.map(() => [0,0,320,180,0,0,0,0,0,0,0]), sourceRanges: [{ startMs: 0, endMs: 1000 }, { startMs: 1000, endMs: 3000, rate: 4 }] };
+writeFileSync(jobPath, JSON.stringify(speedJob)); run(helper, ["--export", jobPath]);
+const speedStreams = probe(speedJob.output).streams;
+const trackLength = (type) => Number(speedStreams.find(s => s.codec_type === type).duration);
+assert(Math.abs(trackLength("video") - 1.5) < 0.05, `the 4× part is a quarter as long: ${trackLength("video")}`);
+assert(Math.abs(trackLength("audio") - trackLength("video")) < 0.08, `sound and picture end together: ${trackLength("audio")}`);
+const loudness = (from, to) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync("ffmpeg", ["-hide_banner", "-i", speedJob.output, "-af", `atrim=${from}:${to},volumedetect`, "-f", "null", "-"], { encoding: "utf8", windowsHide: true }).stderr)[1]);
+assert(loudness(0.2, 0.8) > -40, "the normal part keeps its sound");
+assert(loudness(1.1, 1.4) < -60, "the faster part is silent");
 console.log(`Windows native export checks passed. Artifacts: ${work}`);
