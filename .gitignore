@@ -16,3 +16,4 @@ apps/desktop/src-tauri/binaries/screensway-capture-*
 apps/desktop/src-tauri/resources/models/*.bin
 apps/desktop/src-tauri/resources/models/*.download
 
+/release/

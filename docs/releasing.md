@@ -44,6 +44,16 @@ Both macOS and Windows x64 are publicly available. Relevant pushes build a Windo
 
 Before building Windows, run `pnpm setup:windows-speech` to download and verify the bundled model. See [Windows build and validation](windows-validation.md) for dependencies and checks.
 
+## Publish without GitHub Actions
+
+When Actions cannot run (since 2026-10-22 the account is blocked by a failed payment), `scripts/release-local.mjs` runs the same steps on the owner's computers. Bump the version, commit and push to `main` as usual, then:
+
+1. On the Mac: `node scripts/release-local.mjs macos`. It asks for the updater key password (read from `~/.tauri/screensway.key`), runs the tests, builds the universal app, checks it like `release.yml` and puts the DMG, updater bundle, `.sig` and `.sha256` files in `release/vX.Y.Z/` (ignored by Git).
+2. On the Windows PC, at the same commit: `node scripts/release-local.mjs windows`. It runs the Windows tests, including real capture and `test:export:windows`, and builds the installer without updater files (`tauri.unsigned.conf.json`). Copy `release/vX.Y.Z/ScreenSway-windows-x64-setup.exe` and its `.sha256` into the same folder on the Mac.
+3. On the Mac: `node scripts/release-local.mjs publish`. It checks the copied installer against its checksum, signs it for the updater (the key never goes to the PC), pushes the tag, creates the GitHub release with every file, copies the downloads to R2 with `publish-downloads.mjs`, builds the site with the new feed, uploads the feed to the downloads Worker and deploys the site with `wrangler` (signed in with `wrangler login`). It ends by checking that `/current`, both `/latest/` downloads and `screensway.site/update/latest.json` offer the new version.
+
+The upload token comes from `DOWNLOADS_UPLOAD_TOKEN` or, if unset, `apps/downloads/.dev.vars`, which holds the production value. Pushing the tag and creating the release still start `release.yml` and `web.yml`; while Actions is blocked they fail without doing anything. `node scripts/release-local.mjs site` redeploys only the site and feed for the release currently offered, for site changes between releases.
+
 ## Signing
 
 Unsigned macOS and Windows builds trigger security warnings. Configure Apple Developer signing/notarization and a Windows code-signing certificate in repository secrets to remove those warnings from future releases. Never commit signing credentials.
