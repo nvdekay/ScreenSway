@@ -9,6 +9,8 @@ import {
   safeArea,
   keptDuration,
   keptRanges,
+  musicGain,
+  musicTime,
   type CameraOverlay,
   type CaptionLine,
   viewAt,
@@ -70,6 +72,8 @@ interface ZoomPreviewProps {
   /** How deep every zoom plays (`applyZoomStrength`), and where the timeline changes it. */
   zoomStrength?: number;
   onZoomStrengthChange?: (strength: number) => void;
+  /** Background music, placed as in the export: `offsetMs` into a video `totalMs` long. */
+  music?: { src: string; volume: number; loop: boolean; offsetMs: number; totalMs: number } | null;
   range: { startMs: number; endMs: number };
   /** Captions to show, or null when they are off. */
   captions: { lines: CaptionLine[]; style: CaptionStyle } | null;
@@ -101,6 +105,7 @@ export function ZoomPreview({
   zooms,
   zoomStrength = DEFAULT_ZOOM_STRENGTH,
   onZoomStrengthChange,
+  music = null,
   range,
   captions,
   seekRef,
@@ -131,6 +136,9 @@ export function ZoomPreview({
   const keystrokeRef = useRef<HTMLCanvasElement>(null);
   const shownKey = useRef<KeystrokeEvent | null | undefined>(undefined);
   const cameraRef = useRef<HTMLVideoElement>(null);
+  const musicRef = useRef<HTMLAudioElement>(null);
+  const musicSettings = useRef(music);
+  musicSettings.current = music;
   const cameraDrag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const showCamera = Boolean(recording.cameraPath && cameraOverlay?.visible);
   // Read by the frame loop, so moving a trim handle never restarts playback.
@@ -286,6 +294,21 @@ export function ZoomPreview({
       // The camera file follows the screen; it only needs a nudge when it drifts.
       const webcam = cameraRef.current;
       if (webcam && webcam.playbackRate !== rate) webcam.playbackRate = rate;
+      // The music follows the video's place in the finished video, not the recording's.
+      const track = musicRef.current;
+      const settings = musicSettings.current;
+      if (track && settings && track.readyState > 0 && Number.isFinite(track.duration)) {
+        const at = sourceToOutputTime(kept, timeMs) + settings.offsetMs;
+        const offset = musicTime(at, track.duration * 1_000, settings.loop);
+        if (offset === null || video.paused) {
+          if (!track.paused) track.pause();
+        } else {
+          if (Math.abs(track.currentTime * 1_000 - offset) > 250) track.currentTime = offset / 1_000;
+          if (track.paused) void track.play().catch(() => {});
+        }
+        track.volume = musicGain(settings.volume, at, settings.totalMs);
+        track.muted = video.muted;
+      }
       if (webcam && webcam.readyState > 0) {
         const target = Math.max(0, video.currentTime - (recording.cameraOffsetMs ?? 0) / 1_000);
         if (!webcam.seeking && Math.abs(webcam.currentTime - target) > (video.paused ? 0.03 : 0.15)) webcam.currentTime = target;
@@ -442,6 +465,7 @@ export function ZoomPreview({
           </div>
           </div>
           <canvas className="frame-canvas caption-canvas" ref={captionCanvasRef} aria-hidden="true" />
+          {music && <audio ref={musicRef} src={music.src} preload="auto" />}
           {logo && (() => {
             const box = logo.rect(layout);
             return <img className="preview-logo" src={logo.src} alt="" style={{ left: percent(box.x, layout.width), top: percent(box.y, layout.height), width: percent(box.width, layout.width), height: percent(box.height, layout.height) }} />;

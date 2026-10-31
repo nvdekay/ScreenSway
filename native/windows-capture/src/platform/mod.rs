@@ -6,6 +6,7 @@ pub mod camera;
 mod capture;
 mod encoder;
 pub mod export;
+mod music;
 mod mux;
 pub mod reader;
 pub mod recorder;

@@ -1,4 +1,4 @@
-import type { RenderFrame } from "@screensway/core";
+import { musicGain, musicTime, type RenderFrame } from "@screensway/core";
 import {
   ALL_FORMATS,
   AudioBufferSink,
@@ -30,6 +30,8 @@ export interface ExportJob {
   sourceRanges?: { startMs: number; endMs: number; rate?: number }[];
   /** Silence before the recording's sound, under an intro card. */
   leadInMs?: number;
+  /** Music under the whole video; `blob` is the file the visitor picked. */
+  music?: { file: string; volume: number; loop: boolean; blob?: Blob };
   frames: RenderFrame[];
 }
 
@@ -94,7 +96,9 @@ export async function renderExport(
     const videoSource = new CanvasSource(canvas, { codec: "avc", bitrate });
     output.addVideoTrack(videoSource, { frameRate: job.fps });
     const audioCodec = (await canEncodeAudio("aac")) ? "aac" : "opus";
-    const audioSource = audioTrack ? new AudioBufferSource({ codec: audioCodec, bitrate: 160_000 }) : null;
+    const music = job.music?.blob ? await decodeMusic(job.music.blob, audioTrack?.sampleRate ?? 48_000, audioTrack?.numberOfChannels ?? 2) : null;
+    checkpoint();
+    const audioSource = audioTrack || music ? new AudioBufferSource({ codec: audioCodec, bitrate: 160_000 }) : null;
     if (audioSource) output.addAudioTrack(audioSource);
     await output.start();
     checkpoint();
@@ -129,38 +133,53 @@ export async function renderExport(
     }
     videoSource.close();
 
-    if (audioTrack && audioSource) {
+    if (audioSource) {
       const length = frames.length / fps;
-      const ranges = job.sourceRanges?.length
-        ? job.sourceRanges.map((range) => ({ start: range.startMs / 1_000, end: range.endMs / 1_000, rate: range.rate ?? 1 }))
-        : [{ start: startMs / 1_000, end: startMs / 1_000 + length, rate: 1 }];
+      const sampleRate = audioTrack?.sampleRate ?? 48_000;
+      const channels = audioTrack?.numberOfChannels ?? 2;
+      // Every buffer passes through here in order, so `written` is its place in the video.
+      let written = 0;
+      const add = async (buffer: AudioBuffer) => {
+        await audioSource.add(music && job.music ? mixMusic(buffer, music, written, length, job.music.volume, job.music.loop) : buffer);
+        written += buffer.length / buffer.sampleRate;
+      };
+      const ranges = !audioTrack
+        ? []
+        : job.sourceRanges?.length
+          ? job.sourceRanges.map((range) => ({ start: range.startMs / 1_000, end: range.endMs / 1_000, rate: range.rate ?? 1 }))
+          : [{ start: startMs / 1_000, end: startMs / 1_000 + length, rate: 1 }];
       const leadIn = (job.leadInMs ?? 0) / 1_000;
-      if (leadIn > 0.01) await audioSource.add(silence(leadIn, audioTrack.sampleRate, audioTrack.numberOfChannels));
+      if (audioTrack && leadIn > 0.01) await add(silence(leadIn, sampleRate, channels));
       // Sound is laid end to end, so gaps in the recording are filled with silence to stay in sync.
-      let total = leadIn;
+      let total = audioTrack ? leadIn : 0;
       for (const range of ranges) {
         if (range.rate !== 1) {
           // A faster or slower part keeps its place in time but not its sound.
           const duration = Math.min((range.end - range.start) / range.rate, length - total);
-          if (duration > 0.001) await audioSource.add(silence(duration, audioTrack.sampleRate, audioTrack.numberOfChannels));
+          if (duration > 0.001) await add(silence(duration, sampleRate, channels));
           total += duration;
           continue;
         }
         const end = Math.min(range.end, range.start + length - total);
-        let written = range.start;
-        for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack).buffers(range.start, end)) {
+        let position = range.start;
+        for await (const { buffer, timestamp } of new AudioBufferSink(audioTrack!).buffers(range.start, end)) {
           checkpoint();
-          const gap = timestamp - written;
-          if (gap > 0.01) await audioSource.add(silence(Math.min(gap, end - written), buffer.sampleRate, buffer.numberOfChannels));
-          const kept = keep(buffer, Math.max(timestamp, written), timestamp, end);
+          const gap = timestamp - position;
+          if (gap > 0.01) await add(silence(Math.min(gap, end - position), buffer.sampleRate, buffer.numberOfChannels));
+          const kept = keep(buffer, Math.max(timestamp, position), timestamp, end);
           if (kept) {
-            await audioSource.add(kept);
-            written = Math.max(timestamp, written) + kept.duration;
+            await add(kept);
+            position = Math.max(timestamp, position) + kept.duration;
           }
         }
         // Sound that ends before the picture is padded too, so both tracks end together.
-        if (end - written > 0.01) await audioSource.add(silence(end - written, audioTrack.sampleRate, audioTrack.numberOfChannels));
+        if (end - position > 0.01) await add(silence(end - position, sampleRate, channels));
         total += end - range.start;
+      }
+      // Music plays to the end of the video, under an outro card or a silent recording too.
+      for (let left = length - written; music && left > 0.005; left = length - written) {
+        checkpoint();
+        await add(silence(Math.min(1, left), sampleRate, channels));
       }
       audioSource.close();
     }
@@ -244,6 +263,33 @@ function keep(buffer: AudioBuffer, from: number, timestamp: number, end: number)
     part.copyToChannel(buffer.getChannelData(channel).subarray(first, last), channel);
   }
   return part;
+}
+
+/** The music decoded at the export's sample rate, so it can be added sample by sample. */
+async function decodeMusic(file: Blob, sampleRate: number, channels: number): Promise<AudioBuffer> {
+  try {
+    return await new OfflineAudioContext(channels, 1, sampleRate).decodeAudioData(await file.arrayBuffer());
+  } catch {
+    throw new Error("music.unreadable");
+  }
+}
+
+/** `buffer` with the music added under it; `at` is where the buffer starts in a video `length` seconds long. */
+function mixMusic(buffer: AudioBuffer, music: AudioBuffer, at: number, length: number, volume: number, loop: boolean): AudioBuffer {
+  const mixed = new AudioBuffer({ length: buffer.length, numberOfChannels: buffer.numberOfChannels, sampleRate: buffer.sampleRate });
+  const musicMs = music.duration * 1_000;
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    const data = buffer.getChannelData(channel).slice();
+    const source = music.getChannelData(Math.min(channel, music.numberOfChannels - 1));
+    for (let index = 0; index < data.length; index++) {
+      const timeMs = (at + index / buffer.sampleRate) * 1_000;
+      const offset = musicTime(timeMs, musicMs, loop);
+      if (offset === null) break;
+      data[index] += (source[Math.floor((offset / 1_000) * music.sampleRate)] ?? 0) * musicGain(volume, timeMs, length * 1_000);
+    }
+    mixed.copyToChannel(data, channel);
+  }
+  return mixed;
 }
 
 function silence(seconds: number, sampleRate: number, numberOfChannels: number): AudioBuffer {

@@ -32,6 +32,9 @@ pub struct ExportJob {
     /// Silence before the recording's sound, under an intro card.
     #[serde(default)]
     pub lead_in_ms: f64,
+    /// Music under the whole video, from the recording's own copy.
+    #[serde(default)]
+    pub music: Option<MusicJob>,
     #[serde(default)]
     pub redactions: Vec<Redaction>,
     #[serde(default)]
@@ -65,6 +68,16 @@ pub struct SourceRange {
     /// Above 1 the part plays faster, below 1 slower; its sound is left out (silence).
     #[serde(default)]
     pub rate: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct MusicJob {
+    pub path: String,
+    /// 0–1 of the file's own level.
+    pub volume: f64,
+    /// Starts over when it ends before the video does.
+    #[serde(rename = "loop")]
+    pub looped: bool,
 }
 
 #[derive(Deserialize)]
@@ -149,6 +162,7 @@ impl ExportJob {
                     || self.source_times_ms.windows(2).any(|pair| pair[1] < pair[0])))
             || self.source_ranges.iter().any(|range| !finite(range.start_ms) || !finite(range.end_ms) || range.start_ms < 0.0 || range.end_ms <= range.start_ms
                 || range.rate.is_some_and(|rate| !finite(rate) || rate <= 0.0))
+            || self.music.as_ref().is_some_and(|music| !finite(music.volume) || music.volume < 0.0 || music.path.is_empty())
             || self.redactions.iter().any(|r| ![r.x, r.y, r.width, r.height].into_iter().all(finite) || r.width <= 0.0 || r.height <= 0.0 || (r.mode != "blur" && r.mode != "solid"))
             || self.captions.iter().any(|c| {
                 ![c.start_ms, c.end_ms, c.x, c.y].into_iter().all(finite) || c.end_ms <= c.start_ms

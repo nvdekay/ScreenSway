@@ -14,6 +14,7 @@ import {
   MAX_ZOOM_STRENGTH,
   MIN_ZOOM_STRENGTH,
   NO_EDITS,
+  keptDuration,
   keptRanges,
   retimeCaptions,
   resolveZooms,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMessageKey, useI18n } from "../i18n";
 import { ZoomPreview, type RecordingResult } from "../ZoomPreview";
 import { FrameEditor, type RecentImage } from "./FrameEditor";
+import { MusicPanel, NEW_MUSIC } from "./MusicPanel";
 import { CaptionsPanel, type RecordingCaptions, type TranscriptionState } from "./CaptionsPanel";
 import { DEFAULT_CAPTION_STYLE, keystrokeEnd, loadCaptionFont, paintCaption, paintKeystroke, type CaptionStyle } from "./captionPaint";
 import { CURSOR_HOTSPOT, magicBackground, paintFrameBase, renderCursorPng } from "./paint";
@@ -153,7 +155,10 @@ function parseEdits(value: unknown): RecordingEdits {
   const speeds = Array.isArray(edits.speeds)
     ? edits.speeds.filter((item) => item && typeof item.id === "string" && [item.startMs, item.endMs, item.rate].every((field) => number(field) !== null))
     : [];
-  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters, zoomStrength, speeds };
+  const storedMusic = edits.music;
+  const music = storedMusic && typeof storedMusic.file === "string" && typeof storedMusic.name === "string" && typeof storedMusic.loop === "boolean" && number(storedMusic.volume) !== null
+    ? storedMusic : null;
+  return { trimStartMs: number(edits.trimStartMs) ?? 0, trimEndMs: number(edits.trimEndMs), zooms, cuts, redactions, keystrokeOverlay, camera, framing, chapters, zoomStrength, speeds, music };
 }
 
 
@@ -233,6 +238,23 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
       .catch(() => { if (!cancelled) { setLogoData(null); setLogoImage(null); } });
     return () => { cancelled = true; };
   }, [brand.logoPath]);
+  const [musicBusy, setMusicBusy] = useState(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
+  async function pickMusic() {
+    setMusicBusy(true);
+    setMusicError(null);
+    try {
+      const picked = await invoke<{ file: string; name: string } | null>("import_music", { projectPath: recording.projectPath });
+      // A new file keeps the level and looping chosen for the previous one.
+      if (picked) updateEdits((current) => ({ ...current, music: { ...NEW_MUSIC, ...(current.music && { volume: current.music.volume, loop: current.music.loop }), ...picked } }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMusicError(isMessageKey(message) ? t(message) : message);
+    } finally {
+      setMusicBusy(false);
+    }
+  }
+
   async function chooseLogo(file: File) {
     try {
       const data = await readFile(file);
@@ -261,6 +283,14 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
   const [preferredZoomStrength, setPreferredZoomStrength] = useState(loadZoomStrength);
   const zoomStrength = edits.zoomStrength ?? preferredZoomStrength;
   const sourceRanges = useMemo(() => keptRanges(edits, recording.durationMs), [edits, recording.durationMs]);
+  // The music as the export will mix it: from the start of the video, intro card included.
+  const musicPreview = useMemo(() => {
+    if (!edits.music) return null;
+    const card = (item: { enabled: boolean; title: string }) => (!isWeb && item.enabled && item.title.trim() ? CARD_MS : 0);
+    const separator = recording.projectPath.includes("\\") ? "\\" : "/";
+    const src = isWeb ? edits.music.file : convertFileSrc(`${recording.projectPath}${separator}${edits.music.file.split("/").join(separator)}`);
+    return { src, volume: edits.music.volume, loop: edits.music.loop, offsetMs: card(brand.intro), totalMs: card(brand.intro) + keptDuration(sourceRanges) + card(brand.outro) };
+  }, [brand.intro, brand.outro, edits.music, recording.projectPath, sourceRanges]);
   const cameraOverlay = edits.camera ?? DEFAULT_CAMERA_OVERLAY;
 
   // Each recording keeps its own trim and zooms in edits.json.
@@ -641,6 +671,8 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
           startMs: range.startMs,
           sourceRanges,
           leadInMs: leadIn,
+          // The shell swaps the recording's own music file in; the browser passes the picked file.
+          music: edits.music ? { file: edits.music.file, volume: edits.music.volume, loop: edits.music.loop } : undefined,
           // The cards cover the frame; under them the first and last frames stand still.
           sourceTimesMs: [...Array(introFrames).fill(sourceTimes[0]), ...sourceTimes, ...Array(outroFrames).fill(sourceTimes.at(-1))],
           redactions: edits.redactions ?? [],
@@ -739,6 +771,7 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
         zooms={zooms}
         zoomStrength={zoomStrength}
         onZoomStrengthChange={changeZoomStrength}
+        music={musicPreview}
         range={range}
         captions={captions?.enabled ? { lines: captions.lines, style: captionStyle } : null}
         seekRef={seekRef}
@@ -769,6 +802,7 @@ export function RecordingStudio({ recording, startAtMs, autoExport, onAutoExport
           {!isWeb && <BrandPanel brand={brand} logo={logoData} onChange={updateBrand} onLogo={(file) => void chooseLogo(file)} />}
           {recording.cameraPath && <CameraPanel value={cameraOverlay} onChange={(camera) => updateEdits((current) => ({ ...current, camera }))} />}
           {!isWeb && <PrivacyPanel redactions={edits.redactions ?? []} onChange={(redactions) => updateEdits((current) => ({ ...current, redactions }))} />}
+          <MusicPanel value={edits.music ?? null} onPick={() => void pickMusic()} onChange={(music) => updateEdits((current) => ({ ...current, music }))} busy={musicBusy} error={musicError} />
           {!isWeb && <KeystrokePanel count={recording.keystrokes?.length ?? 0} value={edits.keystrokeOverlay ?? DEFAULT_KEYSTROKE_OVERLAY} onChange={(keystrokeOverlay) => updateEdits((current) => ({ ...current, keystrokeOverlay }))} />}
           {!isWeb && <CaptionsPanel
             captions={captions}

@@ -22,12 +22,14 @@ Platform capture -> project bundle -> camera engine -> studio preview -> native 
     media/screen.mp4              H.264 High video, plus one AAC track when system audio and/or the microphone was on
     media/thumbnail.jpg           written by the helper for the library
     media/camera.mp4              the webcam as its own H.264 file, when the camera was on (project.json: media.camera, media.cameraOffsetMs)
+    media/music.<mp3|m4a|aac|wav> background music the user picked (`import_music` copies it; edits.json: music)
     metadata/pointer-events.json  pointer moves and clicks in video pixels, ms on the video timeline
     metadata/keystrokes.json      shortcut chords ({timeMs, keys}) when shortcut capture was on, otherwise []
     edits.json                    studio edits (absent until something is edited): trim, zooms, middle cuts,
                                   redactions, shortcut overlay, camera placement, held framing, chapters,
                                   zoom strength (how deep every zoom plays; applied when the view is planned),
-                                  speed changes (parts played at 0.5–8×; split into kept ranges with a `rate`)
+                                  speed changes (parts played at 0.5–8×; split into kept ranges with a `rate`),
+                                  background music (file, name, volume, loop)
     transcript.json               timed words from speech recognition
     captions.json                 caption lines as edited in the studio, their language and whether they are shown
   Exports/                        (or the folder chosen in Settings, remembered in the app's config folder)
@@ -81,6 +83,7 @@ The pointer is stored as metadata instead of being burned into the video, so the
 - Middle cuts: `edits.cuts` are source-time ranges; `keptRanges` gives what remains, `buildSourceTimes` the source time of every output frame and `sourceToOutputTime`/`outputToSourceTime` map between the two. The preview skips cut parts, captions are clipped and retimed (`retimeCaptions`), and the export job carries `sourceTimesMs` and `sourceRanges`: all three exporters read the frame at each source time and lay the kept audio ranges end to end. Studio edits have a 50-step undo/redo history (⌘/Ctrl+Z, ⌘/Ctrl+⇧+Z); removing a caption line adds a cut that can be undone or restored from the list, and "Suggest cuts for long pauses" adds visible, undoable cuts.
 - Redactions (`edits.redactions`) are rectangles in source fractions drawn inside the zoomed content, so they follow zooms; the exporters blur (macOS Gaussian, Windows pixelate) or fill them before the cursor is drawn.
 - Overlays: captions, shortcut keys (`paintKeystroke`, shared with the preview), the brand logo and title cards are all PNGs with an output time range in the export's `captions` list. Title cards (`brand.ts`, 2 s on the style's background) add frames before and after the recording; `leadInMs` delays the audio under the intro.
+- Background music: `edits.music` (`BackgroundMusic`) plays from the start of the video (under an intro card too) to its end, looping or not, at `musicGain` (its volume, a 0.3 s fade-in and up to 2 s fade-out; the native exporters repeat the formula). The preview plays the file in an `<audio>` element kept at the output time. The job's `music.path` is filled by the shell from the recording's own copy, never from the UI. With music or a speed change the sound is rebuilt as real samples: the macOS exporter writes it with AVAssetWriter into an M4A that the passthrough composition takes whole; the Windows mux (`music.rs` mixer, resampling to 48 kHz) and the browser exporter mix it while writing. Without either, the original passthrough paths are unchanged.
 - Webcam: `edits.camera` (`CameraOverlay`: centre, size, circle or rounded, mirror) is placed by `cameraRect`; the preview plays `camera.mp4` in sync and lets it be dragged; the job's `camera` box is filled from the project's camera file by the shell, and both native exporters draw the camera frame at `sourceTime - offsetMs` into a rounded mask.
 - After an export: a GIF (`gif.ts`, gifenc: the exported MP4 is sampled frame by frame at 10 or 15 fps, with a size estimate first) saved by `save_export_gif` next to it, `copy_export` puts the MP4 or GIF on the clipboard as a file (AppleScript / `Set-Clipboard`), and export presets (docs 16:9, social 9:16 filled, square) plus saved ones set aspect, fill and quality.
 - The background, shadow and title bar are painted by one shared canvas implementation (`packages/core/src/paint.ts`): at screen size for the desktop and landing previews, and at output size for export. The desktop compatibility module in `apps/desktop/src/frame/paint.ts` re-exports it.

@@ -99,15 +99,17 @@ pub fn run(path: &Path) -> Result<ExportResult, String> {
     let duration = job.frames.len() as i64 * 10_000_000 / job.fps as i64;
     encoder.finish(duration).step("Finishing exported video")?;
     let audio_ranges = if job.source_ranges.is_empty() {
-        vec![super::mux::AudioRange { start, end: start + duration, rate: 1.0 }]
+        vec![super::mux::AudioRange { start, end: start + duration, rate: 1.0, mute: false }]
     } else {
         job.source_ranges.iter().map(|range| super::mux::AudioRange {
             start: (range.start_ms * 10_000.0).round() as i64,
             end: (range.end_ms * 10_000.0).round() as i64,
             rate: range.rate.unwrap_or(1.0),
+            mute: false,
         }).collect()
     };
-    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, &audio_ranges, (job.lead_in_ms * 10_000.0).round() as i64, &mut || {})?;
+    super::mux::with_source_audio(&temporary, Path::new(&job.source), output, &audio_ranges, (job.lead_in_ms * 10_000.0).round() as i64,
+        job.music.as_ref().map(|music| super::mux::Music { path: Path::new(&music.path), volume: music.volume, looped: music.looped }), &mut || {})?;
     std::fs::remove_file(&temporary).map_err(|e| e.to_string())?;
     eprintln!("SCREENSWAY_PROGRESS 100");
     Ok(ExportResult {

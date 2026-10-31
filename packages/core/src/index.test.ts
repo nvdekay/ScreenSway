@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applyZoomStrength,
+  musicGain,
+  musicTime,
+  MUSIC_FADE_OUT_MS,
   normalizeSpeeds,
   buildSourceTimes,
   buildCameraTrack,
@@ -166,6 +169,24 @@ describe("applyZoomStrength", () => {
     expect(applyZoomStrength([zoomAt(3)], 9)[0].scale).toBe(MAX_ZOOM_SCALE);
     expect(applyZoomStrength([zoomAt(1.8)], 0)[0].scale).toBeCloseTo(1.2);
     expect(applyZoomStrength([zoomAt(1.8)], Number.NaN)[0].scale).toBe(1.8);
+  });
+});
+
+describe("background music", () => {
+  it("fades in, holds its volume and fades out at the end", () => {
+    expect(musicGain(0.5, 0, 10_000)).toBe(0);
+    expect(musicGain(0.5, 150, 10_000)).toBeCloseTo(0.25);
+    expect(musicGain(0.5, 5_000, 10_000)).toBe(0.5);
+    expect(musicGain(0.5, 10_000 - MUSIC_FADE_OUT_MS / 2, 10_000)).toBeCloseTo(0.25);
+    expect(musicGain(0.5, 10_000, 10_000)).toBe(0);
+    expect(musicGain(3, 5_000, 10_000)).toBe(1);
+  });
+
+  it("loops or ends with the music file", () => {
+    expect(musicTime(2_500, 4_000, false)).toBe(2_500);
+    expect(musicTime(9_000, 4_000, true)).toBe(1_000);
+    expect(musicTime(9_000, 4_000, false)).toBeNull();
+    expect(musicTime(1_000, 0, true)).toBeNull();
   });
 });
 

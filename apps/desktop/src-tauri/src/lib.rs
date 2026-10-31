@@ -1970,6 +1970,58 @@ async fn export_recording(
     result
 }
 
+/// Background music the user picked, copied into the recording.
+#[derive(Serialize)]
+struct ImportedMusic {
+    /// Relative to the recording, for edits.json.
+    file: String,
+    name: String,
+}
+
+const MUSIC_EXTENSIONS: &[&str] = &["mp3", "m4a", "aac", "wav"];
+const MAX_MUSIC_BYTES: u64 = 200 * 1024 * 1024;
+
+/// Copies an audio file the user picks into the recording as `media/music.<ext>`, replacing
+/// any earlier one, so the recording keeps working when the original moves. None when the
+/// picker was closed.
+#[tauri::command]
+async fn import_music(app: tauri::AppHandle, project_path: String) -> Result<Option<ImportedMusic>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let project = resolve_project(&project_path)?;
+    let Some(picked) = app.dialog().file().add_filter("Audio", MUSIC_EXTENSIONS).blocking_pick_file() else {
+        return Ok(None);
+    };
+    let source = picked.into_path().map_err(|error| format!("Could not open the music: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || copy_music(&project, &source).map(Some))
+        .await
+        .map_err(|error| format!("Music import failed: {error}"))?
+}
+
+fn copy_music(project: &std::path::Path, source: &std::path::Path) -> Result<ImportedMusic, String> {
+    let extension = source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|extension| MUSIC_EXTENSIONS.contains(&extension.as_str()))
+        .ok_or("Only MP3, M4A, AAC and WAV files can be used as music.")?;
+    let size = std::fs::metadata(source).map_err(|error| format!("Could not open the music: {error}"))?.len();
+    if size > MAX_MUSIC_BYTES {
+        return Err("The music file is larger than 200 MB.".into());
+    }
+    let media = project.join("media");
+    std::fs::create_dir_all(&media).map_err(|error| format!("Could not copy the music: {error}"))?;
+    let file = format!("media/music.{extension}");
+    // Copied under a temporary name first, so a failed copy keeps the previous music.
+    let partial = media.join(".music.partial");
+    std::fs::copy(source, &partial).map_err(|error| format!("Could not copy the music: {error}"))?;
+    for old in MUSIC_EXTENSIONS {
+        let _ = std::fs::remove_file(media.join(format!("music.{old}")));
+    }
+    std::fs::rename(&partial, project.join(&file)).map_err(|error| format!("Could not copy the music: {error}"))?;
+    let name = source.file_name().map_or("Music".into(), |name| name.to_string_lossy().chars().take(120).collect());
+    Ok(ImportedMusic { file, name })
+}
+
 /// Opens the folder with the app's log, for the user to attach to a problem report.
 #[tauri::command]
 fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
@@ -2038,6 +2090,21 @@ fn export_recording_blocking(
             }
             _ => {
                 fields.remove("camera");
+            }
+        }
+        // Music likewise comes only from the recording's own copy (see import_music).
+        let music_file = fields
+            .get("music")
+            .and_then(|music| music.get("file"))
+            .and_then(|file| file.as_str())
+            .and_then(|file| project_member(&project, file).ok());
+        match (fields.get_mut("music").and_then(|music| music.as_object_mut()), music_file) {
+            (Some(music), Some(file)) => {
+                music.remove("file");
+                music.insert("path".into(), path(&file));
+            }
+            _ => {
+                fields.remove("music");
             }
         }
         let mut caption_jobs = Vec::with_capacity(captions.len());
@@ -2600,6 +2667,7 @@ pub fn run() {
             get_storage_status,
             list_interrupted_recordings,
             open_log_folder,
+            import_music,
             recover_recording,
             list_recordings,
             load_recording,
@@ -2658,6 +2726,24 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn music_is_copied_into_the_recording_replacing_the_previous_one() {
+        let root = std::env::temp_dir().join(format!("screensway-music-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let project = root.join("Recording.screensway");
+        std::fs::create_dir_all(project.join("media")).unwrap();
+        std::fs::write(project.join("media/music.wav"), b"old").unwrap();
+        let source = root.join("Song.MP3");
+        std::fs::write(&source, b"new").unwrap();
+        let imported = copy_music(&project, &source).unwrap();
+        assert_eq!(imported.file, "media/music.mp3");
+        assert_eq!(imported.name, "Song.MP3");
+        assert_eq!(std::fs::read(project.join("media/music.mp3")).unwrap(), b"new");
+        assert!(!project.join("media/music.wav").exists());
+        assert!(copy_music(&project, &root.join("notes.txt")).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[cfg(capture)]
     #[test]

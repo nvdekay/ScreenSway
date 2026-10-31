@@ -14,6 +14,7 @@
 mod audio;
 mod keys;
 mod model;
+mod music;
 #[cfg(windows)]
 mod platform;
 mod render;

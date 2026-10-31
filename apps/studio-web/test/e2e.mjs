@@ -3,7 +3,9 @@
 // pointer moving between stops, plus a tone as system audio. The save dialog writes to the
 // browser's private storage, where the test reads the MP4 back.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,7 +186,8 @@ const chosenFile = (page) =>
   });
 
 /** The chosen file's MP4, read back and described with mediabunny. */
-async function readExport(page) {
+/** The exported file's bytes, from the page's private storage. */
+async function exportBytes(page) {
   const base64 = await page.evaluate(async () => {
     const file = await (await (await navigator.storage.getDirectory()).getFileHandle("export-test.mp4")).getFile();
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -192,7 +195,11 @@ async function readExport(page) {
     for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     return btoa(text);
   });
-  const input = new Input({ source: new BufferSource(Buffer.from(base64, "base64")), formats: ALL_FORMATS });
+  return Buffer.from(base64, "base64");
+}
+
+async function readExport(page) {
+  const input = new Input({ source: new BufferSource(await exportBytes(page)), formats: ALL_FORMATS });
   try {
     const video = await input.getPrimaryVideoTrack();
     const audio = await input.getPrimaryAudioTrack();
@@ -486,6 +493,53 @@ try {
     page.on("dialog", (dialog) => void dialog.dismiss());
     await page.close({ runBeforeUnload: false });
     console.log("faster part shortens the picture and keeps the sound in step: ok");
+  }
+
+  // 7d. Music the visitor picks plays under the whole video, at the chosen level.
+  {
+    // One second of a 1 kHz tone, as a WAV file; the recording's own sound is a 440 Hz tone.
+    const work = mkdtempSync(join(tmpdir(), "screensway-music-"));
+    const rate = 48_000, samples = rate;
+    const wav = Buffer.alloc(44 + samples * 2);
+    wav.write("RIFF", 0); wav.writeUInt32LE(36 + samples * 2, 4); wav.write("WAVEfmt ", 8);
+    wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
+    wav.write("data", 36); wav.writeUInt32LE(samples * 2, 40);
+    for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 1_000 * i) / rate) * 20_000), 44 + i * 2);
+    const musicFile = join(work, "Song.wav");
+    writeFileSync(musicFile, wav);
+
+    const page = await openApp();
+    await record(page, 4_000);
+    await page.getByRole("button", { name: "Stop recording" }).click();
+    await page.locator(".preview-section").waitFor({ timeout: 30_000 });
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Choose a music file…" }).click();
+    await (await chooser).setFiles(musicFile);
+    await page.locator(".music-file").getByText("Song.wav").waitFor();
+    await page.locator(".music-panel input[type=range]").fill("1");
+    // The one-second song does not repeat, so the rest of the video has none of it.
+    await page.locator(".music-panel .audio-toggle").click();
+    assert.equal(await page.locator(".music-panel input[role=switch]").isChecked(), false, "the song no longer repeats");
+    if (process.env.SCREENSHOT_DIR) await page.locator(".music-panel").screenshot({ path: join(process.env.SCREENSHOT_DIR, "music.png") });
+    await page.getByRole("button", { name: "Export video" }).click();
+    await page.locator(".export-done").waitFor({ timeout: 60_000 });
+    const exported = await readExport(page);
+    assert.ok(Math.abs(exported.audioDuration - exported.videoDuration) < 0.1, `sound and picture end together (${exported.audioDuration.toFixed(3)} / ${exported.videoDuration.toFixed(3)} s)`);
+    const exportFile = join(work, "export.mp4");
+    writeFileSync(exportFile, await exportBytes(page));
+    // Loudness at 1 kHz only: the music, not the recording's 440 Hz tone.
+    const measure = (from, to) => {
+      const { stderr } = spawnSync("ffmpeg", ["-hide_banner", "-i", exportFile, "-af", `atrim=${from}:${to},bandpass=f=1000:width_type=h:w=200,volumedetect`, "-f", "null", "-"], { encoding: "utf8" });
+      return Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1] ?? -999);
+    };
+    const loud = measure(0.4, 0.9);
+    assert.ok(loud > -30, `the music plays under the recording (${loud} dB at 1 kHz)`);
+    // Before the fade at the end, so a repeating song would still be at full level here.
+    const after = measure(1.3, 1.9);
+    assert.ok(after < loud - 10, `a song that does not repeat ends (${after} dB after it, ${loud} dB during it)`);
+    page.on("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: false });
+    console.log("background music is mixed into the export: ok");
   }
 
   // 8. In Vietnamese, a file that refuses to open is explained in Vietnamese, not in the

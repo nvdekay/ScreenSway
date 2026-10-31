@@ -233,6 +233,16 @@ fn aperture(media_type: &IMFMediaType) -> Option<((u32, u32), (u32, u32))> {
     ))
 }
 
+/// The length of an opened file, in 100 ns ticks.
+pub fn duration(reader: &IMFSourceReader) -> Result<i64, String> {
+    let duration = unsafe {
+        reader
+            .GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE.0 as u32, &MF_PD_DURATION)
+            .step("Reading the video's length")?
+    };
+    u64::try_from(&duration).map(|ticks| ticks as i64).map_err(|_| "The video's length is unknown.".to_string())
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Probe {

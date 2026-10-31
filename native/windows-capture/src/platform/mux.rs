@@ -58,11 +58,27 @@ pub struct AudioRange {
     pub start: i64,
     pub end: i64,
     pub rate: f64,
+    /// Silence instead of the recording's sound, for a recording without any.
+    pub mute: bool,
+}
+
+/// Music to mix under the whole video (from the export job).
+pub struct Music<'a> {
+    pub path: &'a Path,
+    pub volume: f64,
+    pub looped: bool,
+}
+
+/// Decoded 16-bit stereo sound at 48 kHz and where it goes, in 100 ns ticks.
+struct Chunk {
+    data: Vec<u8>,
+    time: i64,
+    duration: i64,
 }
 
 impl AudioRange {
     fn silent(&self) -> bool {
-        self.rate != 1.0
+        self.mute || self.rate != 1.0
     }
 
     fn output_length(&self) -> i64 {
@@ -76,24 +92,52 @@ pub fn with_source_audio(
     output: &Path,
     ranges: &[AudioRange],
     lead_in: i64,
+    music: Option<Music>,
     progress: &mut dyn FnMut(),
 ) -> Result<(), String> {
     let audio = reader::open(source, false)?;
-    // A recording made with both audio switches off is a normal silent export.
+    // A recording made with both audio switches off is a normal silent export, unless music
+    // plays under it.
     let has_audio = unsafe { audio.GetNativeMediaType(reader::AUDIO, 0) }.is_ok();
-    if !has_audio {
+    if !has_audio && music.is_none() {
         std::fs::copy(video, output).map_err(|e| e.to_string())?;
         return Ok(());
     }
-    reader::select(&audio, reader::AUDIO)?;
     let pcm = pcm_type(48_000, 2, 16, false)?;
-    unsafe {
-        audio
-            .SetCurrentMediaType(reader::AUDIO, None, &pcm)
-            .step("Decoding audio for export")?;
+    if has_audio {
+        reader::select(&audio, reader::AUDIO)?;
+        unsafe {
+            audio
+                .SetCurrentMediaType(reader::AUDIO, None, &pcm)
+                .step("Decoding audio for export")?;
+        }
     }
+    // Without sound of its own, every kept part is silence under the music.
+    let silent_ranges: Vec<AudioRange>;
+    let ranges = if has_audio {
+        ranges
+    } else {
+        silent_ranges = ranges.iter().map(|range| AudioRange { mute: true, ..*range }).collect();
+        &silent_ranges
+    };
+    let mut mixer = match &music {
+        Some(music) => Some(crate::music::Mixer::new(super::music::File::open(music.path)?, music.volume, music.looped)),
+        None => None,
+    };
     let v = reader::open(video, false)?;
     reader::select(&v, reader::VIDEO)?;
+    let video_length = reader::duration(&v)?;
+    let total_frames = video_length as i128 * 48_000 / 10_000_000;
+    // Adds the music to a chunk and makes the sample the AAC encoder takes.
+    let mut finish = |chunk: Chunk| -> Result<IMFSample, String> {
+        let mut data = chunk.data;
+        if let Some(mixer) = mixer.as_mut() {
+            let mut samples: Vec<i16> = data.chunks_exact(2).map(|pair| i16::from_le_bytes([pair[0], pair[1]])).collect();
+            mixer.mix(&mut samples, (chunk.time as i128 * 48_000 / 10_000_000) as i64, total_frames as i64)?;
+            data = samples.iter().flat_map(|sample| sample.to_le_bytes()).collect();
+        }
+        sample(&data, chunk.time, chunk.duration)
+    };
     unsafe {
         let vt = v
             .GetNativeMediaType(reader::VIDEO, 0)
@@ -131,8 +175,9 @@ pub fn with_source_audio(
             if frames == 0 {
                 break;
             }
-            writer.WriteSample(aus, &sample(&vec![0u8; frames * 4], silent, length)?).step("Writing silence")?;
-            silent += length;
+            let duration = frames as i64 * 10_000_000 / 48_000;
+            writer.WriteSample(aus, &finish(Chunk { data: vec![0u8; frames * 4], time: silent, duration })?).step("Writing silence")?;
+            silent += duration;
         }
         let mut vp = reader::next(&v, reader::VIDEO)?;
         let mut range_index = 0usize;
@@ -140,18 +185,31 @@ pub fn with_source_audio(
         let mut audio_offset = lead_in;
         let mut silence_written = 0i64;
         let mut ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset, &mut silence_written)?;
+        // The music plays to the end of the video, past the recording's own sound.
+        let mut tail = if music.is_some() { audio_offset } else { video_length };
         while vp.is_some() || ap.is_some() {
             progress();
+            if ap.is_none() && tail < video_length {
+                let length = (video_length - tail).min(1_000_000);
+                let frames = (length as i128 * 48_000 / 10_000_000) as usize;
+                if frames > 0 {
+                    let duration = frames as i64 * 10_000_000 / 48_000;
+                    ap = Some(Chunk { data: vec![0u8; frames * 4], time: tail, duration });
+                    tail += duration;
+                } else {
+                    tail = video_length;
+                }
+            }
             if vp
                 .as_ref()
-                .is_some_and(|(_, t)| ap.as_ref().is_none_or(|(_, at)| t <= at))
+                .is_some_and(|(_, t)| ap.as_ref().is_none_or(|chunk| *t <= chunk.time))
             {
                 let (s, _) = vp.take().unwrap();
                 writer.WriteSample(vs, &s).step("Writing exported video")?;
                 vp = reader::next(&v, reader::VIDEO)?;
-            } else {
-                let (s, _) = ap.take().unwrap();
-                writer.WriteSample(aus, &s).step("Writing exported audio")?;
+            } else if let Some(chunk) = ap.take() {
+                tail = tail.max(chunk.time + chunk.duration);
+                writer.WriteSample(aus, &finish(chunk)?).step("Writing exported audio")?;
                 ap = next_audio_ranges(&audio, ranges, &mut range_index, &mut range_started, &mut audio_offset, &mut silence_written)?;
             }
         }
@@ -167,7 +225,7 @@ fn next_audio_ranges(
     started: &mut bool,
     output_offset: &mut i64,
     silence_written: &mut i64,
-) -> Result<Option<(IMFSample, i64)>, String> {
+) -> Result<Option<Chunk>, String> {
     loop {
         let Some(range) = ranges.get(*index) else { return Ok(None) };
         let (start, end) = (range.start, range.end);
@@ -179,7 +237,7 @@ fn next_audio_ranges(
                 let time = *output_offset + *silence_written;
                 let duration = frames as i64 * 10_000_000 / 48_000;
                 *silence_written += duration;
-                return Ok(Some((sample(&vec![0u8; frames * 4], time, duration)?, time)));
+                return Ok(Some(Chunk { data: vec![0u8; frames * 4], time, duration }));
             }
             *output_offset += range.output_length();
             *silence_written = 0;
@@ -190,10 +248,9 @@ fn next_audio_ranges(
             reader::seek(reader, start)?;
             *started = true;
         }
-        if let Some((sample, relative_time)) = next_audio(reader, start, end - start)? {
-            let output_time = *output_offset + relative_time;
-            unsafe { sample.SetSampleTime(output_time).step("Retiming edited audio")?; }
-            return Ok(Some((sample, output_time)));
+        if let Some(mut chunk) = next_audio(reader, start, end - start)? {
+            chunk.time += *output_offset;
+            return Ok(Some(chunk));
         }
         *output_offset += end - start;
         *index += 1;
@@ -205,7 +262,7 @@ fn next_audio(
     reader: &IMFSourceReader,
     start: i64,
     duration: i64,
-) -> Result<Option<(IMFSample, i64)>, String> {
+) -> Result<Option<Chunk>, String> {
     while let Some((s, t)) = reader::next(reader, reader::AUDIO)? {
         let raw = reader::bytes(&s)?;
         let count = raw.len() / 4;
@@ -220,7 +277,7 @@ fn next_audio(
         }
         let time = (t + first as i64 * 10_000_000 / 48_000 - start).max(0);
         let len = (end - first) as i64 * 10_000_000 / 48_000;
-        return Ok(Some((sample(&raw[first * 4..end * 4], time, len)?, time)));
+        return Ok(Some(Chunk { data: raw[first * 4..end * 4].to_vec(), time, duration: len }));
     }
     Ok(None)
 }

@@ -35,6 +35,41 @@ export interface SpeedSegment {
   rate: number;
 }
 
+/** Music from the user's computer, played under the whole video. */
+export interface BackgroundMusic {
+  /** The copy kept with the recording (`media/music.mp3`); a page-local URL in the browser. */
+  file: string;
+  /** The original file name, shown in the studio. */
+  name: string;
+  /** 0–1 of the music file's own level. */
+  volume: number;
+  /** Starts over when it ends before the video does. */
+  loop: boolean;
+}
+
+export const DEFAULT_MUSIC_VOLUME = 0.3;
+/** The music fades in this quickly (no click at the start) and out over the video's last moments. */
+export const MUSIC_FADE_IN_MS = 300;
+export const MUSIC_FADE_OUT_MS = 2_000;
+
+/**
+ * The music's level at `timeMs` of a video `totalMs` long, the same in the preview and every
+ * exporter: its volume, faded in at the start and out at the end.
+ */
+export function musicGain(volume: number, timeMs: number, totalMs: number): number {
+  if (!(timeMs >= 0) || timeMs >= totalMs) return 0;
+  const fadeIn = Math.min(1, timeMs / MUSIC_FADE_IN_MS);
+  const fadeOut = Math.min(1, (totalMs - timeMs) / Math.min(MUSIC_FADE_OUT_MS, totalMs / 2));
+  return Math.min(1, Math.max(0, volume)) * fadeIn * fadeOut;
+}
+
+/** Where in the music file `timeMs` of the video is, or null once a music that does not loop has ended. */
+export function musicTime(timeMs: number, musicMs: number, loop: boolean): number | null {
+  if (!(musicMs > 0) || timeMs < 0) return null;
+  if (timeMs < musicMs) return timeMs;
+  return loop ? timeMs % musicMs : null;
+}
+
 /** The speeds the timeline offers. */
 export const SPEED_RATES = [0.5, 1.5, 2, 4, 8] as const;
 export const DEFAULT_SPEED_RATE = 2;
@@ -142,6 +177,8 @@ export interface RecordingEdits {
   zoomStrength?: number;
   /** Parts played faster or slower, in recording time. */
   speeds?: SpeedSegment[];
+  /** Music under the whole video, or null for none. */
+  music?: BackgroundMusic | null;
 }
 
 export interface FramingSegment {

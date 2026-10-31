@@ -114,6 +114,22 @@ async function chooseFile(name: string): Promise<FileSystemFileHandle | null> {
   }
 }
 
+/** Music the visitor picked, by the page-local URL the studio keeps in its edits. */
+const music = new Map<string, Blob>();
+const MAX_MUSIC_BYTES = 200 * 1024 * 1024;
+
+/** The browser's own file picker for an audio file; null when it was closed. */
+function pickMusic(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "audio/mpeg,audio/mp4,audio/aac,audio/wav,.mp3,.m4a,.aac,.wav";
+    input.addEventListener("change", () => resolve(input.files?.[0] ?? null), { once: true });
+    input.addEventListener("cancel", () => resolve(null), { once: true });
+    input.click();
+  });
+}
+
 function download(url: string, fileName: string) {
   const link = document.createElement("a");
   link.href = url;
@@ -178,6 +194,14 @@ export const commands: Record<string, Command> = {
   telemetry_status: () => ({ available: analyticsOn(), enabled: analyticsOn() }),
   send_feedback: ({ feedback }) => sendFeedback(feedback as FeedbackRequest),
   read_thumbnail: ({ projectPath }) => recordingOf(projectPath).thumbnail,
+  import_music: async () => {
+    const file = await pickMusic();
+    if (!file) return null;
+    if (file.size > MAX_MUSIC_BYTES) throw new Error("music.tooLarge");
+    const url = URL.createObjectURL(file);
+    music.set(url, file);
+    return { file: url, name: file.name };
+  },
 
   list_background_images: () => [...images].reverse().map(([path, { thumbnail }]) => ({ path, thumbnail })),
   save_background_image: ({ image, thumbnail }) => {
@@ -225,7 +249,7 @@ export const commands: Record<string, Command> = {
       exportCancel = () => {
         if (!committing) controller.abort();
       };
-      await renderExport(recording.blob, job, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable, commit);
+      await renderExport(recording.blob, { ...job, music: job.music && music.has(job.music.file) ? { ...job.music, blob: music.get(job.music.file)! } : undefined }, baseLayer, (percent) => emit("export-progress", percent), controller.signal, writable, commit);
       forgetLastExport();
       if (!chosen) {
         lastExport = { url: URL.createObjectURL(await target.getFile()), fileName: name, file: target };

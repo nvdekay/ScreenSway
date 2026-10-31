@@ -127,4 +127,21 @@ assert(Math.abs(trackLength("audio") - trackLength("video")) < 0.08, `sound and 
 const loudness = (from, to) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync("ffmpeg", ["-hide_banner", "-i", speedJob.output, "-af", `atrim=${from}:${to},volumedetect`, "-f", "null", "-"], { encoding: "utf8", windowsHide: true }).stderr)[1]);
 assert(loudness(0.2, 0.8) > -40, "the normal part keeps its sound");
 assert(loudness(1.1, 1.4) < -60, "the faster part is silent");
+// Music under the whole video: a one-second 1 kHz song at 44.1 kHz (resampled), not
+// repeating, over the recording's 440 Hz tone; then repeating over a silent recording.
+const song = path.join(work, "song.mp3");
+run("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=44100:duration=1", song]);
+const at = (file, from, to, hz) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync("ffmpeg", ["-hide_banner", "-i", file, "-af", `atrim=${from}:${to},bandpass=f=${hz}:width_type=h:w=100,volumedetect`, "-f", "null", "-"], { encoding: "utf8", windowsHide: true }).stderr)?.[1] ?? -999);
+const musicTimes = Array.from({ length: 150 }, (_, i) => i * 1000 / 60);
+const musicJob = { ...job, source, startMs: 0, captions: [], sourceTimesMs: musicTimes, frames: musicTimes.map(() => [0,0,320,180,0,0,0,0,0,0,0]),
+  sourceRanges: [{ startMs: 0, endMs: 2500 }], output: path.join(work, "music.mp4"), music: { path: song, volume: 1, loop: false } };
+writeFileSync(jobPath, JSON.stringify(musicJob)); run(helper, ["--export", jobPath]);
+assert(at(musicJob.output, 0.4, 0.8, 1000) > -35, "the music plays under the recording");
+assert(at(musicJob.output, 1.3, 1.9, 1000) < at(musicJob.output, 0.4, 0.8, 1000) - 10, "a song that does not repeat ends");
+assert(at(musicJob.output, 1.3, 1.9, 440) > -35, "the recording's own sound stays");
+const silentMusic = { ...musicJob, source: silent, output: path.join(work, "music-silent.mp4"), music: { path: song, volume: 1, loop: true } };
+writeFileSync(jobPath, JSON.stringify(silentMusic)); run(helper, ["--export", jobPath]);
+const silentStreams = probe(silentMusic.output).streams;
+assert(silentStreams.some(s => s.codec_type === "audio"), "a silent recording gets a sound track for its music");
+assert(at(silentMusic.output, 1.3, 1.9, 1000) > -35, "repeating music keeps playing");
 console.log(`Windows native export checks passed. Artifacts: ${work}`);

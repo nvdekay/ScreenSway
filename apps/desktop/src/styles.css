@@ -375,6 +375,11 @@ h1 { margin: 18px 0 14px; padding-bottom: .08em; font-size: clamp(36px, 4.6vw, 5
 .speed-block { position: absolute; top: 0; bottom: 0; z-index: 4; min-width: 3px; overflow: hidden; padding: 0 3px; border: 0; border-radius: 2px; background: #f59e0bb3; color: #1c1300; font-size: 9px; font-weight: 700; line-height: 13px; text-align: left; white-space: nowrap; pointer-events: auto; }
 .speed-block.selected { background: #fbbf24; box-shadow: 0 0 0 2px #fbbf2466; }
 .speed-inspector { display: flex; flex-direction: column; gap: 10px; }
+.music-panel .editor-note { margin-bottom: 10px; }
+.music-file { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 6px 6px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: #ffffff08; font-size: 12px; }
+.music-file span { flex: 1; min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.music-panel .audio-toggle { margin: 10px 0; }
+.music-panel .editor-note.error { margin: 8px 0 0; color: #fca5a5; }
 .framing-block { position: absolute; top: 0; bottom: 0; z-index: 3; min-width: 3px; padding: 0; border: 0; border-radius: 2px; background: #34d399a6; pointer-events: auto; }
 .framing-block.selected { background: #34d399; box-shadow: 0 0 0 2px #34d39966; }
 .framing-position { grid-column: 1 / -1; }

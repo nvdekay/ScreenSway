@@ -40,6 +40,8 @@ struct ExportJob: Decodable {
     /// Silence before the recording's sound, under an intro card.
     let leadInMs: Double?
     let sourceRanges: [SourceRange]?
+    /// Music under the whole video, from the recording's own copy.
+    let music: Music?
     let redactions: [Redaction]?
     /// Captions drawn over the finished frame, timed on the exported video's timeline.
     let captions: [Caption]?
@@ -75,6 +77,14 @@ struct ExportJob: Decodable {
         let width: Double
         let height: Double
         let mode: String
+    }
+
+    struct Music: Decodable {
+        let path: String
+        /// 0–1 of the file's own level.
+        let volume: Double
+        /// Starts over when it ends before the video does.
+        let loop: Bool
     }
 
     struct SourceRange: Decodable {
@@ -119,7 +129,7 @@ enum Exporter {
         try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         try await renderVideo(job: job, sourceURL: sourceURL, to: videoOnlyURL)
-        try await addSourceAudio(from: sourceURL, ranges: job.sourceRanges, startingAt: job.start, leadIn: CMTime(value: CMTimeValue((job.leadInMs ?? 0).rounded()), timescale: 1_000), video: videoOnlyURL, to: outputURL)
+        try await addSourceAudio(from: sourceURL, ranges: job.sourceRanges, startingAt: job.start, leadIn: CMTime(value: CMTimeValue((job.leadInMs ?? 0).rounded()), timescale: 1_000), music: job.music, video: videoOnlyURL, to: outputURL)
 
         let durationMs = Int((Double(job.frames.count) / Double(job.fps) * 1_000).rounded())
         return ExportResult(outputPath: outputURL.path, durationMs: durationMs, width: job.width, height: job.height)
@@ -348,23 +358,19 @@ enum Exporter {
     }
 
     /// Copies the recording's audio (unchanged, from the trimmed start) next to the rendered video.
-    private static func addSourceAudio(from sourceURL: URL, ranges: [ExportJob.SourceRange]?, startingAt start: CMTime, leadIn: CMTime, video videoURL: URL, to outputURL: URL) async throws {
+    private static func addSourceAudio(from sourceURL: URL, ranges: [ExportJob.SourceRange]?, startingAt start: CMTime, leadIn: CMTime, music: ExportJob.Music?, video videoURL: URL, to outputURL: URL) async throws {
         try? FileManager.default.removeItem(at: outputURL)
         let source = AVURLAsset(url: sourceURL)
-        guard let audioTrack = try await source.loadTracks(withMediaType: .audio).first else {
-            try FileManager.default.moveItem(at: videoURL, to: outputURL)
-            return
-        }
+        let audioTrack = try await source.loadTracks(withMediaType: .audio).first
         let rendered = AVURLAsset(url: videoURL)
         guard let videoTrack = try await rendered.loadTracks(withMediaType: .video).first else {
             throw CaptureError.exportFailed("The rendered video has no track.")
         }
         let duration = try await rendered.load(.duration)
-        let sourceAudioEnd = try await audioTrack.load(.timeRange).end
-        // Faster or slower parts keep their place in time as silence.
-        let audioRanges: [(range: CMTimeRange, silence: CMTime?)] = ranges?.map { ($0.timeRange, $0.changesSpeed ? $0.outputDuration : nil) }
-            ?? [(CMTimeRange(start: start, duration: duration), nil)]
-        guard audioRanges.contains(where: { $0.silence == nil && $0.range.start < sourceAudioEnd && $0.range.duration > .zero }) else {
+        let sourceAudioEnd = try await audioTrack?.load(.timeRange).end ?? .zero
+        let kept = ranges ?? [ExportJob.SourceRange(startMs: start.seconds * 1_000, endMs: (start + duration).seconds * 1_000, rate: nil)]
+        let sounding = audioTrack != nil && kept.contains { !$0.changesSpeed && $0.timeRange.start < sourceAudioEnd && $0.timeRange.duration > .zero }
+        guard sounding || music != nil else {
             try FileManager.default.moveItem(at: videoURL, to: outputURL)
             return
         }
@@ -375,33 +381,31 @@ enum Exporter {
             throw CaptureError.exportFailed("Could not combine video and audio.")
         }
         try compositionVideo.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: videoTrack, at: .zero)
-        var destination = CMTime.zero
-        var laidOut = false
-        let speedAudioURL = videoURL.deletingPathExtension().appendingPathExtension("speed.m4a")
-        defer { try? FileManager.default.removeItem(at: speedAudioURL) }
-        if let ranges, ranges.contains(where: \.changesSpeed) {
-            // Real silence where a part plays faster or slower: an empty stretch of a composition
-            // track is only an edit-list gap, which many players skip, pulling later sound early.
-            try await writeSpeedAudio(from: source, track: audioTrack, ranges: ranges, to: speedAudioURL)
-            let speedAudio = AVURLAsset(url: speedAudioURL)
-            if let track = try await speedAudio.loadTracks(withMediaType: .audio).first {
-                let length = try await speedAudio.load(.duration)
-                try compositionAudio.insertTimeRange(CMTimeRange(start: .zero, duration: length), of: track, at: .zero)
-                destination = length
+        let mixedURL = videoURL.deletingPathExtension().appendingPathExtension("sound.m4a")
+        defer { try? FileManager.default.removeItem(at: mixedURL) }
+        if music != nil || kept.contains(where: \.changesSpeed) {
+            // Written as real samples: silence where a part plays faster or slower (an empty
+            // stretch of a composition track is an edit-list gap that many players skip, pulling
+            // later sound early) and the music mixed under everything.
+            try await writeMixedAudio(from: source, track: audioTrack, ranges: kept, leadIn: leadIn, length: duration, music: music, to: mixedURL)
+            let mixed = AVURLAsset(url: mixedURL)
+            if let track = try await mixed.loadTracks(withMediaType: .audio).first {
+                try compositionAudio.insertTimeRange(CMTimeRange(start: .zero, duration: try await mixed.load(.duration)), of: track, at: .zero)
             }
-            laidOut = true
-        }
-        for (range, _) in audioRanges where !laidOut {
-            let available = CMTimeMaximum(.zero, sourceAudioEnd - range.start)
-            let clipped = CMTimeRange(start: range.start, duration: CMTimeMinimum(range.duration, available))
-            if clipped.duration > .zero {
-                try compositionAudio.insertTimeRange(clipped, of: audioTrack, at: destination)
-                destination = destination + clipped.duration
+        } else if let audioTrack {
+            var destination = CMTime.zero
+            for range in kept.map(\.timeRange) {
+                let available = CMTimeMaximum(.zero, sourceAudioEnd - range.start)
+                let clipped = CMTimeRange(start: range.start, duration: CMTimeMinimum(range.duration, available))
+                if clipped.duration > .zero {
+                    try compositionAudio.insertTimeRange(clipped, of: audioTrack, at: destination)
+                    destination = destination + clipped.duration
+                }
             }
-        }
-        // Silence under an intro card: shifts the sound (an empty track cannot start later on its own).
-        if leadIn > .zero, destination > .zero {
-            compositionAudio.insertEmptyTimeRange(CMTimeRange(start: .zero, duration: leadIn))
+            // Silence under an intro card: shifts the sound (an empty track cannot start later on its own).
+            if leadIn > .zero, destination > .zero {
+                compositionAudio.insertEmptyTimeRange(CMTimeRange(start: .zero, duration: leadIn))
+            }
         }
         guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             throw CaptureError.exportFailed("Could not initialize the exporter.")
@@ -410,46 +414,130 @@ enum Exporter {
         try? FileManager.default.removeItem(at: videoURL)
     }
 
-    /// The kept sound laid end to end as AAC, with silence as long as each faster or slower
-    /// part lasts in the video, and padded so it never ends before that part's place.
-    private static func writeSpeedAudio(from source: AVURLAsset, track: AVAssetTrack, ranges: [ExportJob.SourceRange], to url: URL) async throws {
+    /// 16-bit stereo PCM at 48 kHz, what the export's sound is mixed in.
+    private static let mixRate = 48_000.0
+    private static let mixFrameBytes = 4
+    private static var mixFormat: [String: Any] { [
+        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: mixRate, AVNumberOfChannelsKey: 2,
+        AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
+    ] }
+
+    /// The music's level at `timeMs` of a video `totalMs` long; the same as `musicGain` in
+    /// packages/core, so the export sounds like the preview.
+    static func musicGain(_ volume: Double, _ timeMs: Double, _ totalMs: Double) -> Double {
+        guard timeMs >= 0, timeMs < totalMs else { return 0 }
+        let fadeIn = min(1, timeMs / 300)
+        let fadeOut = min(1, (totalMs - timeMs) / min(2_000, totalMs / 2))
+        return min(1, max(0, volume)) * fadeIn * fadeOut
+    }
+
+    /// The music file as 16-bit stereo PCM, read as needed and started over when it loops.
+    private final class MusicStream {
+        private let asset: AVURLAsset
+        private let track: AVAssetTrack
+        private let loop: Bool
+        private var output: AVAssetReaderTrackOutput?
+        private var reader: AVAssetReader?
+        private var pending = Data()
+        private var ended = false
+        private var readThisPass = false
+
+        init(asset: AVURLAsset, track: AVAssetTrack, loop: Bool) {
+            self.asset = asset
+            self.track = track
+            self.loop = loop
+        }
+
+        /// The next `frames` frames; silence once a music that does not loop has ended.
+        func next(_ frames: Int) throws -> Data {
+            let wanted = frames * Exporter.mixFrameBytes
+            while pending.count < wanted && !ended {
+                if output == nil {
+                    let reader = try AVAssetReader(asset: asset)
+                    let output = AVAssetReaderTrackOutput(track: track, outputSettings: Exporter.mixFormat)
+                    reader.add(output)
+                    guard reader.startReading() else { throw CaptureError.exportFailed("Could not read the music.") }
+                    (self.reader, self.output, readThisPass) = (reader, output, false)
+                }
+                if let buffer = output?.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
+                    var data = Data(count: CMBlockBufferGetDataLength(block))
+                    _ = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!) }
+                    pending.append(data)
+                    readThisPass = readThisPass || !data.isEmpty
+                } else {
+                    reader?.cancelReading()
+                    (reader, output) = (nil, nil)
+                    // A file with no sound at all would otherwise be read again forever.
+                    if !loop || !readThisPass { ended = true }
+                }
+            }
+            var chunk = pending.prefix(wanted)
+            pending.removeFirst(chunk.count)
+            if chunk.count < wanted { chunk.append(Data(count: wanted - chunk.count)) }
+            return Data(chunk)
+        }
+    }
+
+    /// The video's sound as AAC: the kept parts of the recording end to end, silence before
+    /// the recording (under an intro card) and as long as each faster or slower part lasts,
+    /// and the music mixed under all of it to the end of the video.
+    private static func writeMixedAudio(from source: AVURLAsset, track: AVAssetTrack?, ranges: [ExportJob.SourceRange], leadIn: CMTime, length: CMTime, music: ExportJob.Music?, to url: URL) async throws {
         try? FileManager.default.removeItem(at: url)
-        let sampleRate = 48_000.0
-        let bytesPerFrame = 4
         var description = AudioStreamBasicDescription(
-            mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
+            mSampleRate: mixRate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
-            mBytesPerPacket: UInt32(bytesPerFrame), mFramesPerPacket: 1, mBytesPerFrame: UInt32(bytesPerFrame),
+            mBytesPerPacket: UInt32(mixFrameBytes), mFramesPerPacket: 1, mBytesPerFrame: UInt32(mixFrameBytes),
             mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0
         )
         var format: CMAudioFormatDescription?
         guard CMAudioFormatDescriptionCreate(allocator: nil, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format) == noErr, let format else {
             throw CaptureError.exportFailed("Could not describe the export's sound.")
         }
-        let pcm: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2,
-            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
-        ]
+        var stream: MusicStream?
+        if let music {
+            let asset = AVURLAsset(url: URL(fileURLWithPath: music.path))
+            guard let musicTrack = try await asset.loadTracks(withMediaType: .audio).first else {
+                throw CaptureError.exportFailed("This music file could not be read. Try an MP3, M4A or WAV file.")
+            }
+            stream = MusicStream(asset: asset, track: musicTrack, loop: music.loop)
+        }
         let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: mixRate, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
         ])
         input.expectsMediaDataInRealTime = false
         writer.add(input)
         guard writer.startWriting() else { throw CaptureError.exportFailed("Could not write the export's sound: \(writer.error?.localizedDescription ?? "unknown error")") }
         writer.startSession(atSourceTime: .zero)
 
+        let totalMs = length.seconds * 1_000
         var written: Int64 = 0
         func append(_ data: Data) async throws {
-            let frames = data.count / bytesPerFrame
+            let frames = data.count / mixFrameBytes
             guard frames > 0 else { return }
+            var data = data
+            if let stream, let music {
+                let under = try stream.next(frames)
+                data.withUnsafeMutableBytes { (samples: UnsafeMutableRawBufferPointer) in
+                    under.withUnsafeBytes { (tune: UnsafeRawBufferPointer) in
+                        let out = samples.bindMemory(to: Int16.self), add = tune.bindMemory(to: Int16.self)
+                        for frame in 0..<frames {
+                            let gain = musicGain(music.volume, Double(written + Int64(frame)) / mixRate * 1_000, totalMs)
+                            for channel in 0..<2 {
+                                let index = frame * 2 + channel
+                                out[index] = Int16(clamping: Int(out[index]) + Int((Double(add[index]) * gain).rounded()))
+                            }
+                        }
+                    }
+                }
+            }
             var block: CMBlockBuffer?
             guard CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: data.count, blockAllocator: nil, customBlockSource: nil, offsetToData: 0, dataLength: data.count, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block) == noErr, let block else {
                 throw CaptureError.exportFailed("Could not allocate the export's sound.")
             }
             _ = data.withUnsafeBytes { CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: data.count) }
             var buffer: CMSampleBuffer?
-            guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: frames, presentationTimeStamp: CMTime(value: written, timescale: CMTimeScale(sampleRate)), packetDescriptions: nil, sampleBufferOut: &buffer) == noErr, let buffer else {
+            guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: frames, presentationTimeStamp: CMTime(value: written, timescale: CMTimeScale(mixRate)), packetDescriptions: nil, sampleBufferOut: &buffer) == noErr, let buffer else {
                 throw CaptureError.exportFailed("Could not prepare the export's sound.")
             }
             while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 2_000_000) }
@@ -460,26 +548,27 @@ enum Exporter {
             var remaining = frames
             while remaining > 0 {
                 let chunk = min(remaining, 4_800)
-                try await append(Data(count: Int(chunk) * bytesPerFrame))
+                try await append(Data(count: Int(chunk) * mixFrameBytes))
                 remaining -= chunk
             }
         }
 
+        try await silence(Int64((leadIn.seconds * mixRate).rounded()))
         for range in ranges {
-            let wanted = Int64((range.outputDuration.seconds * sampleRate).rounded())
-            if range.changesSpeed {
+            let wanted = Int64((range.outputDuration.seconds * mixRate).rounded())
+            guard let track, !range.changesSpeed else {
                 try await silence(wanted)
                 continue
             }
             let reader = try AVAssetReader(asset: source)
             reader.timeRange = range.timeRange
-            let output = AVAssetReaderTrackOutput(track: track, outputSettings: pcm)
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: mixFormat)
             reader.add(output)
             guard reader.startReading() else { throw CaptureError.exportFailed("Could not read the recording's sound.") }
             var got: Int64 = 0
             while got < wanted, let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
                 let frames = min(Int64(CMSampleBufferGetNumSamples(buffer)), wanted - got)
-                var data = Data(count: Int(frames) * bytesPerFrame)
+                var data = Data(count: Int(frames) * mixFrameBytes)
                 _ = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!) }
                 try await append(data)
                 got += frames
@@ -488,6 +577,8 @@ enum Exporter {
             // Sound that ends before the picture is padded, so later parts stay in step.
             try await silence(wanted - got)
         }
+        // The music plays to the end of the video, under an outro card too.
+        if music != nil { try await silence(Int64((length.seconds * mixRate).rounded()) - written) }
         input.markAsFinished()
         await writer.finishWriting()
         guard writer.status == .completed else {
